@@ -18,7 +18,17 @@ const UserSchema = new mongoose.Schema({
     Doctor: Number,
     MARS: Number,
     Organization: Number,
-    orgEmail: String
+    orgEmail: String,
+    Cluster: String,
+    Branch: String,
+    Name: String,
+    notifyPhoneChange: { type: Boolean, default: true },
+    notifyNameChange: { type: Boolean, default: true },
+    notifyMonthlyReport: { type: Boolean, default: true },
+    otp: String,
+    otpExpires: Date,
+    resetToken: String,
+    resetTokenExpires: Date
 }, { collection: 'users' });
 
 module.exports = mongoose.model('User', UserSchema);

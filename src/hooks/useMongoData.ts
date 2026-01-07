@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 
 export interface InsightData {
   id: string;
@@ -102,7 +103,7 @@ function transformDoctor(doc: any): DoctorData {
       rank: l.rank || 0,
       label: l.label || "",
       competitors: l.competitors || [],
-      screenShot: l.screen_shot || "" // Fixed mapping from screen_shot to screenShot
+      screenShot: l.screen_shot || ""
     })),
     primaryCategory: doc.primaryCategory || "",
     address: doc.address || "",
@@ -149,15 +150,15 @@ let globalCache: {
 };
 
 export function useMongoData() {
-  const [insights, setInsights] = useState<InsightData[]>(globalCache.insights || []);
-  const [doctors, setDoctors] = useState<DoctorData[]>(globalCache.doctors || []);
-  const [locations, setLocations] = useState<LocationData[]>(globalCache.locations || []);
-  const [top10Data, setTop10Data] = useState<{ latestMonth: string; topDoctors: InsightData[] } | null>(globalCache.top10);
-  const [loading, setLoading] = useState(!globalCache.insights); // Only load if cache is empty
+  const { user } = useAuth();
+  const [rawInsights, setRawInsights] = useState<InsightData[]>(globalCache.insights || []);
+  const [rawDoctors, setRawDoctors] = useState<DoctorData[]>(globalCache.doctors || []);
+  const [rawLocations, setRawLocations] = useState<LocationData[]>(globalCache.locations || []);
+  const [rawTop10, setRawTop10] = useState<{ latestMonth: string; topDoctors: InsightData[] } | null>(globalCache.top10);
+  const [loading, setLoading] = useState(!globalCache.insights);
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async (force = false) => {
-    // If we have data and not forcing refresh, don't fetch
     if (!force && globalCache.insights && globalCache.doctors && globalCache.locations) {
       setLoading(false);
       return;
@@ -167,7 +168,6 @@ export function useMongoData() {
     setError(null);
 
     try {
-      // Fetch all data in parallel from the new Node.js backend
       const [insightsRes, doctorsRes, locationsRes, top10Res] = await Promise.all([
         fetch(`${API_URL}/insights`).then(res => res.json()),
         fetch(`${API_URL}/doctors`).then(res => res.json()),
@@ -176,44 +176,79 @@ export function useMongoData() {
       ]);
 
       if (insightsRes.success && insightsRes.data) {
-        const transformedInsights = insightsRes.data.map(transformInsight);
-        setInsights(transformedInsights);
-        globalCache.insights = transformedInsights;
+        const transformed = insightsRes.data.map(transformInsight);
+        setRawInsights(transformed);
+        globalCache.insights = transformed;
       }
-
       if (doctorsRes.success && doctorsRes.data) {
-        const transformedDoctors = doctorsRes.data.map(transformDoctor);
-        setDoctors(transformedDoctors);
-        globalCache.doctors = transformedDoctors;
+        const transformed = doctorsRes.data.map(transformDoctor);
+        setRawDoctors(transformed);
+        globalCache.doctors = transformed;
       }
-
       if (locationsRes.success && locationsRes.data) {
-        const transformedLocations = locationsRes.data.map(transformLocation);
-        setLocations(transformedLocations);
-        globalCache.locations = transformedLocations;
+        const transformed = locationsRes.data.map(transformLocation);
+        setRawLocations(transformed);
+        globalCache.locations = transformed;
       }
-
       if (top10Res.success && top10Res.data) {
-        const transformedTop10 = {
+        const transformed = {
           latestMonth: top10Res.data.latestMonth,
           topDoctors: top10Res.data.topDoctors.map(transformInsight)
         };
-        setTop10Data(transformedTop10);
-        globalCache.top10 = transformedTop10;
+        setRawTop10(transformed);
+        globalCache.top10 = transformed;
       }
-
     } catch (err) {
-      console.error('Error fetching data from Node.js backend:', err);
+      console.error('Error fetching data:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
     } finally {
       setLoading(false);
     }
   }, []);
 
+  const insights = useMemo(() => {
+    if (!user || user.role === "Admin") return rawInsights;
+    return rawInsights.filter(i => {
+      if (user.branch) return i.branch === user.branch;
+      if (user.cluster) return i.cluster === user.cluster;
+      return true;
+    });
+  }, [rawInsights, user]);
+
+  const doctors = useMemo(() => {
+    if (!user || user.role === "Admin") return rawDoctors;
+    return rawDoctors.filter(d => {
+      if (user.branch) return d.branch === user.branch;
+      if (user.cluster) return d.cluster === user.cluster;
+      return true;
+    });
+  }, [rawDoctors, user]);
+
+  const locations = useMemo(() => {
+    if (!user || user.role === "Admin") return rawLocations;
+    return rawLocations.filter(l => {
+      if (user.branch) return l.unitName === user.branch;
+      if (user.cluster) return l.cluster === user.cluster;
+      return true;
+    });
+  }, [rawLocations, user]);
+
+  const top10Data = useMemo(() => {
+    if (!rawTop10) return null;
+    if (!user || user.role === "Admin") return rawTop10;
+    return {
+      latestMonth: rawTop10.latestMonth,
+      topDoctors: rawTop10.topDoctors.filter(d => {
+        if (user.branch) return d.branch === user.branch;
+        if (user.cluster) return d.cluster === user.cluster;
+        return true;
+      })
+    };
+  }, [rawTop10, user]);
+
   const fetchDoctorDetails = useCallback(async (doctorName: string) => {
     try {
       const res = await fetch(`${API_URL}/doctor-details/${encodeURIComponent(doctorName)}`).then(r => r.json());
-
       if (res.success && res.data) {
         return {
           profile: res.data.profile ? transformDoctor(res.data.profile) : null,

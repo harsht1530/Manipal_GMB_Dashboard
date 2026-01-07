@@ -15,19 +15,8 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import {
-    PieChart,
-    Pie,
-    Cell,
-    LineChart,
-    Line,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    Legend,
-    ResponsiveContainer,
-} from "recharts";
+import Highcharts from 'highcharts';
+import HighchartsReact from 'highcharts-react-official';
 import { InsightData, DoctorData, LabelData, useMongoData } from "@/hooks/useMongoData";
 import {
     Star,
@@ -77,7 +66,10 @@ interface ReviewData {
     badReviews: { comment: string; author: string; date: string }[];
 }
 
+import { useAuth } from "@/contexts/AuthContext";
+
 const DoctorDetails = () => {
+    const { user } = useAuth();
     const { businessName } = useParams<{ businessName: string }>();
     const navigate = useNavigate();
     const { doctors, insights, loading: globalLoading } = useMongoData();
@@ -117,6 +109,18 @@ const DoctorDetails = () => {
             );
 
             if (foundDoctor) {
+                // RBAC Check
+                if (user?.role !== "Admin") {
+                    if (user?.branch && foundDoctor.branch !== user.branch) {
+                        navigate("/doctors");
+                        return;
+                    }
+                    if (user?.cluster && foundDoctor.cluster !== user.cluster) {
+                        navigate("/doctors");
+                        return;
+                    }
+                }
+
                 setProfile(foundDoctor);
                 setKeywords(foundDoctor.labels || []);
                 setCompetitors([...new Set(foundDoctor.labels?.flatMap(l => l.competitors || []))] as string[]);
@@ -145,7 +149,7 @@ const DoctorDetails = () => {
             setMonthlyInsights(sortedInsights);
             setIsLoading(false);
         }
-    }, [businessName, doctors, insights, globalLoading]);
+    }, [businessName, doctors, insights, globalLoading, user, navigate]);
 
     // Prepare chart data
     const chartData = monthlyInsights.map((item) => ({
@@ -163,6 +167,77 @@ const DoctorDetails = () => {
             item.googleMapsMobile +
             item.googleMapsDesktop,
     }));
+
+    // Prepare chart data for Highcharts
+    const performanceOptions: Highcharts.Options = {
+        chart: { type: 'line', backgroundColor: 'transparent', style: { fontFamily: 'inherit' } },
+        title: { text: undefined },
+        xAxis: {
+            categories: chartData.map(d => d.month),
+            labels: { style: { color: 'hsl(var(--muted-foreground))' } },
+            lineColor: 'hsl(var(--border))'
+        },
+        yAxis: {
+            title: { text: undefined },
+            labels: { style: { color: 'hsl(var(--muted-foreground))' } },
+            gridLineColor: 'hsl(var(--muted))'
+        },
+        credits: { enabled: false },
+        tooltip: { shared: true, borderRadius: 8 },
+        plotOptions: {
+            line: {
+                marker: { radius: 4, lineWidth: 2, lineColor: '#FFFFFF' },
+                lineWidth: 2.5,
+                dataLabels: {
+                    enabled: true,
+                    style: { fontSize: '9px', fontWeight: '400' }
+                }
+            }
+        },
+        series: [
+            { name: "Search Mobile", data: chartData.map(d => d["Search Mobile"]), color: CHART_COLORS.googleSearchMobile, type: 'line' },
+            { name: "Search Desktop", data: chartData.map(d => d["Search Desktop"]), color: CHART_COLORS.googleSearchDesktop, type: 'line' },
+            { name: "Maps Mobile", data: chartData.map(d => d["Maps Mobile"]), color: CHART_COLORS.googleMapsMobile, type: 'line' },
+            { name: "Maps Desktop", data: chartData.map(d => d["Maps Desktop"]), color: CHART_COLORS.googleMapsDesktop, type: 'line' },
+            { name: "Calls", data: chartData.map(d => d.Calls), color: CHART_COLORS.calls, type: 'line' },
+            { name: "Directions", data: chartData.map(d => d.Directions), color: CHART_COLORS.directions, type: 'line' },
+            { name: "Website Clicks", data: chartData.map(d => d["Website Clicks"]), color: CHART_COLORS.websiteClicks, type: 'line' },
+            { name: "Overall", data: chartData.map(d => d.Overall), color: CHART_COLORS.overall, lineWidth: 3, dashStyle: 'Dash', type: 'line' }
+        ]
+    };
+
+    const pieData = reviewData ? [
+        { name: '1 Star', y: reviewData.ratings[0], color: PIE_COLORS[0] },
+        { name: '2 Stars', y: reviewData.ratings[1], color: PIE_COLORS[1] },
+        { name: '3 Stars', y: reviewData.ratings[2], color: PIE_COLORS[2] },
+        { name: '4 Stars', y: reviewData.ratings[3], color: PIE_COLORS[3] },
+        { name: '5 Stars', y: reviewData.ratings[4], color: PIE_COLORS[4] },
+    ] : [];
+
+    const pieOptions: Highcharts.Options = {
+        chart: { type: 'pie', backgroundColor: 'transparent', height: 280 },
+        title: { text: undefined },
+        credits: { enabled: false },
+        tooltip: { pointFormat: '{series.name}: <b>{point.y} ({point.percentage:.1f}%)</b>' },
+        plotOptions: {
+            pie: {
+                innerSize: '60%',
+                size: '75%',
+                dataLabels: {
+                    enabled: true,
+                    format: '<b>{point.name}</b>: {point.y}',
+                    distance: 10,
+                    style: { fontSize: '10px' }
+                },
+                showInLegend: true
+            }
+        },
+        series: [{
+            name: 'Reviews',
+            type: 'pie',
+            data: pieData
+        }]
+    };
 
     const printRef = useRef<HTMLDivElement>(null);
 
@@ -321,41 +396,10 @@ const DoctorDetails = () => {
                         </CardHeader>
                         <CardContent>
                             <div className="h-[400px] w-full">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                                        <XAxis
-                                            dataKey="month"
-                                            stroke="hsl(var(--muted-foreground))"
-                                            fontSize={12}
-                                            tickLine={false}
-                                            axisLine={false}
-                                        />
-                                        <YAxis
-                                            stroke="hsl(var(--muted-foreground))"
-                                            fontSize={12}
-                                            tickLine={false}
-                                            axisLine={false}
-                                        />
-                                        <Tooltip
-                                            contentStyle={{
-                                                backgroundColor: "hsl(var(--background))",
-                                                border: "1px solid hsl(var(--border))",
-                                                borderRadius: "8px",
-                                                boxShadow: "0 4px 12px rgba(0,0,0,0.1)"
-                                            }}
-                                        />
-                                        <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                                        <Line type="monotone" dataKey="Search Mobile" stroke={CHART_COLORS.googleSearchMobile} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 6 }} />
-                                        <Line type="monotone" dataKey="Search Desktop" stroke={CHART_COLORS.googleSearchDesktop} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 6 }} />
-                                        <Line type="monotone" dataKey="Maps Mobile" stroke={CHART_COLORS.googleMapsMobile} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 6 }} />
-                                        <Line type="monotone" dataKey="Maps Desktop" stroke={CHART_COLORS.googleMapsDesktop} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 6 }} />
-                                        <Line type="monotone" dataKey="Calls" stroke={CHART_COLORS.calls} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 6 }} />
-                                        <Line type="monotone" dataKey="Directions" stroke={CHART_COLORS.directions} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 6 }} />
-                                        <Line type="monotone" dataKey="Website Clicks" stroke={CHART_COLORS.websiteClicks} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 6 }} />
-                                        <Line type="monotone" dataKey="Overall" stroke={CHART_COLORS.overall} strokeWidth={3} dot={{ r: 4 }} strokeDasharray="5 5" activeDot={{ r: 7 }} />
-                                    </LineChart>
-                                </ResponsiveContainer>
+                                <HighchartsReact
+                                    highcharts={Highcharts}
+                                    options={performanceOptions}
+                                />
                             </div>
                         </CardContent>
                     </Card>
@@ -615,34 +659,10 @@ const DoctorDetails = () => {
                                         <div className="flex flex-col md:flex-row items-center justify-around gap-8">
                                             {/* Chart Section */}
                                             <div className="h-[300px] w-full max-w-[500px]">
-                                                <ResponsiveContainer width="100%" height="100%">
-                                                    <PieChart>
-                                                        <Pie
-                                                            data={[
-                                                                { name: '1 Star', value: reviewData.ratings[0] },
-                                                                { name: '2 Stars', value: reviewData.ratings[1] },
-                                                                { name: '3 Stars', value: reviewData.ratings[2] },
-                                                                { name: '4 Stars', value: reviewData.ratings[3] },
-                                                                { name: '5 Stars', value: reviewData.ratings[4] },
-                                                            ]}
-                                                            cx="50%"
-                                                            cy="50%"
-                                                            innerRadius={60}
-                                                            outerRadius={80} // Reduced radius to prevent cutoff
-                                                            paddingAngle={2}
-                                                            dataKey="value"
-                                                            label={({ name, value, percent }) => `${name}: ${value} (${(percent * 100).toFixed(0)}%)`}
-                                                        >
-                                                            {reviewData.ratings.map((entry, index) => (
-                                                                <Cell key={`cell-${index}`} fill={PIE_COLORS[index]} />
-                                                            ))}
-                                                        </Pie>
-                                                        <Tooltip
-                                                            contentStyle={{ backgroundColor: "hsl(var(--background))", borderRadius: "8px", border: "1px solid hsl(var(--border))" }}
-                                                            itemStyle={{ color: "hsl(var(--foreground))" }}
-                                                        />
-                                                    </PieChart>
-                                                </ResponsiveContainer>
+                                                <HighchartsReact
+                                                    highcharts={Highcharts}
+                                                    options={pieOptions}
+                                                />
                                             </div>
 
                                             {/* Stats Section */}
@@ -758,7 +778,7 @@ const DoctorDetails = () => {
                         </div>
                         <div className="text-right">
                             <div className="flex items-center justify-end gap-2 mb-2">
-                                <Star className="h-6 w-6 text-warning fill-warning" />
+                                <Star className="h-6 w-6 text-warning fill-warning" style={{ transform: 'translateY(2px)' }} />
                                 <span className="text-2xl font-bold">{profile.averageRating.toFixed(1)}</span>
                             </div>
                             <p className="text-sm text-muted-foreground">{profile.totalReviewCount} Reviews</p>
@@ -768,15 +788,15 @@ const DoctorDetails = () => {
                     {/* Contact Info */}
                     <div className="grid grid-cols-3 gap-6 bg-muted/20 p-6 rounded-lg">
                         <div className="flex items-center gap-3">
-                            <MapPin className="h-5 w-5 text-primary" />
+                            <MapPin className="h-5 w-5 text-primary" style={{ transform: 'translateY(2px)' }} />
                             <span className="text-sm font-medium">{profile.address}</span>
                         </div>
                         <div className="flex items-center gap-3">
-                            <Phone className="h-5 w-5 text-primary" />
+                            <Phone className="h-5 w-5 text-primary" style={{ transform: 'translateY(2px)' }} />
                             <span className="text-sm font-medium">{profile.phone}</span>
                         </div>
                         <div className="flex items-center gap-3">
-                            <Mail className="h-5 w-5 text-primary" />
+                            <Mail className="h-5 w-5 text-primary" style={{ transform: 'translateY(2px)' }} />
                             <span className="text-sm font-medium">{profile.mailId}</span>
                         </div>
                     </div>
@@ -784,22 +804,18 @@ const DoctorDetails = () => {
                     {/* Monthly Insights */}
                     <div>
                         <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
-                            <TrendingUp className="h-6 w-6 text-primary" />
+                            <TrendingUp className="h-6 w-6 text-primary" style={{ transform: 'translateY(2px)' }} />
                             Monthly Insights
                         </h2>
                         <div className="h-[300px] w-full mb-6 border rounded-lg p-4">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <LineChart data={chartData}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                    <XAxis dataKey="month" />
-                                    <YAxis />
-                                    <Legend />
-                                    <Line type="monotone" dataKey="Overall" stroke={CHART_COLORS.overall} strokeWidth={3} dot={{ r: 4 }} isAnimationActive={false} />
-                                    <Line type="monotone" dataKey="Search Mobile" stroke={CHART_COLORS.googleSearchMobile} strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
-                                    <Line type="monotone" dataKey="Maps Mobile" stroke={CHART_COLORS.googleMapsMobile} strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
-                                    <Line type="monotone" dataKey="Calls" stroke={CHART_COLORS.calls} strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
-                                </LineChart>
-                            </ResponsiveContainer>
+                            <HighchartsReact
+                                highcharts={Highcharts}
+                                options={{
+                                    ...performanceOptions,
+                                    chart: { ...performanceOptions.chart, animation: false },
+                                    plotOptions: { ...performanceOptions.plotOptions, series: { animation: false } }
+                                }}
+                            />
                         </div>
                         <div className="border rounded-lg overflow-hidden">
                             <Table>
@@ -832,7 +848,7 @@ const DoctorDetails = () => {
                     {/* Keywords */}
                     <div>
                         <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
-                            <Target className="h-6 w-6 text-primary" />
+                            <Target className="h-6 w-6 text-primary" style={{ transform: 'translateY(2px)' }} />
                             Top Keyword Rankings
                         </h2>
                         <div className="border rounded-lg overflow-hidden">
@@ -871,7 +887,7 @@ const DoctorDetails = () => {
                     {keywords.filter(k => k.screenShot).length > 0 && (
                         <div>
                             <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
-                                <Target className="h-6 w-6 text-primary" />
+                                <Target className="h-6 w-6 text-primary" style={{ transform: 'translateY(2px)' }} />
                                 Top Search Result Visualization
                             </h2>
                             <div className="border rounded-lg p-2 bg-muted/20 w-[600px] mx-auto">
@@ -888,37 +904,19 @@ const DoctorDetails = () => {
                     {reviewData && (
                         <div>
                             <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
-                                <MessageSquare className="h-6 w-6 text-primary" />
+                                <MessageSquare className="h-6 w-6 text-primary" style={{ transform: 'translateY(2px)' }} />
                                 Review Analysis
                             </h2>
                             <div className="grid grid-cols-2 gap-8 items-start">
                                 <div className="h-[300px] border rounded-lg p-4 flex items-center justify-center">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <PieChart>
-                                            <Pie
-                                                data={[
-                                                    { name: '1 Star', value: reviewData.ratings[0] },
-                                                    { name: '2 Stars', value: reviewData.ratings[1] },
-                                                    { name: '3 Stars', value: reviewData.ratings[2] },
-                                                    { name: '4 Stars', value: reviewData.ratings[3] },
-                                                    { name: '5 Stars', value: reviewData.ratings[4] },
-                                                ]}
-                                                cx="50%"
-                                                cy="50%"
-                                                innerRadius={60}
-                                                outerRadius={80}
-                                                paddingAngle={2}
-                                                dataKey="value"
-                                                label={({ name, value, percent }) => `${name}: ${value} (${(percent * 100).toFixed(0)}%)`}
-                                                isAnimationActive={false}
-                                            >
-                                                {reviewData.ratings.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={PIE_COLORS[index]} />
-                                                ))}
-                                            </Pie>
-                                            <Legend />
-                                        </PieChart>
-                                    </ResponsiveContainer>
+                                    <HighchartsReact
+                                        highcharts={Highcharts}
+                                        options={{
+                                            ...pieOptions,
+                                            chart: { ...pieOptions.chart, animation: false },
+                                            plotOptions: { ...pieOptions.plotOptions, pie: { ...pieOptions.plotOptions?.pie, animation: false } }
+                                        }}
+                                    />
                                 </div>
                                 <div className="space-y-4">
                                     <div className="border rounded-lg p-4 bg-emerald-50">

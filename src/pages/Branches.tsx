@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +16,7 @@ import {
   TrendingUp,
   Loader2,
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface BranchStats {
   name: string;
@@ -32,29 +33,73 @@ interface BranchStats {
 }
 
 const Branches = () => {
+  const { user } = useAuth();
   const { insights, doctors, loading } = useMongoData();
 
   const [selectedCluster, setSelectedCluster] = useState<string[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string[]>([]);
-  const [selectedMonth, setSelectedMonth] = useState<string[]>([]); // Keep state but hide UI
+  const [selectedMonth, setSelectedMonth] = useState<string[]>([]);
   const [selectedSpeciality, setSelectedSpeciality] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (user?.branch) {
+      setSelectedBranch([user.branch]);
+    } else if (user?.cluster) {
+      setSelectedCluster([user.cluster]);
+    }
+  }, [user]);
+
+  const isBranchRestricted = !!user?.branch;
+  const isClusterRestricted = !!user?.cluster && !user?.branch;
+
+  const dashboardTitle = user?.role === "Admin" ? "Branches" : (user?.branch || user?.cluster || "Branches");
+  const dashboardSubtitle = user?.role === "Admin" ? "Branch-wise performance analytics" : `${user?.branch ? 'Branch' : 'Cluster'} Level Access Overview`;
 
   // Derive filter options
   const filterOptions = useMemo(() => {
     const clusters = [...new Set(insights.map(i => i.cluster))].filter(Boolean).sort();
     const branches = [...new Set(insights.map(i => i.branch))].filter(Boolean).sort();
     const specialities = [...new Set(insights.map(i => i.speciality))].filter(Boolean).sort();
-    const months = []; // Not used in UI
+    const months = [...new Set(insights.map(i => i.month))].filter(Boolean);
+
+    // Sort months chronologically
+    const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    months.sort((a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b));
+
     return { clusters, branches, specialities, months };
   }, [insights]);
 
+  // Get the chronologically latest month from the data
+  const latestDataMonth = useMemo(() => {
+    if (insights.length === 0) return "Nov";
+    const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const uniqueMonths = [...new Set(insights.map(i => i.month))];
+    return uniqueMonths.sort((a, b) => monthOrder.indexOf(b) - monthOrder.indexOf(a))[0];
+  }, [insights]);
+
+
   const branchStats: BranchStats[] = useMemo(() => {
+    const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const activeLatestMonth = selectedMonth.length > 0
+      ? [...selectedMonth].sort((a, b) => monthOrder.indexOf(b) - monthOrder.indexOf(a))[0]
+      : latestDataMonth;
+
     // 1. Filter Source Data
     const filteredInsights = insights.filter(item => {
       const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(item.cluster);
       const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(item.branch);
       const specialityMatch = selectedSpeciality.length === 0 || selectedSpeciality.includes(item.speciality);
-      return clusterMatch && branchMatch && specialityMatch;
+      const monthMatch = selectedMonth.length === 0 || selectedMonth.includes(item.month);
+      return clusterMatch && branchMatch && specialityMatch && monthMatch;
+    });
+
+    // Insights for profile count (only last month of selection)
+    const profileInsights = insights.filter(item => {
+      const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(item.cluster);
+      const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(item.branch);
+      const specialityMatch = selectedSpeciality.length === 0 || selectedSpeciality.includes(item.speciality);
+      const monthMatch = item.month === activeLatestMonth;
+      return clusterMatch && branchMatch && specialityMatch && monthMatch;
     });
 
     const filteredDoctors = doctors.filter(doc => {
@@ -69,10 +114,38 @@ const Branches = () => {
       ratingCount: number
     }>();
 
-    // Aggregate insights data
+    // Aggregate profile counts from profileInsights
+    profileInsights.forEach((insight) => {
+      let existing = branchMap.get(insight.branch);
+      if (!existing) {
+        existing = {
+          name: insight.branch,
+          cluster: insight.cluster,
+          profileCount: 0,
+          totalSearchImpressions: 0,
+          totalMapsViews: 0,
+          totalDirections: 0,
+          totalWebsiteClicks: 0,
+          totalCalls: 0,
+          averageRating: 0,
+          totalKeywords: 0,
+          rankingKeywords: 0,
+          uniqueProfiles: new Set(),
+          ratingSum: 0,
+          ratingCount: 0
+        };
+        branchMap.set(insight.branch, existing);
+      }
+      if (insight.businessName) {
+        existing.uniqueProfiles.add(insight.businessName);
+      }
+    });
+
+    // Aggregate metrics from filteredInsights (cumulative)
     filteredInsights.forEach((insight) => {
       let existing = branchMap.get(insight.branch);
       if (!existing) {
+        // This case might happen if a branch has data in non-latest months but not in latest
         existing = {
           name: insight.branch,
           cluster: insight.cluster,
@@ -97,11 +170,6 @@ const Branches = () => {
       existing.totalDirections += insight.directions;
       existing.totalWebsiteClicks += insight.websiteClicks;
       existing.totalCalls += insight.calls;
-
-      // Track unique profiles (Business Names)
-      if (insight.businessName) {
-        existing.uniqueProfiles.add(insight.businessName);
-      }
 
       // Track Ratings
       if (insight.rating > 0) {
@@ -129,7 +197,13 @@ const Branches = () => {
       };
     }).sort((a, b) => b.totalSearchImpressions - a.totalSearchImpressions);
 
-  }, [insights, doctors, selectedCluster, selectedBranch, selectedSpeciality]);
+  }, [insights, doctors, selectedCluster, selectedBranch, selectedSpeciality, selectedMonth, latestDataMonth]);
+
+  const activeLatestMonth = useMemo(() => {
+    if (selectedMonth.length === 0) return latestDataMonth;
+    const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return [...selectedMonth].sort((a, b) => monthOrder.indexOf(b) - monthOrder.indexOf(a))[0];
+  }, [selectedMonth, latestDataMonth]);
 
   const totalStats = useMemo(() => {
     return {
@@ -142,7 +216,7 @@ const Branches = () => {
 
   if (loading) {
     return (
-      <DashboardLayout title="Branches" subtitle="Loading branch analytics...">
+      <DashboardLayout title={dashboardTitle} subtitle={dashboardSubtitle}>
         <div className="flex items-center justify-center py-24">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
           <span className="ml-3 text-muted-foreground">Loading data...</span>
@@ -152,7 +226,7 @@ const Branches = () => {
   }
 
   return (
-    <DashboardLayout title="Branches" subtitle="Branch-wise performance analytics">
+    <DashboardLayout title={dashboardTitle} subtitle={dashboardSubtitle}>
 
       <FilterBar
         selectedCluster={selectedCluster}
@@ -161,13 +235,15 @@ const Branches = () => {
         selectedSpeciality={selectedSpeciality}
         clusterOptions={filterOptions.clusters}
         branchOptions={filterOptions.branches}
-        monthOptions={[]}
+        monthOptions={filterOptions.months}
         specialityOptions={filterOptions.specialities}
         onClusterChange={setSelectedCluster}
         onBranchChange={setSelectedBranch}
         onMonthChange={setSelectedMonth}
         onSpecialityChange={setSelectedSpeciality}
-        hideMonth={true}
+        hideMonth={false}
+        hideCluster={isBranchRestricted || isClusterRestricted}
+        hideBranch={isBranchRestricted}
       />
 
       {/* Summary Cards */}
@@ -192,7 +268,12 @@ const Branches = () => {
                 <Users className="h-5 w-5 text-success" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{totalStats.profiles}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-2xl font-bold">{totalStats.profiles}</p>
+                  <Badge variant="secondary" className="text-[10px] px-1.5 h-4">
+                    {activeLatestMonth}
+                  </Badge>
+                </div>
                 <p className="text-xs text-muted-foreground">Total Profiles</p>
               </div>
             </div>
@@ -264,7 +345,12 @@ const Branches = () => {
                   <Users className="h-4 w-4" />
                   Profiles
                 </span>
-                <span className="font-semibold">{branch.profileCount}</span>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary" className="text-[10px] px-1.5 h-4">
+                    {activeLatestMonth}
+                  </Badge>
+                  <span className="font-semibold">{branch.profileCount}</span>
+                </div>
               </div>
 
               {/* Metrics Grid */}

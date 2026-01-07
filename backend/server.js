@@ -2,12 +2,15 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const nodemailer = require('nodemailer');
+const crypto = require('crypto');
 
 // Models
 const Insight = require('./models/Insight');
 const Doctor = require('./models/Doctor');
 const Location = require('./models/Location');
 const User = require('./models/User');
+const Alert = require('./models/Alert');
 
 dotenv.config();
 
@@ -24,6 +27,48 @@ mongoose.connect(MONGODB_URI)
     .then(() => console.log('Connected to MongoDB'))
     .catch(err => console.error('MongoDB connection error:', err));
 
+// Mail Transporter
+const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: process.env.SMTP_PORT || 587,
+    secure: false,
+    auth: {
+        user: process.env.SMTP_USER || 'gmb-dashboard-support@multipliersolutions.com',
+        pass: process.env.SMTP_PASS || 'oggw dehy frzc fvub',
+    },
+});
+
+const MANIPAL_LOGO = "https://multipliersolutions.in/manipalhospitals/manipallogo2.png";
+
+const sendEmail = async (to, subject, html) => {
+    try {
+        await transporter.sendMail({
+            from: `"Manipal Insights" <${process.env.SMTP_USER || 'gmb-dashboard-support@multipliersolutions.com'}>`,
+            to,
+            subject,
+            html
+        });
+        return true;
+    } catch (error) {
+        console.error("Email sending failed:", error);
+        return false;
+    }
+};
+
+const getEmailTemplate = (content) => `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; text-align: center; border: 1px solid #ddd; border-radius: 10px;">
+        <div style="margin-bottom: 20px;">
+            <img src="${MANIPAL_LOGO}" alt="Manipal Hospitals" style="max-width: 150px; margin-bottom: 10px;">
+        </div>
+        <div style="color: #333; line-height: 1.6;">
+            ${content}
+        </div>
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #888; text-align: center;">
+            <p>&copy; ${new Date().getFullYear()} Multiplier AI. All rights reserved.</p>
+        </div>
+    </div>
+`;
+
 // Routes
 
 // 1. Diagnostic / Default
@@ -31,20 +76,157 @@ app.get('/api', (req, res) => {
     res.json({ success: true, message: "Backend API is running", version: "1.2.0" });
 });
 
-// 2. Auth Route
+// 2. Auth Route - Step 1: Verify Credentials and Send OTP
 app.post('/api/login', async (req, res) => {
     const { email, password } = req.body;
     try {
-        const user = await User.findOne({ mail: email, psw: password });
+        const user = await User.findOne({
+            $or: [{ orgEmail: email }, { mail: email }],
+            psw: password
+        });
+
         if (user) {
-            res.json({ success: true, user: { name: user.user, email: user.mail, logo: user.Logo } });
+            // Generate 6-digit OTP
+            const otp = Math.floor(100000 + Math.random() * 900000).toString();
+            user.otp = otp;
+            user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+            await user.save();
+
+            const emailHtml = getEmailTemplate(`
+                <h2 style="color: #333;">Almost there</h2>
+                <p style="font-size: 16px; color: #555;">Here is your code:</p>
+                <h1 style="font-size: 32px; letter-spacing: 4px; color: #000; margin: 20px 0;"><strong>${otp}</strong></h1>
+                <p style="font-size: 14px; color: #777;">
+                    This code will be active for ten minutes. If you don’t make it in time, you can always request a new one.
+                </p>
+                <p style="font-size: 14px; color: #777; margin-top: 20px;">
+                    If you weren’t expecting this email, someone else may have accidentally entered your email address. 
+                    If you need help, contact our <a href="mailto:gmb-dashboard-support@multipliersolutions.com" style="color: #007bff; text-decoration: none;">support team</a>.
+                </p>
+            `);
+
+            const sent = await sendEmail(user.orgEmail || user.mail, "Login OTP - Manipal Insights", emailHtml);
+
+            if (sent) {
+                res.json({ success: true, message: "OTP sent to your email", email: user.orgEmail || user.mail });
+            } else {
+                res.status(500).json({ success: false, error: "Failed to send OTP email" });
+            }
         } else {
+            // Handle special Admin case for convenience
             if (email === "admin@manipal.com" && password === "admin123") {
-                res.json({ success: true, user: { name: "Admin", email: "admin@manipal.com" } });
+                res.json({
+                    success: true,
+                    message: "Admin bypass for development",
+                    user: { name: "Admin", email: "admin@manipal.com", role: "Admin" }
+                });
             } else {
                 res.status(401).json({ success: false, error: 'Invalid credentials' });
             }
         }
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 2.1 Verify OTP Route
+app.post('/api/verify-otp', async (req, res) => {
+    const { email, otp } = req.body;
+    try {
+        const user = await User.findOne({
+            $or: [{ orgEmail: email }, { mail: email }],
+            otp,
+            otpExpires: { $gt: Date.now() }
+        });
+
+        if (user) {
+            // Clear OTP after successful verification
+            user.otp = undefined;
+            user.otpExpires = undefined;
+            await user.save();
+
+            res.json({
+                success: true,
+                user: {
+                    name: user.Name || user.user,
+                    email: user.orgEmail || user.mail,
+                    logo: user.Logo,
+                    role: user.user,
+                    cluster: user.Cluster,
+                    branch: user.Branch,
+                    notifications: {
+                        phoneChange: user.notifyPhoneChange ?? true,
+                        nameChange: user.notifyNameChange ?? true,
+                        monthlyReport: user.notifyMonthlyReport ?? true
+                    }
+                }
+            });
+        } else {
+            res.status(401).json({ success: false, error: "Invalid or expired OTP" });
+        }
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 2.2 Forgot Password Route
+app.post('/api/forgot-password', async (req, res) => {
+    const { email } = req.body;
+    try {
+        const user = await User.findOne({ $or: [{ orgEmail: email }, { mail: email }] });
+        if (!user) {
+            return res.json({ success: true, message: "If that email exists, a reset link has been sent." });
+        }
+
+        const token = crypto.randomBytes(32).toString('hex');
+        user.resetToken = token;
+        user.resetTokenExpires = Date.now() + 3600000; // 1 hour
+        await user.save();
+
+        const resetUrl = `${req.headers.origin}/reset-password?token=${token}&email=${email}`;
+
+        const emailHtml = getEmailTemplate(`
+            <h2 style="color: #333;">Password Reset Request</h2>
+            <p style="font-size: 16px; color: #555;">We received a request to reset your password.</p>
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="${resetUrl}" style="background-color: #7C3A84; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Reset Password</a>
+            </div>
+            <p style="font-size: 14px; color: #777;">
+                This link will be active for one hour. If you didn't request this, you can safely ignore this email.
+            </p>
+            <p style="font-size: 14px; color: #777; margin-top: 20px;">
+                If you need help, contact our <a href="mailto:gmb-dashboard-support@multipliersolutions.com" style="color: #007bff; text-decoration: none;">support team</a>.
+            </p>
+            <p style="word-break: break-all; font-size: 11px; color: #888; margin-top: 20px;">Alternatively, copy and paste this link: ${resetUrl}</p>
+        `);
+
+        await sendEmail(email, "Password Reset - Manipal Insights", emailHtml);
+        res.json({ success: true, message: "Reset link sent to your email" });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 2.3 Reset Password Route
+app.post('/api/reset-password', async (req, res) => {
+    const { email, token, newPassword } = req.body;
+    try {
+        const user = await User.findOne({
+            $or: [{ orgEmail: email }, { mail: email }],
+            resetToken: token,
+            resetTokenExpires: { $gt: Date.now() }
+        });
+
+        if (!user) {
+            return res.status(400).json({ success: false, error: "Invalid or expired reset token" });
+        }
+
+        user.psw = newPassword;
+        user.resetToken = undefined;
+        user.resetTokenExpires = undefined;
+        await user.save();
+
+        res.json({ success: true, message: "Password updated successfully" });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -90,6 +272,9 @@ app.post('/api/search-keywords-impressions', async (req, res) => {
         externalRes.setEncoding('utf8');
         externalRes.on('data', (chunk) => body += chunk);
         externalRes.on('end', () => {
+            if (externalRes.statusCode !== 200) {
+                console.warn(`External API returned status ${externalRes.statusCode}: ${body}`);
+            }
             try {
                 const data = JSON.parse(body);
                 res.json(data);
@@ -134,6 +319,23 @@ app.get('/api/locations', async (req, res) => {
     try {
         const locations = await Location.find({});
         res.json({ success: true, data: locations });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 7.1 Clusters and Branches Route
+app.get('/api/clusters-branches', async (req, res) => {
+    try {
+        const clusters = await Insight.distinct('Cluster', { Cluster: { $ne: null, $ne: "" } });
+        const branches = await Insight.distinct('Branch', { Branch: { $ne: null, $ne: "" } });
+        res.json({
+            success: true,
+            data: {
+                clusters: clusters.sort(),
+                branches: branches.sort()
+            }
+        });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -255,7 +457,104 @@ app.post('/api/reviews', async (req, res) => {
     }
 });
 
-// Start Server
+// 11. User Management CRUD (Admin Only)
+
+// GET All Users
+app.get('/api/users', async (req, res) => {
+    try {
+        const users = await User.find({});
+        res.json({ success: true, data: users });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// CREATE User
+app.post('/api/users', async (req, res) => {
+    try {
+        const newUser = new User(req.body);
+        await newUser.save();
+        res.json({ success: true, user: newUser });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// UPDATE User
+app.put('/api/users/:id', async (req, res) => {
+    try {
+        const updatedUser = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        if (!updatedUser) return res.status(404).json({ success: false, error: "User not found" });
+        res.json({ success: true, user: updatedUser });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// DELETE User
+app.delete('/api/users/:id', async (req, res) => {
+    try {
+        const deletedUser = await User.findByIdAndDelete(req.params.id);
+        if (!deletedUser) return res.status(404).json({ success: false, error: "User not found" });
+        res.json({ success: true, message: "User deleted successfully" });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+// 12. Alerts Endpoints
+
+// GET All Alerts (Latest first)
+app.get('/api/alerts', async (req, res) => {
+    try {
+        const alerts = await Alert.find({}).sort({ timestamp: -1 }).limit(50);
+        res.json({ success: true, data: alerts });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// CREATE Alert (Internal use / Login trigger)
+app.post('/api/alerts', async (req, res) => {
+    try {
+        const newAlert = new Alert(req.body);
+        await newAlert.save();
+        res.json({ success: true, alert: newAlert });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// MARK Alerts as Read
+app.patch('/api/alerts/read', async (req, res) => {
+    try {
+        await Alert.updateMany({ read: false }, { $set: { read: true } });
+        res.json({ success: true, message: "All alerts marked as read" });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// DELETE Specific Alert
+app.delete('/api/alerts/:id', async (req, res) => {
+    try {
+        const deletedAlert = await Alert.findByIdAndDelete(req.params.id);
+        if (!deletedAlert) return res.status(404).json({ success: false, error: "Alert not found" });
+        res.json({ success: true, message: "Alert deleted successfully" });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// DELETE All Alerts
+app.delete('/api/alerts', async (req, res) => {
+    try {
+        await Alert.deleteMany({});
+        res.json({ success: true, message: "All alerts deleted successfully" });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });

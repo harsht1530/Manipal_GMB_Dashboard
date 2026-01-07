@@ -73,8 +73,8 @@ export const LocationsOverview = ({ data, selectedMonths }: LocationsOverviewPro
     { totalProfiles: 0, verifiedProfiles: 0, unverifiedProfiles: 0, needAccess: 0, notInterested: 0 }
   );
 
-  const verificationRate = totals.totalProfiles > 0 
-    ? Math.round((totals.verifiedProfiles / totals.totalProfiles) * 100) 
+  const verificationRate = totals.totalProfiles > 0
+    ? Math.round((totals.verifiedProfiles / totals.totalProfiles) * 100)
     : 0;
 
   return (
@@ -89,7 +89,7 @@ export const LocationsOverview = ({ data, selectedMonths }: LocationsOverviewPro
             Showing: {latestMonth}
           </Badge>
         </div>
-        
+
         {/* Summary Stats */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-4">
           <div className="text-center p-3 bg-muted/50 rounded-lg">
@@ -124,7 +124,7 @@ export const LocationsOverview = ({ data, selectedMonths }: LocationsOverviewPro
         </div>
       </CardHeader>
       <CardContent>
-        <div className="max-h-[300px] overflow-auto">
+        <div className="max-h-[300px] overflow-auto scrollbar-hide">
           <Table>
             <TableHeader>
               <TableRow>
@@ -154,8 +154,8 @@ export const LocationsOverview = ({ data, selectedMonths }: LocationsOverviewPro
             </TableHeader>
             <TableBody>
               {aggregatedData.map((item, index) => {
-                const rate = item.totalProfiles > 0 
-                  ? Math.round((item.verifiedProfiles / item.totalProfiles) * 100) 
+                const rate = item.totalProfiles > 0
+                  ? Math.round((item.verifiedProfiles / item.totalProfiles) * 100)
                   : 0;
                 return (
                   <TableRow key={index} className="hover:bg-muted/50">

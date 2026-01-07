@@ -8,7 +8,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
+import { useAuth } from "@/contexts/AuthContext";
+
 const PhonePage = () => {
+    const { user } = useAuth();
     const [selectedCluster, setSelectedCluster] = useState<string[]>([]);
     const [selectedBranch, setSelectedBranch] = useState<string[]>([]);
     const [selectedMonth, setSelectedMonth] = useState<string[]>([]);
@@ -26,6 +29,20 @@ const PhonePage = () => {
         }, 10);
         return () => clearTimeout(timer);
     }, []);
+
+    useEffect(() => {
+        if (user?.branch) {
+            setSelectedBranch([user.branch]);
+        } else if (user?.cluster) {
+            setSelectedCluster([user.cluster]);
+        }
+    }, [user]);
+
+    const isBranchRestricted = !!user?.branch;
+    const isClusterRestricted = !!user?.cluster && !user?.branch;
+
+    const dashboardTitle = user?.role === "Admin" ? "Phone Directory" : (user?.branch || user?.cluster || "Phone Directory");
+    const dashboardSubtitle = user?.role === "Admin" ? "Manage and view contact details" : `${user?.branch ? 'Branch' : 'Cluster'} Level Access - Contact Details`;
 
     // Get the chronologically latest month from the data
     const latestDataMonth = useMemo(() => {
@@ -84,8 +101,8 @@ const PhonePage = () => {
     if (!mounted || loading) {
         return (
             <DashboardLayout
-                title="Phone Directory"
-                subtitle="Manage and view contact details"
+                title={dashboardTitle}
+                subtitle={dashboardSubtitle}
                 selectedDepartments={selectedDepartments}
                 onDepartmentsChange={(val) => startTransition(() => setSelectedDepartments(val))}
                 selectedRatings={selectedRatings}
@@ -98,8 +115,8 @@ const PhonePage = () => {
 
     return (
         <DashboardLayout
-            title="Phone Directory"
-            subtitle="Manage and view contact details"
+            title={dashboardTitle}
+            subtitle={dashboardSubtitle}
             selectedDepartments={selectedDepartments}
             onDepartmentsChange={(val) => startTransition(() => setSelectedDepartments(val))}
             selectedRatings={selectedRatings}
@@ -127,6 +144,8 @@ const PhonePage = () => {
                     onBranchChange={(val) => startTransition(() => setSelectedBranch(val))}
                     onMonthChange={(val) => startTransition(() => setSelectedMonth(val))}
                     onSpecialityChange={(val) => startTransition(() => setSelectedSpeciality(val))}
+                    hideCluster={isBranchRestricted || isClusterRestricted}
+                    hideBranch={isBranchRestricted}
                 />
 
                 <div className="mb-6">

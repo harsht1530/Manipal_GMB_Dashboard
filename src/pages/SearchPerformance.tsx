@@ -50,7 +50,10 @@ interface SearchKeywordData {
     };
 }
 
+import { useAuth } from "@/contexts/AuthContext";
+
 const SearchPerformance = () => {
+    const { user } = useAuth();
     const { doctors, insights, loading: doctorsLoading } = useMongoData();
 
     // Filters (Passed to DashboardLayout and FilterBar)
@@ -83,6 +86,20 @@ const SearchPerformance = () => {
         return () => clearTimeout(timer);
     }, []);
 
+    useEffect(() => {
+        if (user?.branch) {
+            setSelectedBranch([user.branch]);
+        } else if (user?.cluster) {
+            setSelectedCluster([user.cluster]);
+        }
+    }, [user]);
+
+    const isBranchRestricted = !!user?.branch;
+    const isClusterRestricted = !!user?.cluster && !user?.branch;
+
+    const dashboardTitle = user?.role === "Admin" ? "Search Performance" : (user?.branch || user?.cluster || "Search Performance");
+    const dashboardSubtitle = user?.role === "Admin" ? "Analyze search keywords and impressions" : `${user?.branch ? 'Branch' : 'Cluster'} Level Access - Search Keywords`;
+
     // Derive filter options for FilterBar
     const filterOptions = useMemo(() => {
         if (!mounted || doctorsLoading) {
@@ -95,23 +112,51 @@ const SearchPerformance = () => {
         return { clusters, branches, specialities, months };
     }, [insights, mounted, doctorsLoading]);
 
-    // Filter Doctors List based on ALL global filters
-    const filteredDoctorsList = useMemo(() => {
+    // Get the chronologically latest month from the data
+    const latestDataMonth = useMemo(() => {
+        if (insights.length === 0) return "Nov";
+        const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const uniqueMonths = [...new Set(insights.map(i => i.month))];
+        return uniqueMonths.sort((a, b) => monthOrder.indexOf(b) - monthOrder.indexOf(a))[0];
+    }, [insights]);
+
+    // List of profiles that exist in Insights data for the latest month
+    const insightProfiles = useMemo(() => {
         if (!mounted || doctorsLoading) return [];
-        return doctors.filter(doc => {
-            const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(doc.primaryCategory);
+
+        // Get unique business names from insights for the latest month only
+        const latestMonthInsights = insights.filter(i => i.month === latestDataMonth);
+        const uniqueBusinessNames = [...new Set(latestMonthInsights.map(i => i.businessName))];
+
+        // Match them with doctors to get metadata
+        return uniqueBusinessNames.map(name => {
+            const doctor = doctors.find(d => d.businessName === name);
+            if (doctor) return doctor;
+            // Fallback for profiles not in doctors table
+            const profileData = latestMonthInsights.find(i => i.businessName === name);
+            return {
+                id: name,
+                name: name,
+                businessName: name,
+                cluster: profileData?.cluster || "",
+                branch: profileData?.branch || "",
+                primaryCategory: profileData?.department || "",
+                averageRating: profileData?.rating || 0
+            } as any;
+        });
+    }, [insights, doctors, latestDataMonth, mounted, doctorsLoading]);
+
+    // Filter the derived list based on ALL global filters
+    const filteredDoctorsList = useMemo(() => {
+        return insightProfiles.filter(doc => {
             const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(doc.cluster);
             const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(doc.branch);
-            const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => doc.averageRating >= r);
+            const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(doc.primaryCategory);
+            const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(doc.averageRating || 0) === r);
 
-            // For speciality, we check if any insight for this doctor matches the selected speciality
-            // Or if the Doctor model had it. Since it doesn't, we can skip or find matching insights.
-            // Let's stick to the common ones first.
-            const specialityMatch = selectedSpeciality.length === 0; // Simplified for now
-
-            return departmentMatch && clusterMatch && branchMatch && ratingMatch && specialityMatch;
+            return clusterMatch && branchMatch && departmentMatch && ratingMatch;
         });
-    }, [doctors, selectedDepartments, selectedCluster, selectedBranch, selectedRatings, selectedSpeciality, mounted, doctorsLoading]);
+    }, [insightProfiles, selectedCluster, selectedBranch, selectedDepartments, selectedRatings]);
 
     const handleSearch = async () => {
         if (!selectedDoctorId) {
@@ -119,7 +164,7 @@ const SearchPerformance = () => {
             return;
         }
 
-        const selectedDoctor = doctors.find(d => d.id === selectedDoctorId);
+        const selectedDoctor = insightProfiles.find(d => d.id === selectedDoctorId);
         if (!selectedDoctor) {
             setError("Selected profile not found.");
             return;
@@ -164,8 +209,18 @@ const SearchPerformance = () => {
 
             if (result.searchKeywordsCounts) {
                 setData(result.searchKeywordsCounts);
+            } else if (result.error) {
+                // Handle nested error object from Google Business API
+                const errorMessage = typeof result.error === 'object'
+                    ? (result.error.message || result.error.status || "Permission Denied")
+                    : result.error;
+
+                if (result.error.code === 403 || result.error.status === "PERMISSION_DENIED") {
+                    throw new Error("Profile Permission Denied: This GMB profile doesn't have the required permissions to share search keyword data. Please ensure it is correctly verified and linked.");
+                }
+
+                throw new Error(errorMessage);
             } else {
-                if (result.error) throw new Error(result.error);
                 setData([]);
             }
         } catch (err: any) {
@@ -179,8 +234,8 @@ const SearchPerformance = () => {
     if (!mounted || doctorsLoading) {
         return (
             <DashboardLayout
-                title="Search Performance"
-                subtitle="Analyze search keywords and impressions"
+                title={dashboardTitle}
+                subtitle={dashboardSubtitle}
                 selectedDepartments={selectedDepartments}
                 onDepartmentsChange={(val) => startTransition(() => setSelectedDepartments(val))}
                 selectedRatings={selectedRatings}
@@ -193,8 +248,8 @@ const SearchPerformance = () => {
 
     return (
         <DashboardLayout
-            title="Search Performance"
-            subtitle="Analyze search keywords and impressions"
+            title={dashboardTitle}
+            subtitle={dashboardSubtitle}
             selectedDepartments={selectedDepartments}
             onDepartmentsChange={(val) => startTransition(() => setSelectedDepartments(val))}
             selectedRatings={selectedRatings}
@@ -215,6 +270,8 @@ const SearchPerformance = () => {
                 onMonthChange={(val) => startTransition(() => setSelectedMonth(val))}
                 onSpecialityChange={(val) => startTransition(() => setSelectedSpeciality(val))}
                 hideMonth={true}
+                hideCluster={isBranchRestricted || isClusterRestricted}
+                hideBranch={isBranchRestricted}
             />
 
             <Alert className="mb-6 bg-blue-50 border-blue-200">
@@ -236,7 +293,12 @@ const SearchPerformance = () => {
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end">
                         {/* Profile Selector (Combobox) */}
                         <div className="md:col-span-1 flex flex-col gap-2">
-                            <label className="text-sm font-semibold text-foreground/80">Select Profile</label>
+                            <label className="text-sm font-semibold text-foreground/80 flex justify-between items-center">
+                                Select Profile ({latestDataMonth})
+                                <span className="text-[10px] font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded-md">
+                                    {filteredDoctorsList.length} profiles
+                                </span>
+                            </label>
                             <Popover open={comboOpen} onOpenChange={setComboOpen}>
                                 <PopoverTrigger asChild>
                                     <Button
@@ -248,7 +310,7 @@ const SearchPerformance = () => {
                                     >
                                         <span className="truncate">
                                             {selectedDoctorId
-                                                ? doctors.find((doctor) => doctor.id === selectedDoctorId)?.name
+                                                ? (doctors.find((doctor) => doctor.id === selectedDoctorId)?.name || selectedDoctorId)
                                                 : "Select profile..."}
                                         </span>
                                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -289,9 +351,6 @@ const SearchPerformance = () => {
                                     </Command>
                                 </PopoverContent>
                             </Popover>
-                            <p className="text-[10px] text-muted-foreground">
-                                {filteredDoctorsList.length} profiles available with current filters
-                            </p>
                         </div>
 
                         {/* Start Date */}

@@ -16,7 +16,10 @@ import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { ReviewSummary } from "@/components/dashboard/ReviewSummary";
 import { cn } from "@/lib/utils";
 
+import { useAuth } from "@/contexts/AuthContext";
+
 const Index = () => {
+  const { user } = useAuth();
   const [selectedCluster, setSelectedCluster] = useState<string[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string[]>([]);
   const [selectedMonth, setSelectedMonth] = useState<string[]>([]);
@@ -34,6 +37,20 @@ const Index = () => {
     }, 10);
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (user?.branch) {
+      setSelectedBranch([user.branch]);
+    } else if (user?.cluster) {
+      setSelectedCluster([user.cluster]);
+    }
+  }, [user]);
+
+  const isBranchRestricted = !!user?.branch;
+  const isClusterRestricted = !!user?.cluster && !user?.branch;
+
+  const dashboardTitle = user?.role === "Admin" ? "Dashboard" : (user?.branch || user?.cluster || "Dashboard");
+  const dashboardSubtitle = user?.role === "Admin" ? "Google Business Profile Analytics Overview" : `${user?.branch ? 'Branch' : 'Cluster'} Level Access Overview`;
 
   // Derive unique filter options from the insights data with dependencies
   const filterOptions = useMemo(() => {
@@ -88,12 +105,32 @@ const Index = () => {
 
   // Calculate total reviews and average rating
   const reviewStats = useMemo(() => {
-    const totalReviews = filteredData.reduce((acc, item) => acc + (item.review || 0), 0);
+    const totalReviews = Math.round(filteredData.reduce((acc, item) => acc + (item.review || 0), 0));
     const validRatings = filteredData.filter(item => item.rating > 0);
     const averageRating = validRatings.length > 0
       ? validRatings.reduce((acc, item) => acc + item.rating, 0) / validRatings.length
       : 0;
-    return { totalReviews, averageRating };
+
+    // Calculate rating distribution
+    const distribution = [
+      { name: "5 Stars", value: 0, color: "#22c55e" },
+      { name: "4 Stars", value: 0, color: "#84cc16" },
+      { name: "3 Stars", value: 0, color: "#eab308" },
+      { name: "2 Stars", value: 0, color: "#f97316" },
+      { name: "1 Star", value: 0, color: "#ef4444" },
+      { name: "0 Stars", value: 0, color: "#94a3b8" },
+    ];
+
+    filteredData.forEach(item => {
+      if (item.rating >= 4.5) distribution[0].value += Math.round(item.review || 0);
+      else if (item.rating >= 3.5) distribution[1].value += Math.round(item.review || 0);
+      else if (item.rating >= 2.5) distribution[2].value += Math.round(item.review || 0);
+      else if (item.rating >= 1.5) distribution[3].value += Math.round(item.review || 0);
+      else if (item.rating >= 0.5) distribution[4].value += Math.round(item.review || 0);
+      else distribution[5].value += Math.round(item.review || 0);
+    });
+
+    return { totalReviews, averageRating, ratingDistribution: distribution };
   }, [filteredData]);
 
   // Get the chronologically latest month from the data
@@ -140,13 +177,27 @@ const Index = () => {
       );
 
       const branchGroups = filteredInsights.reduce((acc, i) => {
-        if (!acc[i.branch]) acc[i.branch] = new Set();
-        acc[i.branch].add(i.businessName);
-        return acc;
-      }, {} as Record<string, Set<string>>);
+        if (!acc[i.branch]) {
+          acc[i.branch] = {
+            names: new Set<string>(),
+            verifiedCount: 0
+          };
+        }
 
-      return Object.entries(branchGroups).map(([branch, nameSet]) => {
-        const count = nameSet.size;
+        if (!acc[i.branch].names.has(i.businessName)) {
+          acc[i.branch].names.add(i.businessName);
+          // Check if doctor is verified (has a placeId)
+          const doctor = doctors.find(d => (d.businessName || "").trim().toLowerCase() === (i.businessName || "").trim().toLowerCase());
+          if (doctor && doctor.placeId) {
+            acc[i.branch].verifiedCount += 1;
+          }
+        }
+        return acc;
+      }, {} as Record<string, { names: Set<string>, verifiedCount: number }>);
+
+      return Object.entries(branchGroups).map(([branch, data]) => {
+        const totalCount = data.names.size;
+        const verifiedCount = data.verifiedCount;
         const firstDoc = filteredInsights.find(i => i.branch === branch);
         return {
           id: `dynamic-${branch}`,
@@ -154,8 +205,8 @@ const Index = () => {
           cluster: firstDoc?.cluster || "",
           unitName: branch,
           department: "Multiple",
-          totalProfiles: count,
-          verifiedProfiles: count,
+          totalProfiles: totalCount,
+          verifiedProfiles: totalCount,
           unverifiedProfiles: 0,
           needAccess: 0,
           notInterested: 0,
@@ -177,7 +228,58 @@ const Index = () => {
     });
   }, [insights, locations, selectedCluster, selectedBranch, selectedSpeciality, selectedDepartments, selectedRatings, selectedMonth, latestDataMonth]);
 
-  const metrics = getAggregatedMetrics(filteredData);
+  // Dynamic metrics calculation for cumulative totals and trends
+  const dynamicMetrics = useMemo(() => {
+    const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+    // 1. Main value is ALWAYS the sum of all filtered data
+    const aggregatedCurrent = getAggregatedMetrics(filteredData);
+
+    // 2. Trend (%) is calculated using the latest month in the selection vs its previous month
+    const latestMonth = selectedMonth.length > 0
+      ? selectedMonth.sort((a, b) => monthOrder.indexOf(b) - monthOrder.indexOf(a))[0]
+      : latestDataMonth;
+
+    const prevMonthIndex = monthOrder.indexOf(latestMonth) - 1;
+    const prevMonth = prevMonthIndex >= 0 ? monthOrder[prevMonthIndex] : null;
+
+    const getMonthAggregated = (m: string | null) => {
+      if (!m) return getAggregatedMetrics([]);
+      const data = insights.filter(item => {
+        const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(item.cluster);
+        const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(item.branch);
+        const specialityMatch = selectedSpeciality.length === 0 || selectedSpeciality.includes(item.speciality);
+        const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(item.department);
+        const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(item.rating) === r);
+        return item.month === m && clusterMatch && branchMatch && specialityMatch && departmentMatch && ratingMatch;
+      });
+      return getAggregatedMetrics(data);
+    };
+
+    const latestMonthData = getMonthAggregated(latestMonth);
+    const prevMonthData = getMonthAggregated(prevMonth);
+
+    const calcChange = (curr: number, prev: number) => {
+      if (prev === 0) return curr > 0 ? 100 : 0;
+      return parseFloat(((curr - prev) / prev * 100).toFixed(1));
+    };
+
+    return {
+      current: aggregatedCurrent,
+      changes: {
+        googleSearchMobile: calcChange(latestMonthData.googleSearchMobile, prevMonthData.googleSearchMobile),
+        googleSearchDesktop: calcChange(latestMonthData.googleSearchDesktop, prevMonthData.googleSearchDesktop),
+        googleMapsMobile: calcChange(latestMonthData.googleMapsMobile, prevMonthData.googleMapsMobile),
+        googleMapsDesktop: calcChange(latestMonthData.googleMapsDesktop, prevMonthData.googleMapsDesktop),
+        totalCalls: calcChange(latestMonthData.totalCalls, prevMonthData.totalCalls),
+        totalDirections: calcChange(latestMonthData.totalDirections, prevMonthData.totalDirections),
+        totalWebsiteClicks: calcChange(latestMonthData.totalWebsiteClicks, prevMonthData.totalWebsiteClicks),
+        totalSearchImpressions: calcChange(latestMonthData.totalSearchImpressions, prevMonthData.totalSearchImpressions),
+      }
+    };
+  }, [insights, filteredData, latestDataMonth, selectedCluster, selectedBranch, selectedMonth, selectedSpeciality, selectedDepartments, selectedRatings]);
+
+  const metrics = dynamicMetrics.current;
 
   const handleExport = () => {
     // 1. Insights Data Sheet
@@ -265,8 +367,8 @@ const Index = () => {
   if (!mounted || loading) {
     return (
       <DashboardLayout
-        title="Dashboard"
-        subtitle="Google Business Profile Analytics Overview"
+        title={dashboardTitle}
+        subtitle={dashboardSubtitle}
         selectedDepartments={selectedDepartments}
         onDepartmentsChange={setSelectedDepartments}
         selectedRatings={selectedRatings}
@@ -279,8 +381,8 @@ const Index = () => {
 
   return (
     <DashboardLayout
-      title="Dashboard"
-      subtitle="Google Business Profile Analytics Overview"
+      title={dashboardTitle}
+      subtitle={dashboardSubtitle}
       selectedDepartments={selectedDepartments}
       onDepartmentsChange={(val) => startTransition(() => setSelectedDepartments(val))}
       selectedRatings={selectedRatings}
@@ -297,7 +399,7 @@ const Index = () => {
         )}
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-xl font-bold text-foreground">Analytics Overview</h2>
+            <h2 className="text-xl font-bold text-foreground">Analytics Overview {user?.branch || user?.cluster ? `(${user?.branch || user?.cluster})` : ''}</h2>
             <p className="text-sm text-muted-foreground">Detailed metrics and performance trends</p>
           </div>
           <Button onClick={handleExport} className="gap-2 bg-primary hover:bg-primary/90">
@@ -319,19 +421,21 @@ const Index = () => {
           onBranchChange={(val) => startTransition(() => setSelectedBranch(val))}
           onMonthChange={(val) => startTransition(() => setSelectedMonth(val))}
           onSpecialityChange={(val) => startTransition(() => setSelectedSpeciality(val))}
+          hideCluster={isBranchRestricted || isClusterRestricted}
+          hideBranch={isBranchRestricted}
         />
 
         {/* Metrics Grid - 2 rows of 4 cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
-          <MetricCard title="Search Mobile" value={metrics.googleSearchMobile} change={12.5} icon={Smartphone} delay={0} />
-          <MetricCard title="Search Desktop" value={metrics.googleSearchDesktop} change={8.3} icon={Monitor} delay={50} />
-          <MetricCard title="Maps Mobile" value={metrics.googleMapsMobile} change={15.2} icon={Map} delay={100} />
-          <MetricCard title="Maps Desktop" value={metrics.googleMapsDesktop} change={6.1} icon={MapPin} delay={150} />
+          <MetricCard title="Search Mobile" value={metrics.googleSearchMobile} change={dynamicMetrics.changes.googleSearchMobile} icon={Smartphone} delay={0} />
+          <MetricCard title="Search Desktop" value={metrics.googleSearchDesktop} change={dynamicMetrics.changes.googleSearchDesktop} icon={Monitor} delay={50} />
+          <MetricCard title="Maps Mobile" value={metrics.googleMapsMobile} change={dynamicMetrics.changes.googleMapsMobile} icon={Map} delay={100} />
+          <MetricCard title="Maps Desktop" value={metrics.googleMapsDesktop} change={dynamicMetrics.changes.googleMapsDesktop} icon={MapPin} delay={150} />
 
-          <MetricCard title="Phone Calls" value={metrics.totalCalls} change={5.8} icon={Phone} delay={200} />
-          <MetricCard title="Directions" value={metrics.totalDirections} change={9.4} icon={Navigation} delay={250} />
-          <MetricCard title="Website Clicks" value={metrics.totalWebsiteClicks} change={-2.4} icon={Globe} delay={300} />
-          <MetricCard title="Total Searches" value={metrics.totalSearchImpressions} change={10.2} icon={Search} delay={350} />
+          <MetricCard title="Phone Calls" value={metrics.totalCalls} change={dynamicMetrics.changes.totalCalls} icon={Phone} delay={200} />
+          <MetricCard title="Directions" value={metrics.totalDirections} change={dynamicMetrics.changes.totalDirections} icon={Navigation} delay={250} />
+          <MetricCard title="Website Clicks" value={metrics.totalWebsiteClicks} change={dynamicMetrics.changes.totalWebsiteClicks} icon={Globe} delay={300} />
+          <MetricCard title="Total Searches" value={metrics.totalSearchImpressions} change={dynamicMetrics.changes.totalSearchImpressions} icon={Search} delay={350} />
         </div>
 
         <div className="mb-6">
@@ -357,7 +461,11 @@ const Index = () => {
         {/* Summary Row - 2 Columns */}
         <div className="grid gap-6 lg:grid-cols-2 mb-6">
           <TopPerformers data={insights.filter(i => i.month === latestDataMonth)} />
-          <ReviewSummary totalReviews={reviewStats.totalReviews} averageRating={reviewStats.averageRating} />
+          <ReviewSummary
+            totalReviews={reviewStats.totalReviews}
+            averageRating={reviewStats.averageRating}
+            ratingDistribution={reviewStats.ratingDistribution}
+          />
         </div>
       </div>
     </DashboardLayout>

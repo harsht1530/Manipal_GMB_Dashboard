@@ -15,16 +15,17 @@ interface DashboardLayoutProps {
   onRatingsChange?: (ratings: number[]) => void;
 }
 
-export const DashboardLayout = ({ 
-  children, 
-  title, 
+export const DashboardLayout = ({
+  children,
+  title,
   subtitle,
   selectedDepartments = [],
-  onDepartmentsChange = () => {},
+  onDepartmentsChange = () => { },
   selectedRatings = [],
-  onRatingsChange = () => {},
+  onRatingsChange = () => { },
 }: DashboardLayoutProps) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
     <div className="min-h-screen bg-background">
@@ -44,7 +45,9 @@ export const DashboardLayout = ({
         "lg:block",
         mobileMenuOpen ? "block" : "hidden"
       )}>
-        <Sidebar 
+        <Sidebar
+          collapsed={collapsed}
+          setCollapsed={setCollapsed}
           selectedDepartments={selectedDepartments}
           onDepartmentsChange={onDepartmentsChange}
           selectedRatings={selectedRatings}
@@ -61,7 +64,10 @@ export const DashboardLayout = ({
       )}
 
       {/* Main Content */}
-      <main className="lg:ml-64 min-h-screen transition-all duration-300">
+      <main className={cn(
+        "min-h-screen transition-all duration-300",
+        collapsed ? "lg:ml-20" : "lg:ml-64"
+      )}>
         <Header title={title} subtitle={subtitle} />
         <div className="p-6">
           {children}

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useTransition } from "react";
+import React, { useState, useMemo, useEffect, useTransition, useDeferredValue } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,8 +7,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMongoData, DoctorData, InsightData } from "@/hooks/useMongoData";
-import { DoctorPerformanceCharts } from "@/components/dashboard/DoctorPerformanceCharts";
+import { DoctorAggregatedStats } from "@/components/dashboard/DoctorAggregatedStats";
 import { FilterBar } from "@/components/dashboard/FilterBar";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Star,
   MapPin,
@@ -21,10 +34,16 @@ import {
   BarChart3,
   Trophy,
   Loader2,
+  Check,
+  ChevronsUpDown,
+  Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+import { useAuth } from "@/contexts/AuthContext";
+
 const Doctors = () => {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCluster, setSelectedCluster] = useState<string[]>([]);
@@ -33,10 +52,12 @@ const Doctors = () => {
   const [selectedSpeciality, setSelectedSpeciality] = useState<string[]>([]);
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
   const [selectedRatings, setSelectedRatings] = useState<number[]>([]);
+  const [comboOpen, setComboOpen] = useState(false);
 
   const { doctors, insights, loading } = useMongoData();
   const [mounted, setMounted] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const deferredSearchQuery = useDeferredValue(searchQuery);
 
   useEffect(() => {
     // Small delay to ensure the route transition is visible and responsive
@@ -45,6 +66,20 @@ const Doctors = () => {
     }, 10);
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (user?.branch) {
+      setSelectedBranch([user.branch]);
+    } else if (user?.cluster) {
+      setSelectedCluster([user.cluster]);
+    }
+  }, [user]);
+
+  const isBranchRestricted = !!user?.branch;
+  const isClusterRestricted = !!user?.cluster && !user?.branch;
+
+  const dashboardTitle = user?.role === "Admin" ? "Profiles" : (user?.branch || user?.cluster || "Profiles");
+  const dashboardSubtitle = user?.role === "Admin" ? "Manage profiles and rankings" : `${user?.branch ? 'Branch' : 'Cluster'} Level Access - Profiles`;
 
   // Derive unique filter options from the insights data with dependencies
   const filterOptions = useMemo(() => {
@@ -72,6 +107,14 @@ const Doctors = () => {
     return { clusters, branches, months, specialities };
   }, [insights, selectedDepartments, selectedCluster, mounted, loading]);
 
+  // Get the chronologically latest month from the data
+  const latestDataMonth = useMemo(() => {
+    if (insights.length === 0) return "Nov";
+    const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const uniqueMonths = [...new Set(insights.map(i => i.month))];
+    return uniqueMonths.sort((a, b) => monthOrder.indexOf(b) - monthOrder.indexOf(a))[0];
+  }, [insights]);
+
   // Pre-calculate latest month data for all doctors for $O(1)$ lookup in filters
   const latestMonthDataMap = useMemo(() => {
     if (!mounted || loading) return {};
@@ -93,6 +136,43 @@ const Doctors = () => {
     return map;
   }, [insights, mounted, loading]);
 
+  // Derive validated business names for search (Last available month + availability check + filters)
+  const validSearchProfiles = useMemo(() => {
+    if (!mounted || loading || insights.length === 0) return [];
+
+    return doctors.filter(doctor => {
+      const docBusinessName = (doctor.businessName || "").trim().toLowerCase();
+
+      // Cluster & Branch Filters
+      const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(doctor.cluster);
+      const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(doctor.branch);
+
+      // Latest Insight Data for Department & Rating filtering
+      const latestData = latestMonthDataMap[docBusinessName];
+      if (!latestData) return false;
+
+      // Ensure it has data for the latest month
+      if (latestData.month !== latestDataMonth) return false;
+
+      // Profile Type (Department) Filter
+      const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(latestData.department);
+
+      // Speciality Filter
+      const specialityMatch = selectedSpeciality.length === 0 || specialityVariableMatch(latestData.speciality, selectedSpeciality);
+
+      // Rating Filter
+      const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(latestData.rating) === r);
+
+      return clusterMatch && branchMatch && departmentMatch && ratingMatch && specialityMatch;
+    })
+      .map(doc => ({
+        id: doc.id,
+        name: doc.name,
+        businessName: doc.businessName
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [doctors, insights, latestDataMonth, latestMonthDataMap, selectedCluster, selectedBranch, selectedDepartments, selectedRatings, selectedSpeciality, mounted, loading]);
+
   const getRankingScore = (doctor: DoctorData) => {
     // Score based on number of keywords in Top 10
     return doctor.labels.filter(l => l.rank > 0 && l.rank <= 10).length;
@@ -109,28 +189,29 @@ const Doctors = () => {
         // vlookup: Only show profiles whose business_name matches "Business name" in insights
         if (!docBusinessName || !validBusinessNames.has(docBusinessName)) return false;
 
-        // Search Filter
-        const matchesSearch = searchQuery === "" ||
-          doctor.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          doctor.primaryCategory.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          doctor.branch.toLowerCase().includes(searchQuery.toLowerCase());
+        // Search Filter (Using deferred search query for performance)
+        const lowerSearch = deferredSearchQuery.toLowerCase();
+        const matchesSearch = deferredSearchQuery === "" ||
+          doctor.name.toLowerCase().includes(lowerSearch) ||
+          doctor.primaryCategory.toLowerCase().includes(lowerSearch) ||
+          doctor.branch.toLowerCase().includes(lowerSearch);
 
         // Cluster & Branch Filters
         const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(doctor.cluster);
         const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(doctor.branch);
 
         // Latest Insight Data for Department & Rating filtering
-        const latestData = latestMonthDataMap[(doctor.businessName || "").trim().toLowerCase()];
+        const latestData = latestMonthDataMap[docBusinessName];
         if (!latestData) return false;
 
         // Profile Type (Department) Filter
         const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(latestData.department);
 
         // Speciality Filter
-        const specialityMatch = selectedSpeciality.length === 0 || selectedSpeciality.includes(latestData.speciality);
+        const specialityMatch = selectedSpeciality.length === 0 || specialityVariableMatch(latestData.speciality, selectedSpeciality);
 
-        // Rating Filter (Applying to the overall doctor rating for profile matching)
-        const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => doctor.averageRating >= r);
+        // Rating Filter (Using latest insight data rating, not doctor.averageRating)
+        const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(latestData.rating) === r);
 
         return matchesSearch && clusterMatch && branchMatch && departmentMatch && ratingMatch && specialityMatch;
       })
@@ -140,13 +221,18 @@ const Doctors = () => {
         if (scoreA !== scoreB) return scoreB - scoreA;
         return b.averageRating - a.averageRating;
       });
-  }, [doctors, insights, searchQuery, selectedCluster, selectedBranch, selectedDepartments, selectedRatings, selectedSpeciality, latestMonthDataMap, mounted, loading]);
+  }, [doctors, insights, deferredSearchQuery, selectedCluster, selectedBranch, selectedDepartments, selectedRatings, selectedSpeciality, latestMonthDataMap, mounted, loading]);
+
+  function specialityVariableMatch(docSpeciality: string, selected: string[]) {
+    if (selected.length === 0) return true;
+    return selected.includes(docSpeciality);
+  }
 
   if (!mounted || loading) {
     return (
       <DashboardLayout
-        title="Doctors"
-        subtitle="Manage doctor profiles and rankings"
+        title={dashboardTitle}
+        subtitle={dashboardSubtitle}
         selectedDepartments={selectedDepartments}
         onDepartmentsChange={(val) => startTransition(() => setSelectedDepartments(val))}
         selectedRatings={selectedRatings}
@@ -159,8 +245,8 @@ const Doctors = () => {
 
   return (
     <DashboardLayout
-      title="Doctors"
-      subtitle="Manage doctor profiles and rankings"
+      title={dashboardTitle}
+      subtitle={dashboardSubtitle}
       selectedDepartments={selectedDepartments}
       onDepartmentsChange={(val) => startTransition(() => setSelectedDepartments(val))}
       selectedRatings={selectedRatings}
@@ -169,32 +255,115 @@ const Doctors = () => {
       <FilterBar
         selectedCluster={selectedCluster}
         selectedBranch={selectedBranch}
-        selectedMonth={selectedMonth}
+        selectedMonth={[]}
         selectedSpeciality={selectedSpeciality}
         clusterOptions={filterOptions.clusters}
         branchOptions={filterOptions.branches}
-        monthOptions={filterOptions.months}
+        monthOptions={[]}
         specialityOptions={filterOptions.specialities}
         onClusterChange={(val) => startTransition(() => setSelectedCluster(val))}
         onBranchChange={(val) => startTransition(() => setSelectedBranch(val))}
-        onMonthChange={(val) => startTransition(() => setSelectedMonth(val))}
+        onMonthChange={() => { }}
         onSpecialityChange={(val) => startTransition(() => setSelectedSpeciality(val))}
+        hideCluster={isBranchRestricted || isClusterRestricted}
+        hideBranch={isBranchRestricted}
+        hideMonth={true}
       />
 
-      {/* Search Bar */}
-      <div className="relative mb-6 animate-fade-in">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search doctors by name, speciality, or branch..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10 max-w-md border-primary/20 focus:border-primary"
-        />
+      {/* Search Bar / Profile Selector */}
+      <div className="relative mb-6 animate-fade-in flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+        <div className="w-full max-w-md">
+          <label className="text-xs font-semibold text-muted-foreground mb-1.5 flex items-center gap-1.5 ml-1">
+            <Search className="h-3 w-3" />
+            Search Profiles
+          </label>
+          <Popover open={comboOpen} onOpenChange={setComboOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={comboOpen}
+                className="w-full justify-between text-left font-normal border-primary/20 focus:border-primary bg-background h-10"
+              >
+                <span className="truncate">
+                  {searchQuery ? searchQuery : "Search profiles by name..."}
+                </span>
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              className="p-0 w-[--radix-popover-trigger-width] min-w-[300px]"
+              align="start"
+            >
+              <Command className="w-full">
+                <CommandInput placeholder="Type name to search..." className="h-9" />
+                <CommandList className="max-h-[300px]">
+                  <CommandEmpty>No profile found.</CommandEmpty>
+                  <CommandGroup>
+                    <CommandItem
+                      value="all"
+                      onSelect={() => {
+                        startTransition(() => {
+                          setSearchQuery("");
+                        });
+                        setComboOpen(false);
+                      }}
+                      className="cursor-pointer text-primary font-medium"
+                    >
+                      <Check
+                        className={cn(
+                          "mr-2 h-4 w-4",
+                          searchQuery === "" ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                      All Profiles
+                    </CommandItem>
+                    {validSearchProfiles.map((profile) => (
+                      <CommandItem
+                        key={profile.id}
+                        value={profile.name}
+                        onSelect={() => {
+                          startTransition(() => {
+                            setSearchQuery(profile.name === searchQuery ? "" : profile.name);
+                          });
+                          setComboOpen(false);
+                        }}
+                        className="cursor-pointer"
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            searchQuery === profile.name ? "opacity-100" : "opacity-0"
+                          )}
+                        />
+                        <div className="flex flex-col">
+                          <span>{profile.name}</span>
+                          <span className="text-[10px] text-muted-foreground truncate">{profile.businessName}</span>
+                        </div>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        {searchQuery && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSearchQuery("")}
+            className="text-xs text-muted-foreground hover:text-primary mt-6 sm:mt-5"
+          >
+            Clear Search
+          </Button>
+        )}
       </div>
 
       {/* Doctors Grid */}
-      <div className={cn("relative transition-all duration-300", isPending ? "opacity-60" : "opacity-100")}>
-        {isPending && (
+      <div className={cn("relative transition-all duration-300", (isPending || deferredSearchQuery !== searchQuery) ? "opacity-60" : "opacity-100")}>
+        {(isPending || deferredSearchQuery !== searchQuery) && (
           <div className="absolute inset-x-0 -top-4 bottom-0 z-[60] flex items-start justify-center pt-32 bg-background/5 backdrop-blur-[1px] rounded-xl pointer-events-none">
             <div className="flex items-center gap-3 px-4 py-2 bg-background/80 border border-border shadow-lg rounded-full animate-in fade-in zoom-in duration-300">
               <Loader2 className="h-5 w-5 animate-spin text-primary" />
@@ -222,7 +391,7 @@ const Doctors = () => {
         {filteredDoctors.length === 0 && (
           <div className="text-center py-24 text-muted-foreground animate-fade-in">
             <Search className="h-12 w-12 mx-auto mb-4 opacity-20" />
-            <p className="text-lg">No doctors found matching your search or filters.</p>
+            <p className="text-lg">No profiles found matching your search or filters.</p>
             <Button
               variant="link"
               onClick={() => {
@@ -251,8 +420,8 @@ interface DoctorCardProps {
   rankingScore: number;
 }
 
-const DoctorCard = ({ doctor, index, insights, latestData, onViewDetails, rankingScore }: DoctorCardProps) => {
-  const [showCharts, setShowCharts] = useState(false);
+const DoctorCard = React.memo(({ doctor, index, insights, latestData, onViewDetails, rankingScore }: DoctorCardProps) => {
+  const [showStats, setShowStats] = useState(false);
   const rankedLabels = doctor.labels.filter((l) => l.rank > 0 && l.rank <= 10);
   const topRank = rankedLabels.length > 0 ? Math.min(...rankedLabels.map((l) => l.rank)) : null;
   const totalSearch = latestData
@@ -345,10 +514,16 @@ const DoctorCard = ({ doctor, index, insights, latestData, onViewDetails, rankin
           </div>
         </div>
 
-        {/* Performance Charts Toggle */}
-        {showCharts && (
-          <div className="pt-2">
-            <DoctorPerformanceCharts data={insights} doctorName={doctor.businessName} />
+        {/* Aggregated Stats View */}
+        {showStats && (
+          <div className="pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="mb-3 flex items-center justify-between">
+              <h4 className="text-sm font-bold text-primary flex items-center gap-2">
+                <BarChart3 className="h-4 w-4" />
+                Aggregated Lifetime Performance
+              </h4>
+            </div>
+            <DoctorAggregatedStats data={insights} doctorName={doctor.businessName} />
           </div>
         )}
 
@@ -375,10 +550,10 @@ const DoctorCard = ({ doctor, index, insights, latestData, onViewDetails, rankin
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => setShowCharts(!showCharts)}
+            onClick={() => setShowStats(!showStats)}
           >
             <BarChart3 className="h-4 w-4 mr-1" />
-            {showCharts ? "Hide Charts" : "Show Charts"}
+            {showStats ? "Hide Stats" : "Show Counts"}
           </Button>
           <Button variant="default" size="sm" onClick={onViewDetails}>
             <BarChart3 className="h-4 w-4 mr-1" />
@@ -388,7 +563,9 @@ const DoctorCard = ({ doctor, index, insights, latestData, onViewDetails, rankin
       </CardContent>
     </Card>
   );
-};
+});
+
+DoctorCard.displayName = "DoctorCard";
 
 const DoctorsSkeleton = () => {
   return (

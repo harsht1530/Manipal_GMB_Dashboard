@@ -11,6 +11,18 @@ interface MetricCardProps {
   delay?: number;
 }
 
+const formatIndianNumber = (num: number | string) => {
+  const n = typeof num === 'string' ? parseFloat(num) : num;
+  if (isNaN(n)) return num;
+
+  if (n >= 10000000) {
+    return (n / 10000000).toFixed(2) + ' Cr';
+  } else if (n >= 100000) {
+    return (n / 100000).toFixed(2) + ' L';
+  }
+  return n.toLocaleString('en-IN');
+};
+
 export const MetricCard = ({
   title,
   value,
@@ -21,6 +33,7 @@ export const MetricCard = ({
 }: MetricCardProps) => {
   const isPositive = change && change > 0;
   const isNegative = change && change < 0;
+  const formattedValue = formatIndianNumber(value);
 
   return (
     <Card
@@ -31,7 +44,7 @@ export const MetricCard = ({
         <div className="flex items-start justify-between">
           <div className="space-y-2">
             <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            <p className="text-3xl font-bold text-foreground">{value.toLocaleString()}</p>
+            <p className="text-3xl font-bold text-foreground">{formattedValue}</p>
             {change !== undefined && (
               <div
                 className={cn(

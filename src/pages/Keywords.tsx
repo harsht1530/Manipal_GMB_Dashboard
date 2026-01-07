@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/pagination";
 import { useMongoData } from "@/hooks/useMongoData";
 import { Search, Trophy, TrendingUp, Users, Target, Filter, Loader2 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface FlattenedKeyword {
   keyword: string;
@@ -42,6 +43,7 @@ interface FlattenedKeyword {
 }
 
 const Keywords = () => {
+  const { user } = useAuth();
   const { doctors, loading } = useMongoData();
   const [mounted, setMounted] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -56,6 +58,9 @@ const Keywords = () => {
     }, 10);
     return () => clearTimeout(timer);
   }, []);
+
+  const dashboardTitle = user?.role === "Admin" ? "Keywords" : (user?.branch || user?.cluster || "Keywords");
+  const dashboardSubtitle = user?.role === "Admin" ? "Track keyword rankings and competitors" : `${user?.branch ? 'Branch' : 'Cluster'} Level Access - Keyword Tracking`;
 
   // Flatten all keywords from all doctors
   const allKeywords: FlattenedKeyword[] = useMemo(() => {
@@ -188,14 +193,14 @@ const Keywords = () => {
 
   if (!mounted || loading) {
     return (
-      <DashboardLayout title="Keywords" subtitle="Track keyword rankings and competitors">
+      <DashboardLayout title={dashboardTitle} subtitle={dashboardSubtitle}>
         <KeywordsSkeleton />
       </DashboardLayout>
     );
   }
 
   return (
-    <DashboardLayout title="Keywords" subtitle="Track keyword rankings and competitors">
+    <DashboardLayout title={dashboardTitle} subtitle={dashboardSubtitle}>
       <div className={cn("relative transition-all duration-300", isPending ? "opacity-60" : "opacity-100")}>
         {isPending && (
           <div className="absolute inset-0 z-[60] flex items-start justify-center pt-32 bg-background/5 backdrop-blur-[1px] rounded-xl pointer-events-none">

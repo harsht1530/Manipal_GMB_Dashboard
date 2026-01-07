@@ -13,7 +13,7 @@ interface SidebarFiltersProps {
 }
 
 const departments = ["Clinic", "Department", "Doctors", "Hospitals", "MARS"];
-const ratings = [5, 4, 3, 2, 1];
+const ratings = [5, 4, 3, 2, 1, 0];
 
 export const SidebarFilters = ({
   collapsed,
@@ -116,18 +116,31 @@ export const SidebarFilters = ({
                 className="border-sidebar-border"
               />
               <div className="flex items-center gap-1">
-                {Array.from({ length: rating }).map((_, i) => (
-                  <Star
-                    key={i}
-                    className="h-3 w-3 fill-yellow-400 text-yellow-400"
-                  />
-                ))}
-                {Array.from({ length: 5 - rating }).map((_, i) => (
-                  <Star key={i} className="h-3 w-3 text-sidebar-border" />
-                ))}
-                <span className="text-sm text-sidebar-foreground ml-1">
-                  {rating}+
-                </span>
+                {rating > 0 ? (
+                  <>
+                    {Array.from({ length: rating }).map((_, i) => (
+                      <Star
+                        key={i}
+                        className="h-3 w-3 fill-yellow-400 text-yellow-400"
+                      />
+                    ))}
+                    {Array.from({ length: 5 - rating }).map((_, i) => (
+                      <Star key={i} className="h-3 w-3 text-sidebar-border" />
+                    ))}
+                    <span className="text-sm text-sidebar-foreground ml-1">
+                      {rating} Star{rating === 1 ? "" : "s"}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Star key={i} className="h-3 w-3 text-sidebar-border" />
+                    ))}
+                    <span className="text-sm text-sidebar-foreground ml-1">
+                      0 Stars
+                    </span>
+                  </>
+                )}
               </div>
             </label>
           ))}
