@@ -135,8 +135,8 @@ const Index = () => {
 
   // Get the chronologically latest month from the data
   const latestDataMonth = useMemo(() => {
-    if (insights.length === 0) return "Nov";
     const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    if (insights.length === 0) return monthOrder[new Date().getMonth() - 1] || "Dec";
     const uniqueMonths = [...new Set(insights.map(i => i.month))];
     return uniqueMonths.sort((a, b) => monthOrder.indexOf(b) - monthOrder.indexOf(a))[0];
   }, [insights]);
@@ -163,7 +163,7 @@ const Index = () => {
   const processedLocations = useMemo(() => {
     const isSpecialityFiltered = selectedSpeciality.length > 0;
     const isRatingFiltered = selectedRatings.length > 0;
-    const targetMonth = selectedMonth.length > 0 ? selectedMonth[0] : (insights.some(m => m.month === "Nov") ? "Nov" : latestDataMonth);
+    const targetMonth = selectedMonth.length > 0 ? selectedMonth[0] : (insights.some(m => m.month === latestDataMonth) ? latestDataMonth : (insights.some(m => m.month === "Nov") ? "Nov" : latestDataMonth));
 
     if (isSpecialityFiltered || isRatingFiltered) {
       // If rating or speciality are selected, show count of unique business names in target month
@@ -216,8 +216,8 @@ const Index = () => {
     }
 
     // Default: Return locations filtered by sidebar/header filters
-    // If no month is selected, we default to Nov for locations as well
-    const locationsTargetMonth = selectedMonth.length > 0 ? selectedMonth : ["Nov"];
+    // If no month is selected, we default to latestDataMonth for locations as well
+    const locationsTargetMonth = selectedMonth.length > 0 ? selectedMonth : [latestDataMonth];
 
     return locations.filter(loc => {
       const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(loc.cluster);
@@ -228,36 +228,63 @@ const Index = () => {
     });
   }, [insights, locations, selectedCluster, selectedBranch, selectedSpeciality, selectedDepartments, selectedRatings, selectedMonth, latestDataMonth]);
 
-  // Dynamic metrics calculation for cumulative totals and trends
+  // Dynamic metrics calculation for cumulative and month-over-month comparisons
   const dynamicMetrics = useMemo(() => {
     const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const activeMonths = selectedMonth.length > 0 ? selectedMonth : insights.map(i => i.month).filter((v, i, a) => a.indexOf(v) === i);
 
-    // 1. Main value is ALWAYS the sum of all filtered data
-    const aggregatedCurrent = getAggregatedMetrics(filteredData);
+    // Sort active months to find the "earliest" to determine the comparison period
+    const sortedActive = [...activeMonths].sort((a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b));
+    const earliestMonth = sortedActive[0];
+    const periodLength = sortedActive.length;
 
-    // 2. Trend (%) is calculated using the latest month in the selection vs its previous month
-    const latestMonth = selectedMonth.length > 0
-      ? selectedMonth.sort((a, b) => monthOrder.indexOf(b) - monthOrder.indexOf(a))[0]
-      : latestDataMonth;
+    // Determine comparison months
+    let comparisonMonths: string[] = [];
+    if (selectedMonth.length === 0) {
+      // For cumulative view, comparison is latest vs previous month
+      const latestIdx = monthOrder.indexOf(latestDataMonth);
+      const prevIdx = latestIdx - 1;
+      comparisonMonths = prevIdx >= 0 ? [monthOrder[prevIdx]] : [];
+      // Current period for "change" calculation is just the latest month
+    } else {
+      // Comparison period is N months before the earliest selected month
+      const startIdx = monthOrder.indexOf(earliestMonth);
+      for (let i = 1; i <= periodLength; i++) {
+        const compIdx = startIdx - i;
+        if (compIdx >= 0) comparisonMonths.push(monthOrder[compIdx]);
+      }
+    }
 
-    const prevMonthIndex = monthOrder.indexOf(latestMonth) - 1;
-    const prevMonth = prevMonthIndex >= 0 ? monthOrder[prevMonthIndex] : null;
-
-    const getMonthAggregated = (m: string | null) => {
-      if (!m) return getAggregatedMetrics([]);
+    const getAggregatedForMonths = (months: string[], allIfEmpty = false) => {
+      if (months.length === 0 && !allIfEmpty) return getAggregatedMetrics([]);
       const data = insights.filter(item => {
         const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(item.cluster);
         const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(item.branch);
         const specialityMatch = selectedSpeciality.length === 0 || selectedSpeciality.includes(item.speciality);
         const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(item.department);
         const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(item.rating) === r);
-        return item.month === m && clusterMatch && branchMatch && specialityMatch && departmentMatch && ratingMatch;
+        const monthMatch = months.length === 0 ? true : months.includes(item.month);
+        return monthMatch && clusterMatch && branchMatch && specialityMatch && departmentMatch && ratingMatch;
       });
       return getAggregatedMetrics(data);
     };
 
-    const latestMonthData = getMonthAggregated(latestMonth);
-    const prevMonthData = getMonthAggregated(prevMonth);
+    // Main Value: Sum of selected (or all if none)
+    const mainM = getAggregatedForMonths(selectedMonth, true);
+
+    // Comparison Value: For % change
+    let currentComparisonM;
+    let previousComparisonM;
+
+    if (selectedMonth.length === 0) {
+      // Trend: Latest month vs previous month
+      currentComparisonM = getAggregatedForMonths([latestDataMonth]);
+      previousComparisonM = getAggregatedForMonths(comparisonMonths);
+    } else {
+      // Period over Period
+      currentComparisonM = mainM;
+      previousComparisonM = getAggregatedForMonths(comparisonMonths);
+    }
 
     const calcChange = (curr: number, prev: number) => {
       if (prev === 0) return curr > 0 ? 100 : 0;
@@ -265,19 +292,19 @@ const Index = () => {
     };
 
     return {
-      current: aggregatedCurrent,
+      current: mainM,
       changes: {
-        googleSearchMobile: calcChange(latestMonthData.googleSearchMobile, prevMonthData.googleSearchMobile),
-        googleSearchDesktop: calcChange(latestMonthData.googleSearchDesktop, prevMonthData.googleSearchDesktop),
-        googleMapsMobile: calcChange(latestMonthData.googleMapsMobile, prevMonthData.googleMapsMobile),
-        googleMapsDesktop: calcChange(latestMonthData.googleMapsDesktop, prevMonthData.googleMapsDesktop),
-        totalCalls: calcChange(latestMonthData.totalCalls, prevMonthData.totalCalls),
-        totalDirections: calcChange(latestMonthData.totalDirections, prevMonthData.totalDirections),
-        totalWebsiteClicks: calcChange(latestMonthData.totalWebsiteClicks, prevMonthData.totalWebsiteClicks),
-        totalSearchImpressions: calcChange(latestMonthData.totalSearchImpressions, prevMonthData.totalSearchImpressions),
+        googleSearchMobile: calcChange(currentComparisonM.googleSearchMobile, previousComparisonM.googleSearchMobile),
+        googleSearchDesktop: calcChange(currentComparisonM.googleSearchDesktop, previousComparisonM.googleSearchDesktop),
+        googleMapsMobile: calcChange(currentComparisonM.googleMapsMobile, previousComparisonM.googleMapsMobile),
+        googleMapsDesktop: calcChange(currentComparisonM.googleMapsDesktop, previousComparisonM.googleMapsDesktop),
+        totalCalls: calcChange(currentComparisonM.totalCalls, previousComparisonM.totalCalls),
+        totalDirections: calcChange(currentComparisonM.totalDirections, previousComparisonM.totalDirections),
+        totalWebsiteClicks: calcChange(currentComparisonM.totalWebsiteClicks, previousComparisonM.totalWebsiteClicks),
+        totalSearchImpressions: calcChange(currentComparisonM.totalSearchImpressions, previousComparisonM.totalSearchImpressions),
       }
     };
-  }, [insights, filteredData, latestDataMonth, selectedCluster, selectedBranch, selectedMonth, selectedSpeciality, selectedDepartments, selectedRatings]);
+  }, [insights, latestDataMonth, selectedCluster, selectedBranch, selectedMonth, selectedSpeciality, selectedDepartments, selectedRatings]);
 
   const metrics = dynamicMetrics.current;
 

@@ -46,8 +46,8 @@ const PhonePage = () => {
 
     // Get the chronologically latest month from the data
     const latestDataMonth = useMemo(() => {
-        if (!mounted || loading || insights.length === 0) return "Nov";
         const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        if (!mounted || loading || insights.length === 0) return monthOrder[new Date().getMonth() - 1] || "Dec";
         const uniqueMonths = [...new Set(insights.map(i => i.month))];
         return uniqueMonths.sort((a, b) => monthOrder.indexOf(b) - monthOrder.indexOf(a))[0];
     }, [insights, mounted, loading]);

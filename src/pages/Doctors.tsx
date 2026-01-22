@@ -109,8 +109,8 @@ const Doctors = () => {
 
   // Get the chronologically latest month from the data
   const latestDataMonth = useMemo(() => {
-    if (insights.length === 0) return "Nov";
     const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    if (insights.length === 0) return monthOrder[new Date().getMonth() - 1] || "Dec";
     const uniqueMonths = [...new Set(insights.map(i => i.month))];
     return uniqueMonths.sort((a, b) => monthOrder.indexOf(b) - monthOrder.indexOf(a))[0];
   }, [insights]);
@@ -136,41 +136,52 @@ const Doctors = () => {
     return map;
   }, [insights, mounted, loading]);
 
-  // Derive validated business names for search (Last available month + availability check + filters)
+  // Derive limited profiles data specifically for the SEARCH DROPDOWN (latest month only)
   const validSearchProfiles = useMemo(() => {
     if (!mounted || loading || insights.length === 0) return [];
 
-    return doctors.filter(doctor => {
-      const docBusinessName = (doctor.businessName || "").trim().toLowerCase();
+    // 1. Get unique business names from insights for the latest month ONLY
+    const latestInsights = insights.filter(i => i.month === latestDataMonth);
+    const uniqueBusinessNames = [...new Set(latestInsights.map(i => (i.businessName || "").trim().toLowerCase()))].filter(Boolean);
 
-      // Cluster & Branch Filters
-      const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(doctor.cluster);
-      const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(doctor.branch);
+    // 2. Map these to doctor names by checking the doctors table, or fallback to insight name
+    return uniqueBusinessNames
+      .map(bName => {
+        const doctor = doctors.find(d => (d.businessName || "").trim().toLowerCase() === bName);
 
-      // Latest Insight Data for Department & Rating filtering
-      const latestData = latestMonthDataMap[docBusinessName];
-      if (!latestData) return false;
+        // Apply Cluster & Branch Filter if restricted or active
+        if (doctor) {
+          const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(doctor.cluster);
+          const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(doctor.branch);
+          if (!clusterMatch || !branchMatch) return null;
+        } else {
+          // Fallback check for cluster/branch in insights if doctor not found
+          const insightSample = latestInsights.find(i => (i.businessName || "").trim().toLowerCase() === bName);
+          if (insightSample) {
+            const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(insightSample.cluster);
+            const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(insightSample.branch);
+            if (!clusterMatch || !branchMatch) return null;
+          }
+        }
 
-      // Ensure it has data for the latest month
-      if (latestData.month !== latestDataMonth) return false;
+        // Apply Profile Type (Department) Filter
+        const latestInfo = latestMonthDataMap[bName];
+        if (latestInfo) {
+          const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(latestInfo.department);
+          const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(latestInfo.rating) === r);
+          const specialityMatch = selectedSpeciality.length === 0 || latestInfo.speciality && selectedSpeciality.includes(latestInfo.speciality);
 
-      // Profile Type (Department) Filter
-      const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(latestData.department);
+          if (!departmentMatch || !ratingMatch || !specialityMatch) return null;
+        }
 
-      // Speciality Filter
-      const specialityMatch = selectedSpeciality.length === 0 || specialityVariableMatch(latestData.speciality, selectedSpeciality);
-
-      // Rating Filter
-      const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(latestData.rating) === r);
-
-      return clusterMatch && branchMatch && departmentMatch && ratingMatch && specialityMatch;
-    })
-      .map(doc => ({
-        id: doc.id,
-        name: doc.name,
-        businessName: doc.businessName
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+        return {
+          id: doctor?.id || bName,
+          name: doctor?.name || latestInsights.find(i => (i.businessName || "").trim().toLowerCase() === bName)?.businessName || bName,
+          businessName: latestInsights.find(i => (i.businessName || "").trim().toLowerCase() === bName)?.businessName || bName
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.name.localeCompare(b.name)) as { id: string, name: string, businessName: string }[];
   }, [doctors, insights, latestDataMonth, latestMonthDataMap, selectedCluster, selectedBranch, selectedDepartments, selectedRatings, selectedSpeciality, mounted, loading]);
 
   const getRankingScore = (doctor: DoctorData) => {

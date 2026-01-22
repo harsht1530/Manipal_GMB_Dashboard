@@ -62,21 +62,21 @@ export const Sidebar = ({
       )}
     >
       {/* Sidebar Header - Logo & Toggle */}
-      <div className="flex h-20 items-center justify-between px-4 border-b border-sidebar-border">
+      <div className="flex h-20 items-center px-4 border-b border-sidebar-border relative">
         {!collapsed ? (
           <>
-            <div className="flex items-center flex-1">
+            <div className="flex items-center justify-center w-full">
               <img
                 src="https://multipliersolutions.in/manipalhospitals/manipallogo2.png"
                 alt="Logo"
-                className="h-14 w-auto object-contain"
+                className="h-16 w-auto object-contain"
               />
             </div>
             <Button
               variant="ghost"
               size="icon"
               onClick={() => setCollapsed(true)}
-              className="h-8 w-8 text-sidebar-foreground/60 hover:text-sidebar-primary hover:bg-sidebar-primary/10"
+              className="absolute right-2 h-8 w-8 text-sidebar-foreground/60 hover:text-sidebar-primary hover:bg-sidebar-primary/10"
             >
               <ChevronLeft className="h-5 w-5" />
             </Button>

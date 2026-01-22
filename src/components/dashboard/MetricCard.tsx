@@ -11,18 +11,6 @@ interface MetricCardProps {
   delay?: number;
 }
 
-const formatIndianNumber = (num: number | string) => {
-  const n = typeof num === 'string' ? parseFloat(num) : num;
-  if (isNaN(n)) return num;
-
-  if (n >= 10000000) {
-    return (n / 10000000).toFixed(2) + ' Cr';
-  } else if (n >= 100000) {
-    return (n / 100000).toFixed(2) + ' L';
-  }
-  return n.toLocaleString('en-IN');
-};
-
 export const MetricCard = ({
   title,
   value,
@@ -33,7 +21,25 @@ export const MetricCard = ({
 }: MetricCardProps) => {
   const isPositive = change && change > 0;
   const isNegative = change && change < 0;
-  const formattedValue = formatIndianNumber(value);
+
+  const formatIndianNumber = (num: number | string) => {
+    const n = typeof num === 'string' ? parseFloat(num) : num;
+    if (isNaN(n)) return num;
+
+    if (n >= 10000000) {
+      return (n / 10000000).toLocaleString('en-IN', {
+        maximumFractionDigits: 2,
+        minimumFractionDigits: 0
+      }) + ' Cr';
+    }
+    if (n >= 100000) {
+      return (n / 100000).toLocaleString('en-IN', {
+        maximumFractionDigits: 2,
+        minimumFractionDigits: 0
+      }) + ' L';
+    }
+    return n.toLocaleString('en-IN');
+  };
 
   return (
     <Card
@@ -44,7 +50,7 @@ export const MetricCard = ({
         <div className="flex items-start justify-between">
           <div className="space-y-2">
             <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            <p className="text-3xl font-bold text-foreground">{formattedValue}</p>
+            <p className="text-3xl font-bold text-foreground">{formatIndianNumber(value)}</p>
             {change !== undefined && (
               <div
                 className={cn(
@@ -61,7 +67,7 @@ export const MetricCard = ({
                 ) : null}
                 <span>
                   {isPositive ? "+" : ""}
-                  {change}% from last month
+                  {change}% vs prev period
                 </span>
               </div>
             )}

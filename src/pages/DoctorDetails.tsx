@@ -807,7 +807,7 @@ const DoctorDetails = () => {
                             <TrendingUp className="h-6 w-6 text-primary" style={{ transform: 'translateY(2px)' }} />
                             Monthly Insights
                         </h2>
-                        <div className="h-[450px] w-full mb-12 border rounded-lg p-4">
+                        <div className="h-[300px] w-full mb-6 border rounded-lg p-4">
                             <HighchartsReact
                                 highcharts={Highcharts}
                                 options={{
