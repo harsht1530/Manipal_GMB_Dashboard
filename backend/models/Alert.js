@@ -13,6 +13,10 @@ const alertSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    cluster: {
+        type: String,
+        required: false
+    },
     type: {
         type: String,
         default: 'LOGIN'

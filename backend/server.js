@@ -43,7 +43,7 @@ const MANIPAL_LOGO = "https://multipliersolutions.in/manipalhospitals/manipallog
 const sendEmail = async (to, subject, html) => {
     try {
         await transporter.sendMail({
-            from: `"Manipal Insights" <${process.env.SMTP_USER || 'gmb-dashboard-support@multipliersolutions.com'}>`,
+            from: `"GMB Analytics Dashboard" <${process.env.SMTP_USER || 'gmb-dashboard-support@multipliersolutions.com'}>`,
             to,
             subject,
             html
@@ -105,7 +105,7 @@ app.post('/api/login', async (req, res) => {
                 </p>
             `);
 
-            const sent = await sendEmail(user.orgEmail || user.mail, "Login OTP - Manipal Insights", emailHtml);
+            const sent = await sendEmail(user.orgEmail || user.mail, "Login OTP - GMB Analytics Dashboard", emailHtml);
 
             if (sent) {
                 res.json({ success: true, message: "OTP sent to your email", email: user.orgEmail || user.mail });
@@ -200,7 +200,7 @@ app.post('/api/forgot-password', async (req, res) => {
             <p style="word-break: break-all; font-size: 11px; color: #888; margin-top: 20px;">Alternatively, copy and paste this link: ${resetUrl}</p>
         `);
 
-        await sendEmail(email, "Password Reset - Manipal Insights", emailHtml);
+        await sendEmail(email, "Password Reset - GMB Analytics Dashboard", emailHtml);
         res.json({ success: true, message: "Reset link sent to your email" });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -211,20 +211,22 @@ app.post('/api/forgot-password', async (req, res) => {
 app.post('/api/reset-password', async (req, res) => {
     const { email, token, newPassword } = req.body;
     try {
-        const user = await User.findOne({
-            $or: [{ orgEmail: email }, { mail: email }],
-            resetToken: token,
-            resetTokenExpires: { $gt: Date.now() }
-        });
+        const user = await User.findOneAndUpdate(
+            {
+                $or: [{ orgEmail: email }, { mail: email }],
+                resetToken: token,
+                resetTokenExpires: { $gt: Date.now() }
+            },
+            {
+                $set: { psw: newPassword },
+                $unset: { resetToken: 1, resetTokenExpires: 1 }
+            },
+            { new: true }
+        );
 
         if (!user) {
             return res.status(400).json({ success: false, error: "Invalid or expired reset token" });
         }
-
-        user.psw = newPassword;
-        user.resetToken = undefined;
-        user.resetTokenExpires = undefined;
-        await user.save();
 
         res.json({ success: true, message: "Password updated successfully" });
     } catch (error) {
@@ -503,10 +505,28 @@ app.delete('/api/users/:id', async (req, res) => {
 });
 // 12. Alerts Endpoints
 
-// GET All Alerts (Latest first)
+// GET All Alerts (Hierarchical Filtering)
 app.get('/api/alerts', async (req, res) => {
+    const { email, role, cluster } = req.query;
     try {
-        const alerts = await Alert.find({}).sort({ timestamp: -1 }).limit(50);
+        let query = {};
+
+        // Hierarchical Filtering Logic
+        if (email === "harsh@multipliersolutions.com") {
+            // Super Admin: Sees everything
+            query = {};
+        } else if (role === "Admin") {
+            // Admin: Sees only Cluster and Branch logins
+            query = { role: { $in: ["Cluster", "Branch"] } };
+        } else if (role === "Cluster") {
+            // Cluster: Sees only Branch logins for branches under their cluster
+            query = { role: "Branch", cluster: cluster };
+        } else {
+            // Default/Branch: No one sees their own alerts usually, or restricted view
+            query = { _id: null }; // Return nothing
+        }
+
+        const alerts = await Alert.find(query).sort({ timestamp: -1 }).limit(50);
         res.json({ success: true, data: alerts });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });

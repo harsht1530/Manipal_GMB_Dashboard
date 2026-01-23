@@ -43,17 +43,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(userData);
         localStorage.setItem("user", JSON.stringify(userData));
 
-        // Trigger alert for Admin if it's a Cluster or Branch user login
-        // Exception: don't send alerts for harsh@multipliersolutions.com
-        if ((userData.role === "Cluster" || userData.role === "Branch") && userData.email !== "harsh@multipliersolutions.com") {
-            const location = userData.role === "Cluster" ? userData.cluster : userData.branch;
+        // Send login alert to backend
+        // Super Admin (harsh@multipliersolutions.com) sees everything
+        // Admin sees Cluster and Branch logins
+        // Cluster sees Branch logins in their cluster
+
+        // Don't send alert if the logging in user is HARSH (Super Admin)
+        if (userData.email !== "harsh@multipliersolutions.com") {
             fetch("http://localhost:5000/api/alerts", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     user: userData.name,
                     role: userData.role,
-                    location: location || "Unknown",
+                    location: userData.role === "Branch" ? userData.branch : (userData.role === "Cluster" ? userData.cluster : "Dashboard"),
+                    cluster: userData.cluster || null,
                     type: "LOGIN"
                 })
             }).catch(err => console.error("Failed to trigger login alert:", err));

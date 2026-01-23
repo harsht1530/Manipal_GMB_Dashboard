@@ -28,12 +28,18 @@ export const Header = ({ title, subtitle }: HeaderProps) => {
   const [alerts, setAlerts] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  const isAdmin = user?.role === "Admin";
+  const canSeeAlerts = user?.role === "Admin" || user?.role === "Cluster" || user?.email === "harsh@multipliersolutions.com";
+  const isAdminOrSuper = user?.role === "Admin" || user?.email === "harsh@multipliersolutions.com";
 
   const fetchAlerts = async () => {
-    if (!isAdmin) return;
+    if (!canSeeAlerts) return;
     try {
-      const res = await fetch("http://localhost:5000/api/alerts");
+      const params = new URLSearchParams({
+        email: user?.email || "",
+        role: user?.role || "",
+        cluster: user?.cluster || ""
+      });
+      const res = await fetch(`http://localhost:5000/api/alerts?${params.toString()}`);
       const data = await res.json();
       if (data.success) {
         setAlerts(data.data);
@@ -46,13 +52,13 @@ export const Header = ({ title, subtitle }: HeaderProps) => {
 
   useEffect(() => {
     fetchAlerts();
-    // Poll for new alerts every minute if admin
+    // Poll for new alerts every minute if allowed
     let interval: NodeJS.Timeout;
-    if (isAdmin) {
+    if (canSeeAlerts) {
       interval = setInterval(fetchAlerts, 60000);
     }
     return () => clearInterval(interval);
-  }, [isAdmin]);
+  }, [canSeeAlerts]);
 
   const markAsRead = async () => {
     if (unreadCount === 0) return;
@@ -114,7 +120,7 @@ export const Header = ({ title, subtitle }: HeaderProps) => {
       </div>
 
       <div className="flex items-center gap-4">
-        {isAdmin && (
+        {canSeeAlerts && (
           <DropdownMenu onOpenChange={(open) => open && markAsRead()}>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="relative hover:bg-primary/10 transition-colors">
@@ -137,7 +143,7 @@ export const Header = ({ title, subtitle }: HeaderProps) => {
                     <Badge variant="secondary" className="text-[10px] font-bold">
                       {alerts.length} Total
                     </Badge>
-                    {alerts.length > 0 && (
+                    {alerts.length > 0 && isAdminOrSuper && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -177,14 +183,16 @@ export const Header = ({ title, subtitle }: HeaderProps) => {
                                 <Clock className="h-2.5 w-2.5" />
                                 {format(new Date(alert.timestamp), 'MMM d, h:mm a')}
                               </span>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                                onClick={(e) => deleteAlert(alert._id, e)}
-                              >
-                                <X className="h-3.5 w-3.5" />
-                              </Button>
+                              {isAdminOrSuper && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                                  onClick={(e) => deleteAlert(alert._id, e)}
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
                             </div>
                           </div>
                           <div className="flex flex-wrap gap-2">
