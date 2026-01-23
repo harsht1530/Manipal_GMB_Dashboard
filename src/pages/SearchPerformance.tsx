@@ -124,24 +124,22 @@ const SearchPerformance = () => {
     const insightProfiles = useMemo(() => {
         if (!mounted || doctorsLoading) return [];
 
-        // Get unique business names from insights for the latest month only
+        // Get all insights for the latest month (do not deduplicate)
         const latestMonthInsights = insights.filter(i => i.month === latestDataMonth);
-        const uniqueBusinessNames = [...new Set(latestMonthInsights.map(i => i.businessName))];
 
-        // Match them with doctors to get metadata
-        return uniqueBusinessNames.map(name => {
-            const doctor = doctors.find(d => d.businessName === name);
-            if (doctor) return doctor;
-            // Fallback for profiles not in doctors table
-            const profileData = latestMonthInsights.find(i => i.businessName === name);
+        // Map them to profile objects, matching with doctor metadata for account/mailId
+        return latestMonthInsights.map((insight, idx) => {
+            const doctor = doctors.find(d => d.businessName === insight.businessName);
             return {
-                id: name,
-                name: name,
-                businessName: name,
-                cluster: profileData?.cluster || "",
-                branch: profileData?.branch || "",
-                primaryCategory: profileData?.department || "",
-                averageRating: profileData?.rating || 0
+                id: insight._id || `${insight.businessName}-${idx}`,
+                name: doctor?.name || insight.businessName,
+                businessName: insight.businessName,
+                cluster: insight.cluster || doctor?.cluster || "",
+                branch: insight.branch || doctor?.branch || "",
+                primaryCategory: insight.department || doctor?.primaryCategory || "",
+                averageRating: insight.rating || doctor?.averageRating || 0,
+                account: doctor?.account || "",
+                mailId: doctor?.mailId || ""
             } as any;
         });
     }, [insights, doctors, latestDataMonth, mounted, doctorsLoading]);

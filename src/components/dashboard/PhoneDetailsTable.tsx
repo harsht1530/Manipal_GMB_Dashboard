@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -30,19 +30,16 @@ export const PhoneDetailsTable = ({ data }: PhoneDetailsTableProps) => {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
 
-  // Get unique entries by business name with phone info
-  const phoneData = data.reduce((acc, item) => {
-    if (!acc.find((d) => d.businessName === item.businessName)) {
-      acc.push({
-        businessName: item.businessName,
-        phone: item.phone,
-        branch: item.branch,
-        department: item.department,
-        calls: item.calls,
-      });
-    }
-    return acc;
-  }, [] as { businessName: string; phone: string; branch: string; department: string; calls: number }[]);
+  // Show all records without deduplication
+  const phoneData = useMemo(() => {
+    return data.map((item) => ({
+      businessName: item.businessName,
+      phone: item.phone,
+      branch: item.branch,
+      department: item.department,
+      calls: item.calls,
+    }));
+  }, [data]);
 
   const hasPhone = phoneData.filter((d) => d.phone !== "Not available").length;
   const noPhone = phoneData.filter((d) => d.phone === "Not available").length;
