@@ -25,6 +25,7 @@ const Login = () => {
   const [resendTimer, setResendTimer] = useState(0);
   const navigate = useNavigate();
   const { login } = useAuth();
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -41,7 +42,7 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch("http://localhost:5000/api/login", {
+      const response = await fetch(`${API_BASE_URL}/api/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -78,7 +79,7 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch("http://localhost:5000/api/verify-otp", {
+      const response = await fetch(`${API_BASE_URL}/api/verify-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, otp }),
@@ -106,7 +107,7 @@ const Login = () => {
 
     setIsLoading(true);
     try {
-      const response = await fetch("http://localhost:5000/api/login", {
+      const response = await fetch(`${API_BASE_URL}/api/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -198,7 +199,7 @@ const Login = () => {
             </div>
             <Button
               type="submit"
-              className="w-full h-11 text-base font-semibold"
+              className="w-full h-11 text-base font-semibold border-2 border-[#48BEB9] bg-transparent text-[#48BEB9] hover:bg-[#48BEB9] hover:text-white transition-all shadow-sm active:scale-[0.98]"
               disabled={isLoading}
             >
               {isLoading ? "Signing in..." : "Sign in"}
@@ -233,7 +234,7 @@ const Login = () => {
             <div className="space-y-3">
               <Button
                 type="submit"
-                className="w-full h-11 text-base font-semibold"
+                className="w-full h-11 text-base font-semibold border-2 border-[#48BEB9] bg-transparent text-[#48BEB9] hover:bg-[#48BEB9] hover:text-white transition-all shadow-sm active:scale-[0.98]"
                 disabled={isLoading || otp.length !== 6}
               >
                 {isLoading ? "Verifying..." : "Verify Identity"}

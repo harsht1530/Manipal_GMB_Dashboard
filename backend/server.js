@@ -56,6 +56,16 @@ const sendEmail = async (to, subject, html) => {
 };
 
 const getEmailTemplate = (content) => `
+    <html>
+    <head>
+        <style>
+            .btn:hover {
+                background-color: #48BEB9 !important;
+                color: white !important;
+            }
+        </style>
+    </head>
+    <body style="margin: 0; padding: 0;">
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; text-align: center; border: 1px solid #ddd; border-radius: 10px;">
         <div style="margin-bottom: 20px;">
             <img src="${MANIPAL_LOGO}" alt="Manipal Hospitals" style="max-width: 150px; margin-bottom: 10px;">
@@ -67,6 +77,8 @@ const getEmailTemplate = (content) => `
             <p>&copy; ${new Date().getFullYear()} Multiplier AI. All rights reserved.</p>
         </div>
     </div>
+    </body>
+    </html>
 `;
 
 // Routes
@@ -189,7 +201,7 @@ app.post('/api/forgot-password', async (req, res) => {
             <h2 style="color: #333;">Password Reset Request</h2>
             <p style="font-size: 16px; color: #555;">We received a request to reset your password.</p>
             <div style="text-align: center; margin: 30px 0;">
-                <a href="${resetUrl}" style="background-color: #7C3A84; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Reset Password</a>
+                <a href="${resetUrl}" class="btn" style="background-color: transparent; color: #48BEB9; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; border: 2px solid #48BEB9; transition: all 0.3s ease;">Reset Password</a>
             </div>
             <p style="font-size: 14px; color: #777;">
                 This link will be active for one hour. If you didn't request this, you can safely ignore this email.

@@ -128,7 +128,8 @@ const DoctorDetails = () => {
                 // Fetch reviews if creds are available
                 if (foundDoctor.mailId && foundDoctor.account) {
                     setReviewsLoading(true);
-                    fetch('http://localhost:5000/api/reviews', {
+                    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+                    fetch(`${API_BASE_URL}/api/reviews`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ email: foundDoctor.mailId, location: foundDoctor.account })

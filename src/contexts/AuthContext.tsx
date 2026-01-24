@@ -50,7 +50,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Don't send alert if the logging in user is HARSH (Super Admin)
         if (userData.email !== "harsh@multipliersolutions.com") {
-            fetch("http://localhost:5000/api/alerts", {
+            const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+            fetch(`${API_BASE_URL}/api/alerts`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

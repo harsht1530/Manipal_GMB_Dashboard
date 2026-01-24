@@ -22,6 +22,7 @@ const Index = () => {
   const { user } = useAuth();
   const [selectedCluster, setSelectedCluster] = useState<string[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string[]>([]);
+  const [selectedYear, setSelectedYear] = useState<string[]>([]);
   const [selectedMonth, setSelectedMonth] = useState<string[]>([]);
   const [selectedSpeciality, setSelectedSpeciality] = useState<string[]>([]);
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
@@ -55,8 +56,24 @@ const Index = () => {
   // Derive unique filter options from the insights data with dependencies
   const filterOptions = useMemo(() => {
     if (!mounted || loading) {
-      return { clusters: [], branches: [], months: [], specialities: [] };
+      return { clusters: [], branches: [], months: [], years: [], specialities: [] };
     }
+
+    // Extract unique years
+    const uniqueYears = [...new Set(insights.map(i => {
+      // Assuming i.date is ISO string or interpretable date string
+      // Or if data object has Date object, getting full year. 
+      // If i.date is just a string, we might need robust parsing.
+      // Based on typical behavior, let's try creating a Date object.
+      // If invalid, fallback or handle error.
+      try {
+        const d = new Date(i.date);
+        return !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
+      } catch (e) { return ""; }
+    }))].filter(Boolean).sort().reverse();
+
+    const years = uniqueYears;
+
     // 1. Clusters depend on selected Departments (Profile Types)
     const clusterData = selectedDepartments.length > 0
       ? insights.filter(i => selectedDepartments.includes(i.department))
@@ -71,7 +88,16 @@ const Index = () => {
     });
     const branches = [...new Set(branchData.map(i => i.branch))].filter(Boolean).sort();
 
-    const months = [...new Set(insights.map(i => i.month))].filter(Boolean);
+    // Filter by year for months list
+    const monthData = selectedYear.length > 0
+      ? insights.filter(i => {
+        const d = new Date(i.date);
+        const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
+        return selectedYear.includes(y);
+      })
+      : insights;
+
+    const months = [...new Set(monthData.map(i => i.month))].filter(Boolean);
 
     // 3. Specialities depend on selected Clusters, Branches, Departments, and Ratings
     const specialityData = insights.filter(i => {
@@ -79,7 +105,13 @@ const Index = () => {
       const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(i.branch);
       const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(i.department);
       const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(i.rating) === r);
-      return clusterMatch && branchMatch && departmentMatch && ratingMatch;
+      let yearMatch = true;
+      if (selectedYear.length > 0) {
+        const d = new Date(i.date);
+        const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
+        yearMatch = selectedYear.includes(y);
+      }
+      return clusterMatch && branchMatch && departmentMatch && ratingMatch && yearMatch;
     });
     const specialities = [...new Set(specialityData.map(i => i.speciality))].filter(Boolean).sort();
 
@@ -87,8 +119,8 @@ const Index = () => {
     const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     months.sort((a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b));
 
-    return { clusters, branches, months, specialities };
-  }, [insights, selectedDepartments, selectedCluster, mounted, loading]);
+    return { clusters, branches, months, years, specialities };
+  }, [insights, selectedDepartments, selectedCluster, selectedYear, selectedBranch, selectedRatings, mounted, loading]);
 
   const filteredData = useMemo(() => {
     if (!mounted || loading) return [];
@@ -99,9 +131,17 @@ const Index = () => {
       const specialityMatch = selectedSpeciality.length === 0 || selectedSpeciality.includes(item.speciality);
       const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(item.department);
       const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(item.rating) === r);
-      return clusterMatch && branchMatch && monthMatch && specialityMatch && departmentMatch && ratingMatch;
+
+      let yearMatch = true;
+      if (selectedYear.length > 0) {
+        const d = new Date(item.date);
+        const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
+        yearMatch = selectedYear.includes(y);
+      }
+
+      return clusterMatch && branchMatch && monthMatch && specialityMatch && departmentMatch && ratingMatch && yearMatch;
     });
-  }, [insights, selectedCluster, selectedBranch, selectedMonth, selectedSpeciality, selectedDepartments, selectedRatings, mounted, loading]);
+  }, [insights, selectedCluster, selectedBranch, selectedMonth, selectedSpeciality, selectedDepartments, selectedRatings, selectedYear, mounted, loading]);
 
   // Calculate total reviews and average rating
   const reviewStats = useMemo(() => {
@@ -226,7 +266,7 @@ const Index = () => {
       const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(loc.department);
       return clusterMatch && branchMatch && monthMatch && departmentMatch;
     });
-  }, [insights, locations, selectedCluster, selectedBranch, selectedSpeciality, selectedDepartments, selectedRatings, selectedMonth, latestDataMonth]);
+  }, [insights, locations, selectedCluster, selectedBranch, selectedSpeciality, selectedDepartments, selectedRatings, selectedMonth, latestDataMonth, selectedYear]);
 
   // Dynamic metrics calculation for cumulative and month-over-month comparisons
   const dynamicMetrics = useMemo(() => {
@@ -264,7 +304,15 @@ const Index = () => {
         const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(item.department);
         const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(item.rating) === r);
         const monthMatch = months.length === 0 ? true : months.includes(item.month);
-        return monthMatch && clusterMatch && branchMatch && specialityMatch && departmentMatch && ratingMatch;
+
+        let yearMatch = true;
+        if (selectedYear.length > 0) {
+          const d = new Date(item.date);
+          const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
+          yearMatch = selectedYear.includes(y);
+        }
+
+        return monthMatch && clusterMatch && branchMatch && specialityMatch && departmentMatch && ratingMatch && yearMatch;
       });
       return getAggregatedMetrics(data);
     };
@@ -304,7 +352,7 @@ const Index = () => {
         totalSearchImpressions: calcChange(currentComparisonM.totalSearchImpressions, previousComparisonM.totalSearchImpressions),
       }
     };
-  }, [insights, latestDataMonth, selectedCluster, selectedBranch, selectedMonth, selectedSpeciality, selectedDepartments, selectedRatings]);
+  }, [insights, latestDataMonth, selectedCluster, selectedBranch, selectedMonth, selectedSpeciality, selectedDepartments, selectedRatings, selectedYear]);
 
   const metrics = dynamicMetrics.current;
 
@@ -318,7 +366,15 @@ const Index = () => {
         const specialityMatch = selectedSpeciality.length === 0 || selectedSpeciality.includes(item.speciality);
         const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(item.department);
         const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(item.rating) === r);
-        return item.month === latestDataMonth && clusterMatch && branchMatch && specialityMatch && departmentMatch && ratingMatch;
+
+        let yearMatch = true;
+        if (selectedYear.length > 0) {
+          const d = new Date(item.date);
+          const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
+          yearMatch = selectedYear.includes(y);
+        }
+
+        return item.month === latestDataMonth && clusterMatch && branchMatch && specialityMatch && departmentMatch && ratingMatch && yearMatch;
       });
     }
 
@@ -439,14 +495,17 @@ const Index = () => {
           selectedCluster={selectedCluster}
           selectedBranch={selectedBranch}
           selectedMonth={selectedMonth}
+          selectedYear={selectedYear}
           selectedSpeciality={selectedSpeciality}
           clusterOptions={filterOptions.clusters}
           branchOptions={filterOptions.branches}
           monthOptions={filterOptions.months}
+          yearOptions={filterOptions.years}
           specialityOptions={filterOptions.specialities}
           onClusterChange={(val) => startTransition(() => setSelectedCluster(val))}
           onBranchChange={(val) => startTransition(() => setSelectedBranch(val))}
           onMonthChange={(val) => startTransition(() => setSelectedMonth(val))}
+          onYearChange={(val) => startTransition(() => setSelectedYear(val))}
           onSpecialityChange={(val) => startTransition(() => setSelectedSpeciality(val))}
           hideCluster={isBranchRestricted || isClusterRestricted}
           hideBranch={isBranchRestricted}

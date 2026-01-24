@@ -279,6 +279,7 @@ const Doctors = () => {
         hideCluster={isBranchRestricted || isClusterRestricted}
         hideBranch={isBranchRestricted}
         hideMonth={true}
+        hideYear={true}
       />
 
       {/* Search Bar / Profile Selector */}

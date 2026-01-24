@@ -183,7 +183,7 @@ const SearchPerformance = () => {
         setData([]);
 
         try {
-            const res = await fetch('/api/search-keywords-impressions', {
+            const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/search-keywords-impressions`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -268,6 +268,7 @@ const SearchPerformance = () => {
                 onMonthChange={(val) => startTransition(() => setSelectedMonth(val))}
                 onSpecialityChange={(val) => startTransition(() => setSelectedSpeciality(val))}
                 hideMonth={true}
+                hideYear={true}
                 hideCluster={isBranchRestricted || isClusterRestricted}
                 hideBranch={isBranchRestricted}
             />

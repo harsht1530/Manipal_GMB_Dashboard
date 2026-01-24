@@ -30,6 +30,7 @@ export const Header = ({ title, subtitle }: HeaderProps) => {
 
   const canSeeAlerts = user?.role === "Admin" || user?.role === "Cluster" || user?.email === "harsh@multipliersolutions.com";
   const isAdminOrSuper = user?.role === "Admin" || user?.email === "harsh@multipliersolutions.com";
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
   const fetchAlerts = async () => {
     if (!canSeeAlerts) return;
@@ -39,7 +40,7 @@ export const Header = ({ title, subtitle }: HeaderProps) => {
         role: user?.role || "",
         cluster: user?.cluster || ""
       });
-      const res = await fetch(`http://localhost:5000/api/alerts?${params.toString()}`);
+      const res = await fetch(`${API_BASE_URL}/api/alerts?${params.toString()}`);
       const data = await res.json();
       if (data.success) {
         setAlerts(data.data);
@@ -63,7 +64,7 @@ export const Header = ({ title, subtitle }: HeaderProps) => {
   const markAsRead = async () => {
     if (unreadCount === 0) return;
     try {
-      const res = await fetch("http://localhost:5000/api/alerts/read", {
+      const res = await fetch(`${API_BASE_URL}/api/alerts/read`, {
         method: "PATCH"
       });
       const data = await res.json();
@@ -79,7 +80,7 @@ export const Header = ({ title, subtitle }: HeaderProps) => {
   const deleteAlert = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      const res = await fetch(`http://localhost:5000/api/alerts/${id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/alerts/${id}`, {
         method: "DELETE"
       });
       const data = await res.json();
@@ -94,7 +95,7 @@ export const Header = ({ title, subtitle }: HeaderProps) => {
 
   const clearAllAlerts = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/alerts", {
+      const res = await fetch(`${API_BASE_URL}/api/alerts`, {
         method: "DELETE"
       });
       const data = await res.json();

@@ -5,16 +5,20 @@ interface FilterBarProps {
   selectedCluster: string[];
   selectedBranch: string[];
   selectedMonth: string[];
+  selectedYear?: string[];
   selectedSpeciality: string[];
   clusterOptions: string[];
   branchOptions: string[];
   monthOptions: string[];
+  yearOptions?: string[];
   specialityOptions: string[];
   onClusterChange: (value: string[]) => void;
   onBranchChange: (value: string[]) => void;
   onMonthChange: (value: string[]) => void;
+  onYearChange?: (value: string[]) => void;
   onSpecialityChange: (value: string[]) => void;
   hideMonth?: boolean;
+  hideYear?: boolean;
   hideCluster?: boolean;
   hideBranch?: boolean;
 }
@@ -23,16 +27,20 @@ export const FilterBar = ({
   selectedCluster,
   selectedBranch,
   selectedMonth,
+  selectedYear = [],
   selectedSpeciality,
   clusterOptions,
   branchOptions,
   monthOptions,
+  yearOptions = [],
   specialityOptions,
   onClusterChange,
   onBranchChange,
   onMonthChange,
+  onYearChange,
   onSpecialityChange,
   hideMonth = false,
+  hideYear = false,
   hideCluster = false,
   hideBranch = false,
 }: FilterBarProps) => {
@@ -62,6 +70,17 @@ export const FilterBar = ({
               options={branchOptions}
               selected={selectedBranch}
               onChange={onBranchChange}
+            />
+          </div>
+        )}
+
+        {!hideYear && (
+          <div className="w-full sm:w-[150px]">
+            <MultiSelect
+              placeholder="Select Year"
+              options={yearOptions}
+              selected={selectedYear}
+              onChange={onYearChange || (() => { })}
             />
           </div>
         )}

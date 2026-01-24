@@ -48,7 +48,7 @@ export const Sidebar = ({
   const { user, logout } = useAuth();
 
   const filteredNavItems = navItems.filter(item => {
-    if (item.label === "Settings" && user?.role !== "Admin") {
+    if (item.label === "Settings" && !["Admin", "Cluster", "Branch"].includes(user?.role || "")) {
       return false;
     }
     return true;
