@@ -39,6 +39,7 @@ const Branches = () => {
   const [selectedCluster, setSelectedCluster] = useState<string[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string[]>([]);
   const [selectedMonth, setSelectedMonth] = useState<string[]>([]);
+  const [selectedYear, setSelectedYear] = useState<string[]>([]);
   const [selectedSpeciality, setSelectedSpeciality] = useState<string[]>([]);
 
   useEffect(() => {
@@ -52,22 +53,42 @@ const Branches = () => {
   const isBranchRestricted = !!user?.branch;
   const isClusterRestricted = !!user?.cluster && !user?.branch;
 
-  const dashboardTitle = user?.role === "Admin" ? "Branches" : (user?.branch || user?.cluster || "Branches");
-  const dashboardSubtitle = user?.role === "Admin" ? "Branch-wise performance analytics" : `${user?.branch ? 'Branch' : 'Cluster'} Level Access Overview`;
+  const dashboardTitle = user?.role === "Admin" ? "Units" : (user?.branch || user?.cluster || "Units");
+  const dashboardSubtitle = user?.role === "Admin" ? "Unit-wise performance analytics" : `${user?.branch ? 'Unit' : 'Cluster'} Level Access Overview`;
 
   // Derive filter options
   const filterOptions = useMemo(() => {
+    // Extract unique years
+    const uniqueYears = [...new Set(insights.map(i => {
+      try {
+        const d = new Date(i.date);
+        return !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
+      } catch (e) { return ""; }
+    }))].filter(Boolean).sort().reverse();
+
+    const years = uniqueYears;
+
     const clusters = [...new Set(insights.map(i => i.cluster))].filter(Boolean).sort();
     const branches = [...new Set(insights.map(i => i.branch))].filter(Boolean).sort();
     const specialities = [...new Set(insights.map(i => i.speciality))].filter(Boolean).sort();
-    const months = [...new Set(insights.map(i => i.month))].filter(Boolean);
+
+    // Filter by year for months list
+    const monthData = selectedYear.length > 0
+      ? insights.filter(i => {
+        const d = new Date(i.date);
+        const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
+        return selectedYear.includes(y);
+      })
+      : insights;
+
+    const months = [...new Set(monthData.map(i => i.month))].filter(Boolean);
 
     // Sort months chronologically
     const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     months.sort((a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b));
 
-    return { clusters, branches, specialities, months };
-  }, [insights]);
+    return { clusters, branches, specialities, months, years };
+  }, [insights, selectedYear]);
 
   // Get the chronologically latest month from the data
   const latestDataMonth = useMemo(() => {
@@ -90,7 +111,15 @@ const Branches = () => {
       const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(item.branch);
       const specialityMatch = selectedSpeciality.length === 0 || selectedSpeciality.includes(item.speciality);
       const monthMatch = selectedMonth.length === 0 || selectedMonth.includes(item.month);
-      return clusterMatch && branchMatch && specialityMatch && monthMatch;
+
+      let yearMatch = true;
+      if (selectedYear.length > 0) {
+        const d = new Date(item.date);
+        const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
+        yearMatch = selectedYear.includes(y);
+      }
+
+      return clusterMatch && branchMatch && specialityMatch && monthMatch && yearMatch;
     });
 
     // Insights for profile count (only last month of selection)
@@ -197,7 +226,7 @@ const Branches = () => {
       };
     }).sort((a, b) => b.totalSearchImpressions - a.totalSearchImpressions);
 
-  }, [insights, doctors, selectedCluster, selectedBranch, selectedSpeciality, selectedMonth, latestDataMonth]);
+  }, [insights, doctors, selectedCluster, selectedBranch, selectedSpeciality, selectedMonth, latestDataMonth, selectedYear]);
 
   const activeLatestMonth = useMemo(() => {
     if (selectedMonth.length === 0) return latestDataMonth;
@@ -240,8 +269,11 @@ const Branches = () => {
         onClusterChange={setSelectedCluster}
         onBranchChange={setSelectedBranch}
         onMonthChange={setSelectedMonth}
+        onYearChange={setSelectedYear}
+        selectedYear={selectedYear}
         onSpecialityChange={setSelectedSpeciality}
         hideMonth={false}
+        yearOptions={filterOptions.years}
         hideCluster={isBranchRestricted || isClusterRestricted}
         hideBranch={isBranchRestricted}
       />
@@ -256,7 +288,7 @@ const Branches = () => {
               </div>
               <div>
                 <p className="text-2xl font-bold">{totalStats.branches}</p>
-                <p className="text-xs text-muted-foreground">Total Branches</p>
+                <p className="text-xs text-muted-foreground">Total Units</p>
               </div>
             </div>
           </CardContent>

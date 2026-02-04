@@ -15,6 +15,7 @@ const PhonePage = () => {
     const [selectedCluster, setSelectedCluster] = useState<string[]>([]);
     const [selectedBranch, setSelectedBranch] = useState<string[]>([]);
     const [selectedMonth, setSelectedMonth] = useState<string[]>([]);
+    const [selectedYear, setSelectedYear] = useState<string[]>([]);
     const [selectedSpeciality, setSelectedSpeciality] = useState<string[]>([]);
     const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
     const [selectedRatings, setSelectedRatings] = useState<number[]>([]);
@@ -57,6 +58,16 @@ const PhonePage = () => {
         if (!mounted || loading) {
             return { clusters: [], branches: [], months: [], specialities: [] };
         }
+        // Extract unique years
+        const uniqueYears = [...new Set(insights.map(i => {
+            try {
+                const d = new Date(i.date);
+                return !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
+            } catch (e) { return ""; }
+        }))].filter(Boolean).sort().reverse();
+
+        const years = uniqueYears;
+
         // 1. Clusters depend on selected Departments (Profile Types)
         const clusterData = selectedDepartments.length > 0
             ? insights.filter(i => selectedDepartments.includes(i.department))
@@ -71,15 +82,24 @@ const PhonePage = () => {
         });
         const branches = [...new Set(branchData.map(i => i.branch))].filter(Boolean).sort();
 
-        const months = [...new Set(insights.map(i => i.month))].filter(Boolean);
+        // Filter by year for months list
+        const monthData = selectedYear.length > 0
+            ? insights.filter(i => {
+                const d = new Date(i.date);
+                const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
+                return selectedYear.includes(y);
+            })
+            : insights;
+
+        const months = [...new Set(monthData.map(i => i.month))].filter(Boolean);
         const specialities = [...new Set(insights.map(i => i.speciality))].filter(Boolean).sort();
 
         // Sort months chronologically (if needed elsewhere, but FilterBar handles it)
         const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         months.sort((a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b));
 
-        return { clusters, branches, months, specialities };
-    }, [insights, selectedDepartments, selectedCluster, mounted, loading]);
+        return { clusters, branches, months, years, specialities };
+    }, [insights, selectedDepartments, selectedCluster, selectedYear, mounted, loading]);
 
     const filteredData = useMemo(() => {
         if (!mounted || loading) return [];
@@ -94,9 +114,17 @@ const PhonePage = () => {
             const specialityMatch = selectedSpeciality.length === 0 || selectedSpeciality.includes(item.speciality);
             const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(item.department);
             const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(item.rating) === r);
-            return clusterMatch && branchMatch && monthMatch && specialityMatch && departmentMatch && ratingMatch;
+
+            let yearMatch = true;
+            if (selectedYear.length > 0) {
+                const d = new Date(item.date);
+                const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
+                yearMatch = selectedYear.includes(y);
+            }
+
+            return clusterMatch && branchMatch && monthMatch && specialityMatch && departmentMatch && ratingMatch && yearMatch;
         });
-    }, [insights, selectedCluster, selectedBranch, selectedMonth, selectedSpeciality, selectedDepartments, selectedRatings, latestDataMonth, mounted, loading]);
+    }, [insights, selectedCluster, selectedBranch, selectedMonth, selectedSpeciality, selectedDepartments, selectedRatings, latestDataMonth, selectedYear, mounted, loading]);
 
     if (!mounted || loading) {
         return (
@@ -143,9 +171,12 @@ const PhonePage = () => {
                     onClusterChange={(val) => startTransition(() => setSelectedCluster(val))}
                     onBranchChange={(val) => startTransition(() => setSelectedBranch(val))}
                     onMonthChange={(val) => startTransition(() => setSelectedMonth(val))}
+                    selectedYear={selectedYear}
+                    onYearChange={(val) => startTransition(() => setSelectedYear(val))}
                     onSpecialityChange={(val) => startTransition(() => setSelectedSpeciality(val))}
                     hideCluster={isBranchRestricted || isClusterRestricted}
                     hideBranch={isBranchRestricted}
+                    yearOptions={filterOptions.years}
                 />
 
                 <div className="mb-6">

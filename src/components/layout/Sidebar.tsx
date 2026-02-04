@@ -20,7 +20,7 @@ import { useAuth } from "@/contexts/AuthContext";
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: Users, label: "Profiles", path: "/doctors" },
-  { icon: Building2, label: "Branches", path: "/branches" },
+  { icon: Building2, label: "Units", path: "/branches" },
   { icon: Phone, label: "Phone", path: "/phone" },
   { icon: Target, label: "Keywords", path: "/keywords" },
   { icon: Search, label: "Search Perf.", path: "/search-performance" },

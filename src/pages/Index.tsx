@@ -511,6 +511,10 @@ const Index = () => {
           hideBranch={isBranchRestricted}
         />
 
+        <div className="mb-6">
+          <LocationsOverview data={processedLocations} selectedMonths={selectedMonth.map(m => m.substring(0, 3))} />
+        </div>
+
         {/* Metrics Grid - 2 rows of 4 cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
           <MetricCard title="Search Mobile" value={metrics.googleSearchMobile} change={dynamicMetrics.changes.googleSearchMobile} icon={Smartphone} delay={0} />
@@ -528,9 +532,7 @@ const Index = () => {
           <PerformanceChart data={filteredData} />
         </div>
 
-        <div className="mb-6">
-          <LocationsOverview data={processedLocations} selectedMonths={selectedMonth.map(m => m.substring(0, 3))} />
-        </div>
+
 
         {/* Performance Table - Full Width */}
         <div className="mb-6">
