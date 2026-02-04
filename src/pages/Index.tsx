@@ -220,24 +220,15 @@ const Index = () => {
         if (!acc[i.branch]) {
           acc[i.branch] = {
             names: new Set<string>(),
-            verifiedCount: 0
           };
         }
 
-        if (!acc[i.branch].names.has(i.businessName)) {
-          acc[i.branch].names.add(i.businessName);
-          // Check if doctor is verified (has a placeId)
-          const doctor = doctors.find(d => (d.businessName || "").trim().toLowerCase() === (i.businessName || "").trim().toLowerCase());
-          if (doctor && doctor.placeId) {
-            acc[i.branch].verifiedCount += 1;
-          }
-        }
+        acc[i.branch].names.add(i.businessName);
         return acc;
-      }, {} as Record<string, { names: Set<string>, verifiedCount: number }>);
+      }, {} as Record<string, { names: Set<string> }>);
 
       return Object.entries(branchGroups).map(([branch, data]) => {
         const totalCount = data.names.size;
-        const verifiedCount = data.verifiedCount;
         const firstDoc = filteredInsights.find(i => i.branch === branch);
         return {
           id: `dynamic-${branch}`,
