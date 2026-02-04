@@ -413,6 +413,7 @@ const Index = () => {
         existing.unverifiedProfiles += item.unverifiedProfiles;
         existing.needAccess += item.needAccess;
         existing.notInterested += item.notInterested;
+        existing.outOfOrganization += item.outOfOrganization;
       } else {
         acc.push({
           unitName,
@@ -422,6 +423,7 @@ const Index = () => {
           unverifiedProfiles: item.unverifiedProfiles,
           needAccess: item.needAccess,
           notInterested: item.notInterested,
+          outOfOrganization: item.outOfOrganization,
         });
       }
       return acc;
@@ -435,6 +437,7 @@ const Index = () => {
       "Unverified": item.unverifiedProfiles,
       "Need Access": item.needAccess,
       "Not Interested": item.notInterested,
+      "Out of Organization": item.outOfOrganization,
       "Verification %": item.totalProfiles > 0 ? `${Math.round((item.verifiedProfiles / item.totalProfiles) * 100)}%` : "0%"
     }));
 

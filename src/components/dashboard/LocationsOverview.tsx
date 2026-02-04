@@ -40,6 +40,7 @@ export const LocationsOverview = ({ data, selectedMonths }: LocationsOverviewPro
       existing.unverifiedProfiles += item.unverifiedProfiles;
       existing.needAccess += item.needAccess;
       existing.notInterested += item.notInterested;
+      existing.outOfOrganization += item.outOfOrganization;
     } else {
       acc.push({
         unitName: item.unitName,
@@ -49,6 +50,7 @@ export const LocationsOverview = ({ data, selectedMonths }: LocationsOverviewPro
         unverifiedProfiles: item.unverifiedProfiles,
         needAccess: item.needAccess,
         notInterested: item.notInterested,
+        outOfOrganization: item.outOfOrganization,
       });
     }
     return acc;
@@ -60,6 +62,7 @@ export const LocationsOverview = ({ data, selectedMonths }: LocationsOverviewPro
     unverifiedProfiles: number;
     needAccess: number;
     notInterested: number;
+    outOfOrganization: number;
   }[]);
 
   const totals = aggregatedData.reduce(
@@ -69,8 +72,9 @@ export const LocationsOverview = ({ data, selectedMonths }: LocationsOverviewPro
       unverifiedProfiles: acc.unverifiedProfiles + item.unverifiedProfiles,
       needAccess: acc.needAccess + item.needAccess,
       notInterested: acc.notInterested + item.notInterested,
+      outOfOrganization: acc.outOfOrganization + item.outOfOrganization,
     }),
-    { totalProfiles: 0, verifiedProfiles: 0, unverifiedProfiles: 0, needAccess: 0, notInterested: 0 }
+    { totalProfiles: 0, verifiedProfiles: 0, unverifiedProfiles: 0, needAccess: 0, notInterested: 0, outOfOrganization: 0 }
   );
 
   const verificationRate = totals.totalProfiles > 0
@@ -91,7 +95,7 @@ export const LocationsOverview = ({ data, selectedMonths }: LocationsOverviewPro
         </div>
 
         {/* Summary Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-4">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mt-4">
           <div className="text-center p-3 bg-muted/50 rounded-lg">
             <p className="text-2xl font-bold text-foreground">{totals.totalProfiles}</p>
             <p className="text-xs text-muted-foreground">Total Profiles</p>
@@ -111,6 +115,10 @@ export const LocationsOverview = ({ data, selectedMonths }: LocationsOverviewPro
           <div className="text-center p-3 bg-red-500/10 rounded-lg">
             <p className="text-2xl font-bold text-red-600">{totals.notInterested}</p>
             <p className="text-xs text-muted-foreground">Not Interested</p>
+          </div>
+          <div className="text-center p-3 bg-gray-500/10 rounded-lg">
+            <p className="text-2xl font-bold text-gray-600">{totals.outOfOrganization}</p>
+            <p className="text-xs text-muted-foreground">Out of Organization</p>
           </div>
         </div>
 
@@ -149,6 +157,7 @@ export const LocationsOverview = ({ data, selectedMonths }: LocationsOverviewPro
                     Need Access
                   </div>
                 </TableHead>
+                <TableHead className="text-center">Out of Organization</TableHead>
                 <TableHead className="text-center">Verification %</TableHead>
               </TableRow>
             </TableHeader>
@@ -167,6 +176,7 @@ export const LocationsOverview = ({ data, selectedMonths }: LocationsOverviewPro
                     <TableCell className="text-center text-green-600">{item.verifiedProfiles}</TableCell>
                     <TableCell className="text-center text-yellow-600">{item.unverifiedProfiles}</TableCell>
                     <TableCell className="text-center text-blue-600">{item.needAccess}</TableCell>
+                    <TableCell className="text-center text-gray-600">{item.outOfOrganization}</TableCell>
                     <TableCell className="text-center">
                       <div className="flex items-center gap-2">
                         <Progress value={rate} className="h-2 w-16" />
