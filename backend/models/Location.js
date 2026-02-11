@@ -10,7 +10,8 @@ const LocationSchema = new mongoose.Schema({
     "Unverfied Profiles": Number,
     "Need Access": Number,
     "Not Intrested": Number,
-    "Out Of Organization": Number
+    "Out Of Organization": Number,
+    "Date": Date
 }, { collection: 'manipalLocations' });
 
 module.exports = mongoose.model('Location', LocationSchema);

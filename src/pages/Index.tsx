@@ -173,13 +173,33 @@ const Index = () => {
     return { totalReviews, averageRating, ratingDistribution: distribution };
   }, [filteredData]);
 
-  // Get the chronologically latest month from the data
-  const latestDataMonth = useMemo(() => {
-    const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    if (insights.length === 0) return monthOrder[new Date().getMonth() - 1] || "Dec";
-    const uniqueMonths = [...new Set(insights.map(i => i.month))];
-    return uniqueMonths.sort((a, b) => monthOrder.indexOf(b) - monthOrder.indexOf(a))[0];
+  // Get the chronologically latest month and year from the data
+  const latestDataInfo = useMemo(() => {
+    if (insights.length === 0) {
+      const now = new Date();
+      const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      return {
+        month: monthOrder[now.getMonth() - 1] || "Dec",
+        year: (now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()).toString()
+      };
+    }
+
+    // Sort by Date object to find the absolute latest entry
+    const sortedInsights = [...insights].sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      return dateB - dateA;
+    });
+
+    const latest = sortedInsights[0];
+    return {
+      month: latest.month,
+      year: new Date(latest.date).getFullYear().toString()
+    };
   }, [insights]);
+
+  const latestDataMonth = latestDataInfo.month;
+  const latestDataYear = latestDataInfo.year;
 
   // Unique performers for the table
   const topUniquePerformers = useMemo(() => {
@@ -203,18 +223,29 @@ const Index = () => {
   const processedLocations = useMemo(() => {
     const isSpecialityFiltered = selectedSpeciality.length > 0;
     const isRatingFiltered = selectedRatings.length > 0;
-    const targetMonth = selectedMonth.length > 0 ? selectedMonth[0] : (insights.some(m => m.month === latestDataMonth) ? latestDataMonth : (insights.some(m => m.month === "Nov") ? "Nov" : latestDataMonth));
+
+    // Check if the target month actually exists in the latest year or any year
+    const targetMonth = selectedMonth.length > 0
+      ? selectedMonth[0]
+      : (insights.some(m => m.month === latestDataMonth && new Date(m.date).getFullYear().toString() === latestDataYear)
+        ? latestDataMonth
+        : latestDataMonth);
+    const targetYear = selectedMonth.length > 0 && selectedYear.length > 0 ? selectedYear[0] : latestDataYear;
 
     if (isSpecialityFiltered || isRatingFiltered) {
-      // If rating or speciality are selected, show count of unique business names in target month
-      const filteredInsights = insights.filter(i =>
-        i.month === targetMonth &&
-        (selectedCluster.length === 0 || selectedCluster.includes(i.cluster)) &&
-        (selectedBranch.length === 0 || selectedBranch.includes(i.branch)) &&
-        (selectedSpeciality.length === 0 || selectedSpeciality.includes(i.speciality)) &&
-        (selectedDepartments.length === 0 || selectedDepartments.includes(i.department)) &&
-        (selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(i.rating) === r))
-      );
+      // If rating or speciality are selected, show count of unique business names in target month and year
+      const filteredInsights = insights.filter(i => {
+        const itemYear = new Date(i.date).getFullYear().toString();
+        const yearMatch = selectedYear.length === 0 ? itemYear === targetYear : selectedYear.includes(itemYear);
+
+        return i.month === targetMonth &&
+          yearMatch &&
+          (selectedCluster.length === 0 || selectedCluster.includes(i.cluster)) &&
+          (selectedBranch.length === 0 || selectedBranch.includes(i.branch)) &&
+          (selectedSpeciality.length === 0 || selectedSpeciality.includes(i.speciality)) &&
+          (selectedDepartments.length === 0 || selectedDepartments.includes(i.department)) &&
+          (selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(i.rating) === r));
+      });
 
       const branchGroups = filteredInsights.reduce((acc, i) => {
         if (!acc[i.branch]) {
@@ -247,15 +278,24 @@ const Index = () => {
     }
 
     // Default: Return locations filtered by sidebar/header filters
-    // If no month is selected, we default to latestDataMonth for locations as well
+    // If no month is selected, we default to latestDataMonth and latestDataYear for locations as well
     const locationsTargetMonth = selectedMonth.length > 0 ? selectedMonth : [latestDataMonth];
+    const locationsTargetYear = selectedYear.length > 0 ? selectedYear : [latestDataYear];
 
     return locations.filter(loc => {
       const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(loc.cluster);
       const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(loc.unitName);
       const monthMatch = locationsTargetMonth.includes(loc.month);
       const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(loc.department);
-      return clusterMatch && branchMatch && monthMatch && departmentMatch;
+
+      let yearMatch = true;
+      if (locationsTargetYear.length > 0) {
+        const d = new Date(loc.date);
+        const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
+        yearMatch = locationsTargetYear.includes(y);
+      }
+
+      return clusterMatch && branchMatch && monthMatch && departmentMatch && yearMatch;
     });
   }, [insights, locations, selectedCluster, selectedBranch, selectedSpeciality, selectedDepartments, selectedRatings, selectedMonth, latestDataMonth, selectedYear]);
 

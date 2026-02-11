@@ -81,6 +81,7 @@ const DoctorDetails = () => {
     const [competitors, setCompetitors] = useState<string[]>([]);
     const [reviewData, setReviewData] = useState<ReviewData | null>(null);
     const [reviewsLoading, setReviewsLoading] = useState(false);
+    const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -245,17 +246,48 @@ const DoctorDetails = () => {
     const handleDownloadPDF = async () => {
         if (!printRef.current) return;
 
+        setIsGeneratingPDF(true);
         console.log("Generating PDF...");
         try {
             printRef.current.style.display = "block";
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for charts to render
+
+            // Wait for a moment to ensure DOM is updated
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // Wait for all images in the print Ref to be loaded
+            const images = printRef.current.getElementsByTagName('img');
+            const imagePromises = Array.from(images).map(img => {
+                if (img.complete) return Promise.resolve();
+                return new Promise((resolve) => {
+                    img.onload = resolve;
+                    img.onerror = resolve; // Resolve on error too so we don't block
+                });
+            });
+
+            // Add a timeout race to prevent infinite waiting
+            await Promise.race([
+                Promise.all(imagePromises),
+                new Promise(resolve => setTimeout(resolve, 3000)) // Max wait 3s for images
+            ]);
+
+            // Slight extra delay for charts to fully render their animations if any (though animation: false is set)
+            await new Promise(resolve => setTimeout(resolve, 500));
 
             const canvas = await html2canvas(printRef.current, {
                 scale: 2,
                 useCORS: true,
                 logging: false,
-                backgroundColor: "#ffffff"
+                backgroundColor: "#ffffff",
+                allowTaint: true,
+                onclone: (clonedDoc) => {
+                    // Ensure cloned elements are visible and laid out correctly
+                    const clonedPrintRef = clonedDoc.body.querySelector('[ref-id="print-container"]') as HTMLElement;
+                    if (clonedPrintRef) {
+                        clonedPrintRef.style.display = "block";
+                    }
+                }
             });
+
             printRef.current.style.display = "none";
 
             const imgData = canvas.toDataURL("image/png");
@@ -273,7 +305,10 @@ const DoctorDetails = () => {
             pdf.save(`${profile?.name || "Doctor"}_Detailed_Report.pdf`);
         } catch (error) {
             console.error("PDF generation failed:", error);
+            // Ensure we hide the print layout on error
             if (printRef.current) printRef.current.style.display = "none";
+        } finally {
+            setIsGeneratingPDF(false);
         }
     };
 
@@ -334,9 +369,22 @@ const DoctorDetails = () => {
                     <ArrowLeft className="h-4 w-4 mr-2" />
                     Back to Doctors List
                 </Button>
-                <Button onClick={handleDownloadPDF} className="bg-primary text-primary-foreground hover:bg-primary/90">
-                    <Download className="h-4 w-4 mr-2" />
-                    Download PDF Report
+                <Button
+                    onClick={handleDownloadPDF}
+                    disabled={isGeneratingPDF || isLoading}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                    {isGeneratingPDF ? (
+                        <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Generating PDF...
+                        </>
+                    ) : (
+                        <>
+                            <Download className="h-4 w-4 mr-2" />
+                            Download PDF Report
+                        </>
+                    )}
                 </Button>
             </div>
 
@@ -769,7 +817,7 @@ const DoctorDetails = () => {
                 </TabsContent>
             </Tabs >
             {/* Hidden Print Layout */}
-            <div ref={printRef} style={{ display: 'none' }} className="bg-white text-black p-10 w-[1200px] mx-auto absolute top-0 left-0 z-50">
+            <div ref={printRef} ref-id="print-container" style={{ display: 'none' }} className="bg-white text-black p-10 w-[1200px] mx-auto absolute top-0 left-0 z-50">
                 <div className="space-y-10">
                     {/* Header */}
                     <div className="flex items-center justify-between border-b pb-6">

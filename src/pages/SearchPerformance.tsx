@@ -112,20 +112,43 @@ const SearchPerformance = () => {
         return { clusters, branches, specialities, months };
     }, [insights, mounted, doctorsLoading]);
 
-    // Get the chronologically latest month from the data
-    const latestDataMonth = useMemo(() => {
-        const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-        if (insights.length === 0) return monthOrder[new Date().getMonth() - 1] || "Dec";
-        const uniqueMonths = [...new Set(insights.map(i => i.month))];
-        return uniqueMonths.sort((a, b) => monthOrder.indexOf(b) - monthOrder.indexOf(a))[0];
+    // Get the chronologically latest month and year from the data
+    const latestDataInfo = useMemo(() => {
+        if (insights.length === 0) {
+            const now = new Date();
+            const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            return {
+                month: monthOrder[now.getMonth() - 1] || "Dec",
+                year: (now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()).toString()
+            };
+        }
+
+        // Sort by Date object to find the absolute latest entry
+        const sortedInsights = [...insights].sort((a, b) => {
+            const dateA = new Date(a.date).getTime();
+            const dateB = new Date(b.date).getTime();
+            return dateB - dateA;
+        });
+
+        const latest = sortedInsights[0];
+        return {
+            month: latest.month,
+            year: new Date(latest.date).getFullYear().toString()
+        };
     }, [insights]);
 
-    // List of profiles that exist in Insights data for the latest month
+    const latestDataMonth = latestDataInfo.month;
+    const latestDataYear = latestDataInfo.year;
+
+    // List of profiles that exist in Insights data for the latest month and year
     const insightProfiles = useMemo(() => {
         if (!mounted || doctorsLoading) return [];
 
-        // Get all insights for the latest month (do not deduplicate)
-        const latestMonthInsights = insights.filter(i => i.month === latestDataMonth);
+        // Get all insights for the latest month AND year
+        const latestMonthInsights = insights.filter(i => {
+            const itemYear = new Date(i.date).getFullYear().toString();
+            return i.month === latestDataMonth && itemYear === latestDataYear;
+        });
 
         // Map them to profile objects, matching with doctor metadata for account/mailId
         return latestMonthInsights.map((insight, idx) => {
@@ -142,7 +165,7 @@ const SearchPerformance = () => {
                 mailId: doctor?.mailId || ""
             } as any;
         });
-    }, [insights, doctors, latestDataMonth, mounted, doctorsLoading]);
+    }, [insights, doctors, latestDataMonth, latestDataYear, mounted, doctorsLoading]);
 
     // Filter the derived list based on ALL global filters
     const filteredDoctorsList = useMemo(() => {
@@ -293,7 +316,7 @@ const SearchPerformance = () => {
                         {/* Profile Selector (Combobox) */}
                         <div className="md:col-span-1 flex flex-col gap-2">
                             <label className="text-sm font-semibold text-foreground/80 flex justify-between items-center">
-                                Select Profile ({latestDataMonth})
+                                Select Profile ({latestDataMonth} {latestDataYear})
                                 <span className="text-[10px] font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded-md">
                                     {filteredDoctorsList.length} profiles
                                 </span>

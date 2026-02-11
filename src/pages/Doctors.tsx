@@ -107,13 +107,33 @@ const Doctors = () => {
     return { clusters, branches, months, specialities };
   }, [insights, selectedDepartments, selectedCluster, mounted, loading]);
 
-  // Get the chronologically latest month from the data
-  const latestDataMonth = useMemo(() => {
-    const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    if (insights.length === 0) return monthOrder[new Date().getMonth() - 1] || "Dec";
-    const uniqueMonths = [...new Set(insights.map(i => i.month))];
-    return uniqueMonths.sort((a, b) => monthOrder.indexOf(b) - monthOrder.indexOf(a))[0];
+  // Get the chronologically latest month and year from the data
+  const latestDataInfo = useMemo(() => {
+    if (insights.length === 0) {
+      const now = new Date();
+      const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      return {
+        month: monthOrder[now.getMonth() - 1] || "Dec",
+        year: (now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()).toString()
+      };
+    }
+
+    // Sort by Date object to find the absolute latest entry
+    const sortedInsights = [...insights].sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      return dateB - dateA;
+    });
+
+    const latest = sortedInsights[0];
+    return {
+      month: latest.month,
+      year: new Date(latest.date).getFullYear().toString()
+    };
   }, [insights]);
+
+  const latestDataMonth = latestDataInfo.month;
+  const latestDataYear = latestDataInfo.year;
 
   // Pre-calculate latest month data for all doctors for $O(1)$ lookup in filters
   const latestMonthDataMap = useMemo(() => {
@@ -140,8 +160,11 @@ const Doctors = () => {
   const validSearchProfiles = useMemo(() => {
     if (!mounted || loading || insights.length === 0) return [];
 
-    // 1. Get unique business names from insights for the latest month ONLY
-    const latestInsights = insights.filter(i => i.month === latestDataMonth);
+    // 1. Get unique business names from insights for the latest month AND year ONLY
+    const latestInsights = insights.filter(i => {
+      const itemYear = new Date(i.date).getFullYear().toString();
+      return i.month === latestDataMonth && itemYear === latestDataYear;
+    });
     const uniqueBusinessNames = [...new Set(latestInsights.map(i => (i.businessName || "").trim().toLowerCase()))].filter(Boolean);
 
     // 2. Map these to doctor names by checking the doctors table, or fallback to insight name

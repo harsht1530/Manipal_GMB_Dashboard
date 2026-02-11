@@ -62,6 +62,7 @@ export interface LocationData {
   needAccess: number;
   notInterested: number;
   outOfOrganization: number;
+  date: string;
 }
 
 // Transform MongoDB insight document to frontend format
@@ -130,7 +131,8 @@ function transformLocation(doc: any): LocationData {
     unverifiedProfiles: doc["Unverfied Profiles"] || 0,
     needAccess: doc["Need Access"] || 0,
     notInterested: doc["Not Intrested"] || 0,
-    outOfOrganization: doc["Out Of Organization"] || 0
+    outOfOrganization: doc["Out Of Organization"] || 0,
+    date: doc.Date || ""
   };
 }
 
