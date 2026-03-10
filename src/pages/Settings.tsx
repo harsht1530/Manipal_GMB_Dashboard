@@ -70,7 +70,7 @@ interface UserData {
   notifyMonthlyReport?: boolean;
 }
 
-const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+const API_URL = import.meta.env.VITE_API_BASE_URL || "https://smldatamanagement.multiplierai.co";
 
 const Settings = () => {
   const { user: currentUser } = useAuth();

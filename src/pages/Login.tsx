@@ -25,7 +25,7 @@ const Login = () => {
   const [resendTimer, setResendTimer] = useState(0);
   const navigate = useNavigate();
   const { login } = useAuth();
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://smldatamanagement.multiplierai.co";
 
   useEffect(() => {
     let interval: NodeJS.Timeout;

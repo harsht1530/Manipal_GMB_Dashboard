@@ -30,7 +30,7 @@ export const Header = ({ title, subtitle }: HeaderProps) => {
 
   const canSeeAlerts = user?.role === "Admin" || user?.role === "Cluster" || user?.email === "harsh@multipliersolutions.com";
   const isAdminOrSuper = user?.role === "Admin" || user?.email === "harsh@multipliersolutions.com";
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://smldatamanagement.multiplierai.co";
 
   const fetchAlerts = async () => {
     if (!canSeeAlerts) return;
