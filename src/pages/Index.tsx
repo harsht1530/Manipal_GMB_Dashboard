@@ -210,6 +210,13 @@ const Index = () => {
       } else {
         // We accumulate total searches but keep the most recent metadata
         acc[item.businessName].totalSearches += totalSearches;
+        acc[item.businessName].googleSearchMobile += item.googleSearchMobile;
+        acc[item.businessName].googleSearchDesktop += item.googleSearchDesktop;
+        acc[item.businessName].googleMapsMobile += item.googleMapsMobile;
+        acc[item.businessName].googleMapsDesktop += item.googleMapsDesktop;
+        acc[item.businessName].directions += item.directions;
+        acc[item.businessName].websiteClicks += item.websiteClicks;
+        acc[item.businessName].calls += item.calls;
       }
       return acc;
     }, {} as Record<string, any>);
@@ -582,7 +589,7 @@ const Index = () => {
 
         {/* Summary Row - 2 Columns */}
         <div className="grid gap-6 lg:grid-cols-2 mb-6">
-          <TopPerformers data={insights.filter(i => i.month === latestDataMonth)} />
+          <TopPerformers data={topUniquePerformers} />
           <ReviewSummary
             totalReviews={reviewStats.totalReviews}
             averageRating={reviewStats.averageRating}

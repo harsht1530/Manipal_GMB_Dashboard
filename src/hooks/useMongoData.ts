@@ -22,6 +22,19 @@ export interface InsightData {
   phone: string;
 }
 
+export interface PostingData {
+  id: string;
+  cluster: string;
+  branch: string;
+  businessName: string;
+  sourceUrl: string;
+  department: string;
+  typeOfPost: string;
+  gmbPostLink: string;
+  date: string;
+  month: string;
+}
+
 export interface DoctorData {
   id: string;
   businessName: string;
@@ -136,6 +149,22 @@ function transformLocation(doc: any): LocationData {
   };
 }
 
+// Transform MongoDB posting document to frontend format
+function transformPosting(doc: any): PostingData {
+  return {
+    id: doc._id?.$oid || String(Math.random()),
+    cluster: doc["Cluster"] || "",
+    branch: doc["Branch"] || "",
+    businessName: doc["Business name"] || "",
+    sourceUrl: doc["Source URL"] || "",
+    department: doc["Department"] || "",
+    typeOfPost: doc["Type of post"] || "",
+    gmbPostLink: doc["GMB Post Link"] || "",
+    date: doc["Date"]?.$date || doc["Date"] || "",
+    month: doc["Month"] || "",
+  };
+}
+
 const API_URL = `${import.meta.env.VITE_API_BASE_URL || "http://localhost:5000"}/api`;
 
 // Module-level cache
@@ -143,11 +172,13 @@ let globalCache: {
   insights: InsightData[] | null;
   doctors: DoctorData[] | null;
   locations: LocationData[] | null;
+  postings: PostingData[] | null;
   top10: { latestMonth: string; topDoctors: InsightData[] } | null;
 } = {
   insights: null,
   doctors: null,
   locations: null,
+  postings: null,
   top10: null,
 };
 
@@ -156,6 +187,7 @@ export function useMongoData() {
   const [rawInsights, setRawInsights] = useState<InsightData[]>(globalCache.insights || []);
   const [rawDoctors, setRawDoctors] = useState<DoctorData[]>(globalCache.doctors || []);
   const [rawLocations, setRawLocations] = useState<LocationData[]>(globalCache.locations || []);
+  const [rawPostings, setRawPostings] = useState<PostingData[]>(globalCache.postings || []);
   const [rawTop10, setRawTop10] = useState<{ latestMonth: string; topDoctors: InsightData[] } | null>(globalCache.top10);
   const [loading, setLoading] = useState(!globalCache.insights);
   const [error, setError] = useState<string | null>(null);
@@ -170,10 +202,11 @@ export function useMongoData() {
     setError(null);
 
     try {
-      const [insightsRes, doctorsRes, locationsRes, top10Res] = await Promise.all([
+      const [insightsRes, doctorsRes, locationsRes, postingsRes, top10Res] = await Promise.all([
         fetch(`${API_URL}/insights`).then(res => res.json()),
         fetch(`${API_URL}/doctors`).then(res => res.json()),
         fetch(`${API_URL}/locations`).then(res => res.json()),
+        fetch(`${API_URL}/postings`).then(res => res.json()),
         fetch(`${API_URL}/top10-doctors`).then(res => res.json())
       ]);
 
@@ -191,6 +224,11 @@ export function useMongoData() {
         const transformed = locationsRes.data.map(transformLocation);
         setRawLocations(transformed);
         globalCache.locations = transformed;
+      }
+      if (postingsRes.success && postingsRes.data) {
+        const transformed = postingsRes.data.map(transformPosting);
+        setRawPostings(transformed);
+        globalCache.postings = transformed;
       }
       if (top10Res.success && top10Res.data) {
         const transformed = {
@@ -235,6 +273,15 @@ export function useMongoData() {
     });
   }, [rawLocations, user]);
 
+  const postings = useMemo(() => {
+    if (!user || user.role === "Admin") return rawPostings;
+    return rawPostings.filter(p => {
+      if (user.branch) return p.branch === user.branch;
+      if (user.cluster) return p.cluster === user.cluster;
+      return true;
+    });
+  }, [rawPostings, user]);
+
   const top10Data = useMemo(() => {
     if (!rawTop10) return null;
     if (!user || user.role === "Admin") return rawTop10;
@@ -274,6 +321,7 @@ export function useMongoData() {
     insights,
     doctors,
     locations,
+    postings,
     top10Data,
     loading,
     error,

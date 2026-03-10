@@ -10,15 +10,19 @@ interface PerformanceChartProps {
 
 const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+interface ChartSeries {
+  name: string;
+  data: (number | null)[];
+  color: string;
+}
+
 interface ChartItemProps {
   title: string;
-  data: any[];
-  dataKey: string;
-  color: string;
+  series: ChartSeries[];
   delay?: number;
 }
 
-const MiniChart = ({ title, data, dataKey, color, delay = 0 }: ChartItemProps) => {
+const MiniChart = ({ title, series, delay = 0 }: ChartItemProps) => {
   const options: Highcharts.Options = {
     chart: {
       type: 'line',
@@ -39,7 +43,7 @@ const MiniChart = ({ title, data, dataKey, color, delay = 0 }: ChartItemProps) =
       enabled: false
     },
     xAxis: {
-      categories: data.map(d => d.month),
+      categories: monthOrder,
       labels: {
         style: {
           fontSize: '10px',
@@ -63,7 +67,11 @@ const MiniChart = ({ title, data, dataKey, color, delay = 0 }: ChartItemProps) =
       gridLineDashStyle: 'Dash'
     },
     legend: {
-      enabled: false
+      enabled: series.length > 1,
+      itemStyle: {
+        fontSize: '11px',
+        color: 'hsl(var(--muted-foreground))'
+      }
     },
     tooltip: {
       backgroundColor: 'white',
@@ -93,19 +101,18 @@ const MiniChart = ({ title, data, dataKey, color, delay = 0 }: ChartItemProps) =
         enableMouseTracking: true,
         marker: {
           radius: 4,
-          fillColor: color,
           lineWidth: 2,
           lineColor: '#FFFFFF'
         }
       }
     },
-    series: [{
-      name: title,
-      data: data.map(d => d[dataKey]),
-      color: color,
+    series: series.map(s => ({
+      name: s.name,
+      data: s.data,
+      color: s.color,
       lineWidth: 2.5,
       type: 'line'
-    }]
+    }))
   };
 
   return (
@@ -125,21 +132,26 @@ const MiniChart = ({ title, data, dataKey, color, delay = 0 }: ChartItemProps) =
 
 export const PerformanceChart = ({ data }: PerformanceChartProps) => {
   const chartData = useMemo(() => {
-    const monthlyData: Record<string, {
-      month: string;
+    // Group data by Year -> Month
+    const groupedData: Record<string, Record<string, {
       overallSearches: number;
       mobilePerformance: number;
       desktopPerformance: number;
       websiteClicks: number;
       directions: number;
       calls: number;
-    }> = {};
+    }>> = {};
 
     data.forEach((item) => {
       const month = item.month.substring(0, 3);
-      if (!monthlyData[month]) {
-        monthlyData[month] = {
-          month,
+      const d = item.date ? new Date(item.date) : new Date();
+      const year = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "2024";
+
+      if (!groupedData[year]) {
+        groupedData[year] = {};
+      }
+      if (!groupedData[year][month]) {
+        groupedData[year][month] = {
           overallSearches: 0,
           mobilePerformance: 0,
           desktopPerformance: 0,
@@ -148,17 +160,53 @@ export const PerformanceChart = ({ data }: PerformanceChartProps) => {
           calls: 0,
         };
       }
-      monthlyData[month].overallSearches += (item.googleSearchMobile + item.googleSearchDesktop);
-      monthlyData[month].mobilePerformance += (item.googleSearchMobile + item.googleMapsMobile);
-      monthlyData[month].desktopPerformance += (item.googleSearchDesktop + item.googleMapsDesktop);
-      monthlyData[month].websiteClicks += item.websiteClicks;
-      monthlyData[month].directions += item.directions;
-      monthlyData[month].calls += item.calls;
+
+      groupedData[year][month].overallSearches += (item.googleSearchMobile + item.googleSearchDesktop);
+      groupedData[year][month].mobilePerformance += (item.googleSearchMobile + item.googleMapsMobile);
+      groupedData[year][month].desktopPerformance += (item.googleSearchDesktop + item.googleMapsDesktop);
+      groupedData[year][month].websiteClicks += item.websiteClicks;
+      groupedData[year][month].directions += item.directions;
+      groupedData[year][month].calls += item.calls;
     });
 
-    return Object.values(monthlyData).sort(
-      (a, b) => monthOrder.indexOf(a.month) - monthOrder.indexOf(b.month)
-    );
+    // Available years sorted descending
+    const availableYears = Object.keys(groupedData).sort((a, b) => parseInt(b) - parseInt(a));
+
+    // Distinct contrasting colors per year (recent to oldest)
+    const yearColors = [
+      "hsl(var(--primary))", // Typically blue/main brand
+      "#f97316",             // Orange (opposite distinction)
+      "#10b981",             // Emerald Green
+      "#8b5cf6",             // Purple
+      "#ef4444",             // Red
+    ];
+
+    const generateSeries = (dataKey: keyof typeof groupedData[string][string], baseColorIndex = 0) => {
+      return availableYears.map((year, index) => {
+        // Map data in strictly chronological month order (Jan-Dec) missing months = null
+        const seriesData = monthOrder.map(month => {
+          return groupedData[year][month] ? groupedData[year][month][dataKey] : null;
+        });
+
+        // Use distinct base color for single year, or high contrast colors for multi-year
+        const color = availableYears.length === 1 ? yearColors[baseColorIndex] : yearColors[index % yearColors.length];
+
+        return {
+          name: year,
+          data: seriesData,
+          color: color
+        }
+      });
+    };
+
+    return {
+      overallSearches: generateSeries("overallSearches", 0),
+      mobilePerformance: generateSeries("mobilePerformance", 1),
+      desktopPerformance: generateSeries("desktopPerformance", 2),
+      websiteClicks: generateSeries("websiteClicks", 3),
+      directions: generateSeries("directions", 0), // Loop back to primary
+      calls: generateSeries("calls", 4),
+    };
   }, [data]);
 
   return (
@@ -167,44 +215,32 @@ export const PerformanceChart = ({ data }: PerformanceChartProps) => {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2">
         <MiniChart
           title="Overall Searches Performance"
-          data={chartData}
-          dataKey="overallSearches"
-          color="hsl(var(--chart-1))"
+          series={chartData.overallSearches}
           delay={0}
         />
         <MiniChart
           title="Mobile (Searches + Maps) Performance"
-          data={chartData}
-          dataKey="mobilePerformance"
-          color="hsl(var(--chart-2))"
+          series={chartData.mobilePerformance}
           delay={50}
         />
         <MiniChart
           title="Desktop (Searches + Maps) Performance"
-          data={chartData}
-          dataKey="desktopPerformance"
-          color="hsl(var(--chart-3))"
+          series={chartData.desktopPerformance}
           delay={100}
         />
         <MiniChart
           title="Website Clicks Performance"
-          data={chartData}
-          dataKey="websiteClicks"
-          color="hsl(var(--chart-4))"
+          series={chartData.websiteClicks}
           delay={150}
         />
         <MiniChart
           title="Directions Performance"
-          data={chartData}
-          dataKey="directions"
-          color="hsl(var(--primary))"
+          series={chartData.directions}
           delay={200}
         />
         <MiniChart
           title="Calls Performance"
-          data={chartData}
-          dataKey="calls"
-          color="hsl(var(--chart-5))"
+          series={chartData.calls}
           delay={250}
         />
       </div>

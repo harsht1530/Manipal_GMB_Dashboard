@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, HashRouter } from "react-router-dom";
 import Index from "./pages/Index";
+import Comparison from "./pages/Comparison";
 import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
@@ -14,6 +15,7 @@ import Branches from "./pages/Branches";
 import Settings from "./pages/Settings";
 import Phone from "./pages/Phone";
 import SearchPerformance from "./pages/SearchPerformance";
+import Postings from "./pages/Postings";
 import NotFound from "./pages/NotFound";
 
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
@@ -51,12 +53,14 @@ const App = () => (
 
             {/* Protected Routes */}
             <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+            <Route path="/comparison" element={<ProtectedRoute><Comparison /></ProtectedRoute>} />
             <Route path="/doctors" element={<ProtectedRoute><Doctors /></ProtectedRoute>} />
             <Route path="/doctor-details/:businessName" element={<ProtectedRoute><DoctorDetails /></ProtectedRoute>} />
             <Route path="/keywords" element={<ProtectedRoute><Keywords /></ProtectedRoute>} />
             <Route path="/branches" element={<ProtectedRoute><Branches /></ProtectedRoute>} />
             <Route path="/phone" element={<ProtectedRoute><Phone /></ProtectedRoute>} />
             <Route path="/search-performance" element={<ProtectedRoute><SearchPerformance /></ProtectedRoute>} />
+            <Route path="/postings" element={<ProtectedRoute><Postings /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>

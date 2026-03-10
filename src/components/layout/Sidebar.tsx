@@ -11,6 +11,8 @@ import {
   Target,
   Search,
   Menu,
+  GitCompare,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SidebarFilters } from "@/components/dashboard/SidebarFilters";
@@ -19,11 +21,13 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
+  // { icon: GitCompare, label: "Comparison", path: "/comparison" },
   { icon: Users, label: "Profiles", path: "/doctors" },
   { icon: Building2, label: "Units", path: "/branches" },
   { icon: Phone, label: "Phone", path: "/phone" },
   { icon: Target, label: "Keywords", path: "/keywords" },
   { icon: Search, label: "Search Perf.", path: "/search-performance" },
+  { icon: FileText, label: "Posting", path: "/postings" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
 

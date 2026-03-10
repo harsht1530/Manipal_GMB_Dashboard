@@ -60,6 +60,14 @@ const PIE_COLORS = [
     "#22c55e", // 5 Stars - Green
 ];
 
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+
 interface ReviewData {
     ratings: number[];
     goodReviews: { comment: string; author: string; date: string }[];
@@ -82,6 +90,8 @@ const DoctorDetails = () => {
     const [reviewData, setReviewData] = useState<ReviewData | null>(null);
     const [reviewsLoading, setReviewsLoading] = useState(false);
     const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+    const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
+    const [availableYears, setAvailableYears] = useState<string[]>([]);
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -146,15 +156,35 @@ const DoctorDetails = () => {
                 }
             }
 
+            // Extract available years
+            const years = [...new Set(foundInsights.map((i) => {
+                if (i.date) return new Date(i.date).getFullYear().toString();
+                // Fallback if no date string provided
+                return "2024";
+            }))].sort((a, b) => parseInt(b) - parseInt(a)); // Descending order
+
+            if (years.length > 0) {
+                setAvailableYears(years);
+                if (!years.includes(selectedYear)) {
+                    // If the selected year (e.g. current year) has no data, fallback to the latest year available
+                    setSelectedYear(years[0]);
+                }
+            }
+
             const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             const sortedInsights = [...foundInsights].sort((a, b) => months.indexOf(a.month) - months.indexOf(b.month));
             setMonthlyInsights(sortedInsights);
             setIsLoading(false);
         }
-    }, [businessName, doctors, insights, globalLoading, user, navigate]);
+    }, [businessName, doctors, insights, globalLoading, user, navigate, selectedYear]);
 
-    // Prepare chart data
-    const chartData = monthlyInsights.map((item) => ({
+    // Prepare chart data (filtered by year)
+    const filteredInsights = monthlyInsights.filter((item) => {
+        const itemYear = item.date ? new Date(item.date).getFullYear().toString() : "2024";
+        return itemYear === selectedYear;
+    });
+
+    const chartData = filteredInsights.map((item) => ({
         month: item.month,
         "Search Mobile": item.googleSearchMobile,
         "Search Desktop": item.googleSearchDesktop,
@@ -436,6 +466,26 @@ const DoctorDetails = () => {
 
                 {/* Monthly Insights Tab */}
                 <TabsContent value="insights" className="space-y-6">
+                    <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-lg font-semibold text-foreground">Monthly Insights Data</h3>
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-muted-foreground mr-1">Filter by Year:</span>
+                            <Select value={selectedYear} onValueChange={setSelectedYear}>
+                                <SelectTrigger className="w-[120px] h-9">
+                                    <SelectValue placeholder="Year" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {availableYears.map(year => (
+                                        <SelectItem key={year} value={year}>{year}</SelectItem>
+                                    ))}
+                                    {availableYears.length === 0 && (
+                                        <SelectItem value={new Date().getFullYear().toString()}>{new Date().getFullYear()}</SelectItem>
+                                    )}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
@@ -478,7 +528,7 @@ const DoctorDetails = () => {
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {monthlyInsights.map((item, idx) => (
+                                        {filteredInsights.length > 0 ? filteredInsights.map((item, idx) => (
                                             <TableRow key={idx} className="hover:bg-muted/50">
                                                 <TableCell className="font-medium">{item.month}</TableCell>
                                                 <TableCell className="text-center">{item.googleSearchMobile}</TableCell>
@@ -489,7 +539,13 @@ const DoctorDetails = () => {
                                                 <TableCell className="text-center">{item.directions}</TableCell>
                                                 <TableCell className="text-center">{item.websiteClicks}</TableCell>
                                             </TableRow>
-                                        ))}
+                                        )) : (
+                                            <TableRow>
+                                                <TableCell colSpan={8} className="text-center py-6 text-muted-foreground">
+                                                    No insights data available for {selectedYear}.
+                                                </TableCell>
+                                            </TableRow>
+                                        )}
                                     </TableBody>
                                 </Table>
                             </div>

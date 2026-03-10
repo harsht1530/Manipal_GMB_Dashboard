@@ -70,6 +70,8 @@ interface UserData {
   notifyMonthlyReport?: boolean;
 }
 
+const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+
 const Settings = () => {
   const { user: currentUser } = useAuth();
   const navigate = useNavigate();
@@ -111,7 +113,7 @@ const Settings = () => {
 
   const fetchClustersBranches = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/clusters-branches`);
+      const res = await fetch(`${API_URL}/api/clusters-branches`);
       const data = await res.json();
       if (data.success) {
         setAvailableClusters(data.data.clusters);
@@ -125,7 +127,7 @@ const Settings = () => {
   const fetchUsers = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/users`);
+      const res = await fetch(`${API_URL}/api/users`);
       const data = await res.json();
       if (data.success) {
         setUsers(data.data);
@@ -140,7 +142,7 @@ const Settings = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const method = editingUser ? "PUT" : "POST";
-    const url = editingUser ? `${import.meta.env.VITE_API_BASE_URL}/api/users/${editingUser._id}` : `${import.meta.env.VITE_API_BASE_URL}/api/users`;
+    const url = editingUser ? `${API_URL}/api/users/${editingUser._id}` : `${API_URL}/api/users`;
 
     try {
       const res = await fetch(url, {
@@ -167,7 +169,7 @@ const Settings = () => {
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this user?")) return;
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/users/${id}`, { method: "DELETE" });
+      const res = await fetch(`${API_URL}/api/users/${id}`, { method: "DELETE" });
       const data = await res.json();
       if (data.success) {
         toast.success("User deleted");
@@ -214,7 +216,7 @@ const Settings = () => {
         return;
       }
 
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/users/${userInDb._id}`, {
+      const res = await fetch(`${API_URL}/api/users/${userInDb._id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
