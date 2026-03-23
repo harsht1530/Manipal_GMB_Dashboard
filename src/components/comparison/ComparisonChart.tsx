@@ -11,43 +11,52 @@ interface ComparisonChartProps {
     entity2Data: InsightData[];
 }
 
-const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_ORDER = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export const ComparisonChart = ({ entity1Name, entity2Name, entity1Data, entity2Data }: ComparisonChartProps) => {
 
     const chartData = useMemo(() => {
         const monthlyData: Record<string, {
-            month: string;
+            yearMonth: string;   // "2025-Jan" — sort key
+            label: string;       // "Jan '25" — display label
             e1Searches: number;
             e2Searches: number;
             e1Calls: number;
             e2Calls: number;
             e1Directions: number;
             e2Directions: number;
+            e1Clicks: number;
+            e2Clicks: number;
         }> = {};
 
         const processData = (data: InsightData[], isEntity1: boolean) => {
             data.forEach(item => {
-                const month = item.month.substring(0, 3);
-                if (!monthlyData[month]) {
-                    monthlyData[month] = {
-                        month,
-                        e1Searches: 0,
-                        e2Searches: 0,
-                        e1Calls: 0,
-                        e2Calls: 0,
-                        e1Directions: 0,
-                        e2Directions: 0
+                const year = new Date(item.date).getFullYear();
+                const month = item.month?.substring(0, 3) || "";
+                if (!month || !year) return;
+                const key = `${year}-${String(MONTH_ORDER.indexOf(month)).padStart(2, "0")}`; // sortable key
+                const label = `${month} '${String(year).slice(2)}`;
+                if (!monthlyData[key]) {
+                    monthlyData[key] = {
+                        yearMonth: key,
+                        label,
+                        e1Searches: 0, e2Searches: 0,
+                        e1Calls: 0, e2Calls: 0,
+                        e1Directions: 0, e2Directions: 0,
+                        e1Clicks: 0, e2Clicks: 0,
                     };
                 }
+                const searches = item.googleSearchMobile + item.googleSearchDesktop + item.googleMapsMobile + item.googleMapsDesktop;
                 if (isEntity1) {
-                    monthlyData[month].e1Searches += (item.googleSearchMobile + item.googleSearchDesktop + item.googleMapsMobile + item.googleMapsDesktop);
-                    monthlyData[month].e1Calls += item.calls;
-                    monthlyData[month].e1Directions += item.directions;
+                    monthlyData[key].e1Searches += searches;
+                    monthlyData[key].e1Calls += item.calls;
+                    monthlyData[key].e1Directions += item.directions;
+                    monthlyData[key].e1Clicks += item.websiteClicks;
                 } else {
-                    monthlyData[month].e2Searches += (item.googleSearchMobile + item.googleSearchDesktop + item.googleMapsMobile + item.googleMapsDesktop);
-                    monthlyData[month].e2Calls += item.calls;
-                    monthlyData[month].e2Directions += item.directions;
+                    monthlyData[key].e2Searches += searches;
+                    monthlyData[key].e2Calls += item.calls;
+                    monthlyData[key].e2Directions += item.directions;
+                    monthlyData[key].e2Clicks += item.websiteClicks;
                 }
             });
         };
@@ -55,16 +64,18 @@ export const ComparisonChart = ({ entity1Name, entity2Name, entity1Data, entity2
         processData(entity1Data, true);
         processData(entity2Data, false);
 
-        return Object.values(monthlyData).sort(
-            (a, b) => monthOrder.indexOf(a.month) - monthOrder.indexOf(b.month)
-        );
+        return Object.values(monthlyData).sort((a, b) => a.yearMonth.localeCompare(b.yearMonth));
     }, [entity1Data, entity2Data]);
 
-    if (!entity1Name || !entity2Name) {
-        return null;
-    }
+    if (!entity1Name || !entity2Name) return null;
 
-    const getOptions = (title: string, e1Key: 'e1Searches' | 'e1Calls' | 'e1Directions', e2Key: 'e2Searches' | 'e2Calls' | 'e2Directions'): Highcharts.Options => ({
+    const categories = chartData.map(d => d.label);
+
+    const getOptions = (
+        title: string,
+        e1Key: 'e1Searches' | 'e1Calls' | 'e1Directions' | 'e1Clicks',
+        e2Key: 'e2Searches' | 'e2Calls' | 'e2Directions' | 'e2Clicks'
+    ): Highcharts.Options => ({
         chart: {
             type: 'column',
             height: 350,
@@ -74,8 +85,11 @@ export const ComparisonChart = ({ entity1Name, entity2Name, entity1Data, entity2
         title: { text: undefined },
         credits: { enabled: false },
         xAxis: {
-            categories: chartData.map(d => d.month),
-            labels: { style: { color: 'hsl(var(--muted-foreground))' } },
+            categories,
+            labels: {
+                style: { color: 'hsl(var(--muted-foreground))', fontSize: '10px' },
+                rotation: categories.length > 8 ? -35 : 0,
+            },
             lineColor: 'hsl(var(--border))',
             tickColor: 'hsl(var(--border))'
         },
@@ -93,12 +107,13 @@ export const ComparisonChart = ({ entity1Name, entity2Name, entity1Data, entity2
             backgroundColor: 'white',
             borderRadius: 8,
             useHTML: true,
-            headerFormat: '<span style="font-size: 11px">{point.key}</span><br/>'
+            headerFormat: '<span style="font-size: 11px; font-weight:600">{point.key}</span><br/>'
         },
         plotOptions: {
             column: {
                 borderRadius: 4,
                 borderWidth: 0,
+                groupPadding: 0.1,
                 dataLabels: { enabled: false }
             }
         },
@@ -119,7 +134,7 @@ export const ComparisonChart = ({ entity1Name, entity2Name, entity1Data, entity2
     });
 
     return (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4">
             <Card className="animate-fade-in shadow-sm border-border">
                 <CardHeader className="py-4">
                     <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Total Searches</CardTitle>
@@ -144,6 +159,15 @@ export const ComparisonChart = ({ entity1Name, entity2Name, entity1Data, entity2
                 </CardHeader>
                 <CardContent className="p-2">
                     <HighchartsReact highcharts={Highcharts} options={getOptions('Directions', 'e1Directions', 'e2Directions')} />
+                </CardContent>
+            </Card>
+
+            <Card className="animate-fade-in shadow-sm border-border" style={{ animationDelay: '150ms' }}>
+                <CardHeader className="py-4">
+                    <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Website Clicks</CardTitle>
+                </CardHeader>
+                <CardContent className="p-2">
+                    <HighchartsReact highcharts={Highcharts} options={getOptions('Clicks', 'e1Clicks', 'e2Clicks')} />
                 </CardContent>
             </Card>
         </div>

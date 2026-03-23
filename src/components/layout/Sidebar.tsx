@@ -21,13 +21,13 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
-  // { icon: GitCompare, label: "Comparison", path: "/comparison" },
+  { icon: GitCompare, label: "Comparison", path: "/comparison" },
   { icon: Users, label: "Profiles", path: "/doctors" },
   { icon: Building2, label: "Units", path: "/branches" },
   { icon: Phone, label: "Phone", path: "/phone" },
   { icon: Target, label: "Keywords", path: "/keywords" },
   { icon: Search, label: "Search Perf.", path: "/search-performance" },
-  { icon: FileText, label: "Posting", path: "/postings" },
+  { icon: FileText, label: "GBP Optimisation", path: "/postings" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
 

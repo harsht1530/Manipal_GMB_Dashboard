@@ -9,6 +9,7 @@ interface MetricCardProps {
   icon: LucideIcon;
   iconColor?: string;
   delay?: number;
+  customChangeLabel?: string;
 }
 
 export const MetricCard = ({
@@ -18,6 +19,7 @@ export const MetricCard = ({
   icon: Icon,
   iconColor = "text-primary",
   delay = 0,
+  customChangeLabel,
 }: MetricCardProps) => {
   const isPositive = change && change > 0;
   const isNegative = change && change < 0;
@@ -67,7 +69,7 @@ export const MetricCard = ({
                 ) : null}
                 <span>
                   {isPositive ? "+" : ""}
-                  {change}% vs prev period
+                  {change}% {customChangeLabel ?? "vs prev period"}
                 </span>
               </div>
             )}

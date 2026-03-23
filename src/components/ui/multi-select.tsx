@@ -17,8 +17,10 @@ import {
 } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
 
+export type MultiSelectOption = string | { label: string; value: string; group?: string };
+
 interface MultiSelectProps {
-    options: string[];
+    options: MultiSelectOption[];
     selected: string[];
     onChange: (selected: string[]) => void;
     placeholder?: string;
@@ -34,8 +36,28 @@ export function MultiSelect({
 }: MultiSelectProps) {
     const [open, setOpen] = React.useState(false);
 
-    const handleUnselect = (item: string) => {
-        onChange(selected.filter((i) => i !== item));
+    const normalizedOptions = React.useMemo(() => {
+        return options.map((opt) =>
+            typeof opt === "string"
+                ? { label: opt, value: opt, group: "default" }
+                : { label: opt.label, value: opt.value, group: opt.group || "default" }
+        );
+    }, [options]);
+
+    const groups = React.useMemo(() => {
+        return Array.from(new Set(normalizedOptions.map((o) => o.group)));
+    }, [normalizedOptions]);
+
+    const getLabel = React.useCallback(
+        (value: string) => {
+            const opt = normalizedOptions.find((o) => o.value === value);
+            return opt ? opt.label : value;
+        },
+        [normalizedOptions]
+    );
+
+    const handleUnselect = (itemValue: string) => {
+        onChange(selected.filter((i) => i !== itemValue));
     };
 
     return (
@@ -63,7 +85,7 @@ export function MultiSelect({
                                             handleUnselect(item);
                                         }}
                                     >
-                                        <span className="truncate">{item}</span>
+                                        <span className="truncate">{getLabel(item)}</span>
                                         <X className="ml-1 h-3 w-3 text-muted-foreground hover:text-foreground shrink-0" />
                                     </Badge>
                                 ))}
@@ -88,33 +110,39 @@ export function MultiSelect({
                     <CommandInput placeholder={placeholder} />
                     <CommandList>
                         <CommandEmpty>No results found.</CommandEmpty>
-                        <CommandGroup className="max-h-64 overflow-auto">
-                            {options.map((option) => (
-                                <CommandItem
-                                    key={option}
-                                    onSelect={() => {
-                                        onChange(
-                                            selected.includes(option)
-                                                ? selected.filter((item) => item !== option)
-                                                : [...selected, option]
-                                        );
-                                        setOpen(true);
-                                    }}
-                                >
-                                    <div
-                                        className={cn(
-                                            "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
-                                            selected.includes(option)
-                                                ? "bg-primary text-primary-foreground"
-                                                : "opacity-50 [&_svg]:invisible"
-                                        )}
-                                    >
-                                        <Check className={cn("h-4 w-4")} />
-                                    </div>
-                                    <span>{option}</span>
-                                </CommandItem>
+                        <div className="max-h-64 overflow-auto">
+                            {groups.map((group) => (
+                                <CommandGroup key={group} heading={group !== "default" ? group : undefined}>
+                                    {normalizedOptions
+                                        .filter((o) => o.group === group)
+                                        .map((option) => (
+                                            <CommandItem
+                                                key={option.value}
+                                                onSelect={() => {
+                                                    onChange(
+                                                        selected.includes(option.value)
+                                                            ? selected.filter((item) => item !== option.value)
+                                                            : [...selected, option.value]
+                                                    );
+                                                    setOpen(true);
+                                                }}
+                                            >
+                                                <div
+                                                    className={cn(
+                                                        "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+                                                        selected.includes(option.value)
+                                                            ? "bg-primary text-primary-foreground"
+                                                            : "opacity-50 [&_svg]:invisible"
+                                                    )}
+                                                >
+                                                    <Check className={cn("h-4 w-4")} />
+                                                </div>
+                                                <span>{option.label}</span>
+                                            </CommandItem>
+                                        ))}
+                                </CommandGroup>
                             ))}
-                        </CommandGroup>
+                        </div>
                     </CommandList>
                 </Command>
             </PopoverContent>

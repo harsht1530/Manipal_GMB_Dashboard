@@ -62,7 +62,47 @@ const Postings = () => {
         }
         const branches = [...new Set(availableForBranches.map(p => p.branch))].filter(Boolean).sort();
 
-        const months = [...new Set(postings.map(p => p.month))].filter(Boolean);
+        const monthData = selectedYear.length > 0
+            ? postings.filter(p => {
+                let y = "";
+                if (p.date) {
+                    if (p.date.includes('-')) {
+                        const parts = p.date.split('-');
+                        if (parts[2] && parts[2].length === 4) y = parts[2];
+                    }
+                    if (!y) {
+                        try { y = new Date(p.date).getFullYear().toString(); } catch { }
+                    }
+                }
+                return selectedYear.includes(y);
+            })
+            : postings;
+
+        const monthSet = new Set<string>();
+        monthData.forEach(p => {
+            if (!p.month) return;
+            let y = "Unknown Year";
+            if (p.date) {
+                if (p.date.includes('-')) {
+                    const parts = p.date.split('-');
+                    if (parts[2] && parts[2].length === 4) y = parts[2];
+                }
+                if (y === "Unknown Year") {
+                    try { y = new Date(p.date).getFullYear().toString(); } catch { }
+                }
+            }
+            monthSet.add(JSON.stringify({ month: p.month, year: y }));
+        });
+
+        const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const months = Array.from(monthSet)
+            .map(s => JSON.parse(s))
+            .sort((a, b) => {
+                if (a.year !== b.year) return parseInt(b.year) - parseInt(a.year);
+                return monthOrder.indexOf(a.month) - monthOrder.indexOf(b.month);
+            })
+            .map(m => ({ label: m.month, value: `${m.month} ${m.year}`, group: m.year }));
+
         const years = [...new Set(postings.map(p => {
             if (!p.date) return "";
             if (p.date.includes('-')) {
@@ -82,20 +122,23 @@ const Postings = () => {
         return postings.filter(post => {
             const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(post.cluster);
             const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(post.branch);
-            const monthMatch = selectedMonth.length === 0 || selectedMonth.includes(post.month);
+
+            let postYear = "";
+            if (post.date) {
+                if (post.date.includes('-')) {
+                    const parts = post.date.split('-');
+                    if (parts[2] && parts[2].length === 4) postYear = parts[2];
+                }
+                if (!postYear) {
+                    try { postYear = new Date(post.date).getFullYear().toString(); } catch { }
+                }
+            }
+
+            const itemMonthYear = `${post.month} ${postYear}`;
+            const monthMatch = selectedMonth.length === 0 || selectedMonth.includes(itemMonthYear);
 
             let yearMatch = true;
             if (selectedYear.length > 0) {
-                let postYear = "";
-                if (post.date) {
-                    if (post.date.includes('-')) {
-                        const parts = post.date.split('-');
-                        if (parts[2] && parts[2].length === 4) postYear = parts[2];
-                    }
-                    if (!postYear) {
-                        try { postYear = new Date(post.date).getFullYear().toString(); } catch { }
-                    }
-                }
                 yearMatch = selectedYear.includes(postYear);
             }
 
@@ -177,32 +220,36 @@ const Postings = () => {
     const filteredLocations = useMemo(() => {
         if (!locations) return [];
 
-        const targetMonths = selectedMonth.length > 0 ? selectedMonth : [latestLocMonth];
-        const targetYears = selectedYear.length > 0 ? selectedYear : [latestLocYear];
+        const targetMonths = selectedMonth.length > 0 ? selectedMonth.map(m => m.split(' ')[0]) : [latestLocMonth];
+        const targetYears = selectedMonth.length > 0 ? selectedMonth.map(m => m.split(' ')[1]) : (selectedYear.length > 0 ? selectedYear : [latestLocYear]);
 
         return locations.filter(loc => {
             const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(loc.cluster);
             const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(loc.unitName); // branch maps to unitName
-            const monthMatch = targetMonths.includes(loc.month);
+
+            let locYear = "";
+            if (loc.date) {
+                if (loc.date.includes('-')) {
+                    const parts = loc.date.split('-');
+                    if (parts[2] && parts[2].length === 4) locYear = parts[2];
+                }
+                if (!locYear) {
+                    try { locYear = new Date(loc.date).getFullYear().toString(); } catch { }
+                }
+            }
+
+            const exactMonthMatch = selectedMonth.length === 0
+                ? targetMonths.includes(loc.month)
+                : selectedMonth.includes(`${loc.month} ${locYear}`);
 
             let yearMatch = true;
             if (targetYears.length > 0) {
-                let locYear = "";
-                if (loc.date) {
-                    if (loc.date.includes('-')) {
-                        const parts = loc.date.split('-');
-                        if (parts[2] && parts[2].length === 4) locYear = parts[2];
-                    }
-                    if (!locYear) {
-                        try { locYear = new Date(loc.date).getFullYear().toString(); } catch { }
-                    }
-                }
                 yearMatch = targetYears.includes(locYear);
             }
 
             const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(loc.department);
 
-            return clusterMatch && branchMatch && monthMatch && yearMatch && departmentMatch;
+            return clusterMatch && branchMatch && exactMonthMatch && departmentMatch && yearMatch;
         });
     }, [locations, selectedCluster, selectedBranch, selectedMonth, selectedYear, selectedDepartments, latestLocMonth, latestLocYear]);
 

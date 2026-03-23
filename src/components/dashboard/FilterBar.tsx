@@ -9,7 +9,7 @@ interface FilterBarProps {
   selectedSpeciality: string[];
   clusterOptions: string[];
   branchOptions: string[];
-  monthOptions: string[];
+  monthOptions: any[];
   yearOptions?: string[];
   specialityOptions: string[];
   onClusterChange: (value: string[]) => void;
@@ -21,6 +21,7 @@ interface FilterBarProps {
   hideYear?: boolean;
   hideCluster?: boolean;
   hideBranch?: boolean;
+  hideSpeciality?: boolean;
 }
 
 export const FilterBar = ({
@@ -43,6 +44,7 @@ export const FilterBar = ({
   hideYear = false,
   hideCluster = false,
   hideBranch = false,
+  hideSpeciality = false,
 }: FilterBarProps) => {
   return (
     <div className="flex flex-wrap gap-4 items-center p-4 bg-card rounded-xl border border-border mb-6 animate-fade-in">
@@ -96,14 +98,16 @@ export const FilterBar = ({
           </div>
         )}
 
-        <div className="w-full sm:w-[220px]">
-          <MultiSelect
-            placeholder="Select Speciality"
-            options={specialityOptions}
-            selected={selectedSpeciality}
-            onChange={onSpecialityChange}
-          />
-        </div>
+        {!hideSpeciality && (
+          <div className="w-full sm:w-[220px]">
+            <MultiSelect
+              placeholder="Select Speciality"
+              options={specialityOptions}
+              selected={selectedSpeciality}
+              onChange={onSpecialityChange}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
