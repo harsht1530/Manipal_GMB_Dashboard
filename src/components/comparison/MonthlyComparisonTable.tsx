@@ -14,8 +14,12 @@ import {
     Globe,
     CalendarSearch,
     X,
+    LayoutList,
+    BarChart2 as BarChartIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import Highcharts from "highcharts";
+import HighchartsReact from "highcharts-react-official";
 
 interface MonthlyComparisonTableProps {
     entityName: string;
@@ -27,7 +31,7 @@ const MONTH_ORDER = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Se
 
 interface MonthMetrics {
     month: string;
-    yearMonth: string; // e.g. "2024-Jan"
+    yearMonth: string;
     searches: number;
     calls: number;
     directions: number;
@@ -90,49 +94,89 @@ export const MonthlyComparisonTable = ({
         });
     }, [entityData]);
 
-    // Selected months state (empty = all)
     const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
     const [pickerOpen, setPickerOpen] = useState(false);
+    const [viewMode, setViewMode] = useState<"table" | "chart">("table");
 
     const toggleMonth = (ym: string) => {
-        setSelectedMonths(prev =>
-            prev.includes(ym) ? prev.filter(m => m !== ym) : [...prev, ym]
-        );
+        setSelectedMonths(prev => prev.includes(ym) ? prev.filter(m => m !== ym) : [...prev, ym]);
     };
-
     const clearSelection = () => setSelectedMonths([]);
 
-    // Apply filter
     const monthlyMetrics: MonthMetrics[] = useMemo(() => {
         if (selectedMonths.length === 0) return allMonthlyMetrics;
         return allMonthlyMetrics.filter(m => selectedMonths.includes(m.yearMonth));
     }, [allMonthlyMetrics, selectedMonths]);
 
-    const metrics: Array<{ key: keyof MonthMetrics; label: string }> = [
-        { key: "searches", label: "Total Searches" },
-        { key: "calls", label: "Phone Calls" },
-        { key: "directions", label: "Directions" },
-        { key: "websiteClicks", label: "Website Clicks" },
+    const metricDefs: Array<{ key: keyof MonthMetrics; label: string; color: string }> = [
+        { key: "searches", label: "Total Searches", color: "hsl(var(--primary))" },
+        { key: "calls", label: "Phone Calls", color: "hsl(var(--chart-2))" },
+        { key: "directions", label: "Directions", color: "hsl(var(--chart-3))" },
+        { key: "websiteClicks", label: "Website Clicks", color: "hsl(var(--chart-4))" },
     ];
 
-    // Generate insights with icons
+    // Highcharts options for chart mode
+    const chartOptions: Highcharts.Options = useMemo(() => ({
+        chart: {
+            type: "column",
+            height: 340,
+            backgroundColor: "transparent",
+            style: { fontFamily: "inherit" },
+        },
+        title: { text: undefined },
+        credits: { enabled: false },
+        xAxis: {
+            categories: monthlyMetrics.map(m => m.yearMonth),
+            labels: { style: { color: "hsl(var(--muted-foreground))", fontSize: "11px" } },
+            lineColor: "hsl(var(--border))",
+            tickColor: "hsl(var(--border))",
+        },
+        yAxis: {
+            title: { text: undefined },
+            labels: { style: { color: "hsl(var(--muted-foreground))" } },
+            gridLineColor: "hsl(var(--muted))",
+            gridLineDashStyle: "Dash",
+        },
+        legend: {
+            itemStyle: { color: "hsl(var(--foreground))", fontWeight: "500", fontSize: "11px" },
+        },
+        tooltip: {
+            shared: true,
+            backgroundColor: "white",
+            borderRadius: 8,
+            useHTML: true,
+            headerFormat: '<span style="font-size: 11px; font-weight: 600">{point.key}</span><br/>',
+        },
+        plotOptions: {
+            column: {
+                borderRadius: 4,
+                borderWidth: 0,
+                groupPadding: 0.1,
+            },
+        },
+        series: metricDefs.map(def => ({
+            name: def.label,
+            type: "column" as const,
+            data: monthlyMetrics.map(m => m[def.key] as number),
+            color: def.color,
+        })),
+    }), [monthlyMetrics, metricDefs]);
+
+    // Insights
     const insights: InsightItem[] = useMemo(() => {
         if (monthlyMetrics.length === 0) return [{
             icon: <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />,
             text: "No data available for the selected period."
         }];
         const result: InsightItem[] = [];
-
         const bold = (text: string) => <strong className="text-foreground font-semibold">{text}</strong>;
 
-        // Best month by total
         const bestMonth = [...monthlyMetrics].sort((a, b) => b.total - a.total)[0];
         result.push({
             icon: <Star className="h-3.5 w-3.5 text-amber-500" />,
             text: <span><b className="text-foreground font-semibold">{bestMonth.yearMonth}</b> was the overall strongest month for {entityName} — {formatNum(bestMonth.searches)} searches, {formatNum(bestMonth.calls)} calls, {formatNum(bestMonth.directions)} directions.</span>
         });
 
-        // Highest calls month
         const highCallsMonth = [...monthlyMetrics].sort((a, b) => b.calls - a.calls)[0];
         if (highCallsMonth && highCallsMonth.calls > 0) {
             result.push({
@@ -141,12 +185,9 @@ export const MonthlyComparisonTable = ({
             });
         }
 
-        // MoM improvements
         if (monthlyMetrics.length >= 2) {
-            let bestMoMPct = -Infinity;
-            let bestMoMLabel = "";
-            let worstMoMPct = Infinity;
-            let worstMoMLabel = "";
+            let bestMoMPct = -Infinity, bestMoMLabel = "";
+            let worstMoMPct = Infinity, worstMoMLabel = "";
 
             for (let i = 1; i < monthlyMetrics.length; i++) {
                 const prev = monthlyMetrics[i - 1];
@@ -158,51 +199,40 @@ export const MonthlyComparisonTable = ({
                 }
             }
 
-            if (bestMoMLabel) {
-                result.push({
-                    icon: <Rocket className="h-3.5 w-3.5 text-emerald-500" />,
-                    text: <span>Biggest month-over-month growth: {bold(bestMoMLabel)} with an overall change of {bold(pctStr(bestMoMPct))}.</span>
-                });
-            }
-            if (worstMoMLabel && worstMoMPct < 0) {
-                result.push({
-                    icon: <AlertTriangle className="h-3.5 w-3.5 text-red-500" />,
-                    text: <span>Largest decline: {bold(worstMoMLabel)} saw a {bold(pctStr(worstMoMPct))} drop in total activity.</span>
-                });
-            }
+            if (bestMoMLabel) result.push({
+                icon: <Rocket className="h-3.5 w-3.5 text-emerald-500" />,
+                text: <span>Biggest month-over-month growth: {bold(bestMoMLabel)} with an overall change of {bold(pctStr(bestMoMPct))}.</span>
+            });
 
-            // Overall trend
+            if (worstMoMLabel && worstMoMPct < 0) result.push({
+                icon: <AlertTriangle className="h-3.5 w-3.5 text-red-500" />,
+                text: <span>Largest decline: {bold(worstMoMLabel)} saw a {bold(pctStr(worstMoMPct))} drop in total activity.</span>
+            });
+
             const first = monthlyMetrics[0];
             const last = monthlyMetrics[monthlyMetrics.length - 1];
             const overallPct = calcPct(last.total, first.total);
             if (overallPct !== null) {
-                if (overallPct > 10) {
-                    result.push({
-                        icon: <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />,
-                        text: <span>Overall trend for {bold(entityName)} is {bold("improving")} — total activity grew by {pctStr(overallPct)} from {first.yearMonth} to {last.yearMonth}.</span>
-                    });
-                } else if (overallPct < -10) {
-                    result.push({
-                        icon: <TrendingDown className="h-3.5 w-3.5 text-red-500" />,
-                        text: <span>Overall trend for {bold(entityName)} is {bold("declining")} — total activity fell by {pctStr(Math.abs(overallPct))} from {first.yearMonth} to {last.yearMonth}.</span>
-                    });
-                } else {
-                    result.push({
-                        icon: <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />,
-                        text: <span>Overall trend for {bold(entityName)} is {bold("stable")} — activity remained consistent across the selected period ({pctStr(overallPct)} net change).</span>
-                    });
-                }
+                if (overallPct > 10) result.push({
+                    icon: <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />,
+                    text: <span>Overall trend for {bold(entityName)} is {bold("improving")} — total activity grew by {pctStr(overallPct)} from {first.yearMonth} to {last.yearMonth}.</span>
+                });
+                else if (overallPct < -10) result.push({
+                    icon: <TrendingDown className="h-3.5 w-3.5 text-red-500" />,
+                    text: <span>Overall trend for {bold(entityName)} is {bold("declining")} — total activity fell by {pctStr(Math.abs(overallPct))} from {first.yearMonth} to {last.yearMonth}.</span>
+                });
+                else result.push({
+                    icon: <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />,
+                    text: <span>Overall trend for {bold(entityName)} is {bold("stable")} — activity remained consistent ({pctStr(overallPct)} net change).</span>
+                });
             }
         }
 
-        // Website clicks insight
         const highClicksMonth = [...monthlyMetrics].sort((a, b) => b.websiteClicks - a.websiteClicks)[0];
-        if (highClicksMonth && highClicksMonth.websiteClicks > 0) {
-            result.push({
-                icon: <Globe className="h-3.5 w-3.5 text-indigo-500" />,
-                text: <span>Website engagement peaked in {bold(highClicksMonth.yearMonth)} with {formatNum(highClicksMonth.websiteClicks)} clicks — indicating strong online intent.</span>
-            });
-        }
+        if (highClicksMonth && highClicksMonth.websiteClicks > 0) result.push({
+            icon: <Globe className="h-3.5 w-3.5 text-indigo-500" />,
+            text: <span>Website engagement peaked in {bold(highClicksMonth.yearMonth)} with {formatNum(highClicksMonth.websiteClicks)} clicks — indicating strong online intent.</span>
+        });
 
         return result;
     }, [monthlyMetrics, entityName]);
@@ -219,66 +249,88 @@ export const MonthlyComparisonTable = ({
 
     return (
         <div className="space-y-4">
-            {/* Table Card */}
             <Card className="border-border shadow-sm overflow-hidden">
+                {/* ── Card Header ─────────────────────────────────────── */}
                 <CardHeader className="py-4 px-6 border-b border-border bg-muted/30">
                     <div className="flex flex-wrap items-center justify-between gap-3">
+                        {/* Title */}
                         <div className="flex items-center gap-2">
                             <div className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: entityColor }} />
                             <CardTitle className="text-sm font-semibold text-foreground">{entityName} — Month-wise Breakdown</CardTitle>
                         </div>
 
-                        {/* Month Picker */}
-                        <div className="relative">
-                            <button
-                                onClick={() => setPickerOpen(p => !p)}
-                                className={cn(
-                                    "flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors",
-                                    "bg-background hover:bg-muted border-border text-foreground"
-                                )}
-                            >
-                                <CalendarSearch className="h-3.5 w-3.5 text-primary" />
-                                {selectedMonths.length === 0
-                                    ? "All Months"
-                                    : `${selectedMonths.length} Month${selectedMonths.length > 1 ? "s" : ""} Selected`}
-                            </button>
+                        {/* Controls */}
+                        <div className="flex items-center gap-2">
 
-                            {pickerOpen && (
-                                <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-xl shadow-xl p-3 min-w-[260px]">
-                                    <div className="flex items-center justify-between mb-2 pb-2 border-b border-border/60">
-                                        <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Select Months to Compare</span>
-                                        <button onClick={() => setPickerOpen(false)} className="text-muted-foreground hover:text-foreground">
-                                            <X className="h-3.5 w-3.5" />
-                                        </button>
-                                    </div>
+                            {/* Month Picker */}
+                            <div className="relative">
+                                <button
+                                    onClick={() => setPickerOpen(p => !p)}
+                                    className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border bg-background hover:bg-muted border-border text-foreground transition-colors"
+                                >
+                                    <CalendarSearch className="h-3.5 w-3.5 text-primary" />
+                                    {selectedMonths.length === 0 ? "All Months" : `${selectedMonths.length} Month${selectedMonths.length > 1 ? "s" : ""} Selected`}
+                                </button>
 
-                                    <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto scrollbar-hide">
-                                        {allMonthlyMetrics.map(m => (
-                                            <button
-                                                key={m.yearMonth}
-                                                onClick={() => toggleMonth(m.yearMonth)}
-                                                className={cn(
-                                                    "px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all",
-                                                    selectedMonths.includes(m.yearMonth)
-                                                        ? "bg-primary text-primary-foreground border-primary"
-                                                        : "bg-background text-foreground border-border hover:border-primary/50 hover:bg-muted"
-                                                )}
-                                            >
-                                                {m.yearMonth}
+                                {pickerOpen && (
+                                    <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-xl shadow-xl p-3 min-w-[260px]">
+                                        <div className="flex items-center justify-between mb-2 pb-2 border-b border-border/60">
+                                            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Select Months to Compare</span>
+                                            <button onClick={() => setPickerOpen(false)} className="text-muted-foreground hover:text-foreground">
+                                                <X className="h-3.5 w-3.5" />
                                             </button>
-                                        ))}
+                                        </div>
+                                        <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto scrollbar-hide">
+                                            {allMonthlyMetrics.map(m => (
+                                                <button
+                                                    key={m.yearMonth}
+                                                    onClick={() => toggleMonth(m.yearMonth)}
+                                                    className={cn(
+                                                        "px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all",
+                                                        selectedMonths.includes(m.yearMonth)
+                                                            ? "bg-primary text-primary-foreground border-primary"
+                                                            : "bg-background text-foreground border-border hover:border-primary/50 hover:bg-muted"
+                                                    )}
+                                                >
+                                                    {m.yearMonth}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        {selectedMonths.length > 0 && (
+                                            <button
+                                                onClick={clearSelection}
+                                                className="mt-2 pt-2 border-t border-border/60 w-full text-[11px] text-muted-foreground hover:text-destructive text-center transition-colors"
+                                            >
+                                                Clear selection (show all)
+                                            </button>
+                                        )}
                                     </div>
+                                )}
+                            </div>
 
-                                    {selectedMonths.length > 0 && (
-                                        <button
-                                            onClick={clearSelection}
-                                            className="mt-2 pt-2 border-t border-border/60 w-full text-[11px] text-muted-foreground hover:text-destructive text-center transition-colors"
-                                        >
-                                            Clear selection (show all)
-                                        </button>
+                            {/* Table / Chart Toggle */}
+                            <div className="flex items-center bg-muted rounded-lg border border-border p-0.5 gap-0.5">
+                                <button
+                                    onClick={() => setViewMode("table")}
+                                    title="Table view"
+                                    className={cn(
+                                        "flex items-center justify-center h-7 w-7 rounded-md transition-all",
+                                        viewMode === "table" ? "bg-card shadow text-primary" : "text-muted-foreground hover:text-foreground"
                                     )}
-                                </div>
-                            )}
+                                >
+                                    <LayoutList className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                    onClick={() => setViewMode("chart")}
+                                    title="Chart view"
+                                    className={cn(
+                                        "flex items-center justify-center h-7 w-7 rounded-md transition-all",
+                                        viewMode === "chart" ? "bg-card shadow text-primary" : "text-muted-foreground hover:text-foreground"
+                                    )}
+                                >
+                                    <BarChartIcon className="h-3.5 w-3.5" />
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -297,26 +349,26 @@ export const MonthlyComparisonTable = ({
                     )}
                 </CardHeader>
 
+                {/* ── Card Content ─────────────────────────────────────── */}
                 <CardContent className="p-0">
                     {monthlyMetrics.length === 0 ? (
                         <div className="p-6 text-center text-muted-foreground text-sm">
                             No data for selected months. Try selecting different months.
                         </div>
-                    ) : (
+                    ) : viewMode === "table" ? (
+                        // ── TABLE VIEW ──────────────────────────────────────
                         <div className="overflow-x-auto scrollbar-hide">
                             <table className="w-full text-sm">
                                 <thead>
                                     <tr className="bg-muted/40 border-b border-border">
-                                        {/* Metric header — solid bg-card so it's never transparent */}
                                         <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[140px] sticky left-0 bg-card border-r border-border">Metric</th>
-                                        {monthlyMetrics.map((m) => (
+                                        {monthlyMetrics.map(m => (
                                             <th key={m.yearMonth} colSpan={2} className="text-center px-2 py-3 text-xs font-semibold text-foreground uppercase tracking-wider border-l border-border min-w-[140px]">
                                                 {m.yearMonth}
                                             </th>
                                         ))}
                                     </tr>
                                     <tr className="bg-muted/20 border-b border-border">
-                                        {/* Sub-header for Metric column — also solid */}
                                         <th className="text-left px-4 py-2 text-[10px] text-muted-foreground sticky left-0 bg-card border-r border-border"></th>
                                         {monthlyMetrics.map((m, idx) => (
                                             <th key={m.yearMonth + "-sub"} colSpan={2} className="text-center px-2 py-1 border-l border-border">
@@ -329,7 +381,7 @@ export const MonthlyComparisonTable = ({
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {metrics.map(({ key, label }, rowIdx) => (
+                                    {metricDefs.map(({ key, label }, rowIdx) => (
                                         <tr key={key} className={cn("border-b border-border/60 transition-colors hover:bg-muted/20", rowIdx % 2 !== 0 && "bg-muted/10")}>
                                             <td className="px-4 py-3 text-xs font-medium text-foreground sticky left-0 bg-card border-r border-border/60">{label}</td>
                                             {monthlyMetrics.map((m, idx) => {
@@ -374,6 +426,11 @@ export const MonthlyComparisonTable = ({
                                     ))}
                                 </tbody>
                             </table>
+                        </div>
+                    ) : (
+                        // ── CHART VIEW ──────────────────────────────────────
+                        <div className="p-4">
+                            <HighchartsReact highcharts={Highcharts} options={chartOptions} />
                         </div>
                     )}
                 </CardContent>
