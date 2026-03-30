@@ -258,12 +258,26 @@ const Postings = () => {
         return filteredLocations.reduce((sum, loc) => sum + (loc.verifiedProfiles || 0), 0);
     }, [filteredLocations]);
 
-    const completed = filteredPostings.length;
-    // Difference between Total Profiles and Completed
-    const yetToStart = Math.max(0, totalProfiles - completed);
+    const inProcessPostings = useMemo(() => {
+        if (!postings) return [];
+        return postings.filter(post => {
+            const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(post.cluster);
+            const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(post.branch);
+            const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(post.department);
+            
+            return clusterMatch && branchMatch && departmentMatch && (!post.date || post.date.trim() === '');
+        });
+    }, [postings, selectedCluster, selectedBranch, selectedDepartments]);
+
+    const completed = filteredPostings.filter(p => p.date && p.date.trim() !== '').length;
+    const inProcessCount = inProcessPostings.length;
+    
+    // Difference between Total Profiles and (Completed + In Process)
+    const yetToStart = Math.max(0, totalProfiles - completed - inProcessCount);
 
     // Percentages
     const completedPercent = totalProfiles > 0 ? Math.round((completed / totalProfiles) * 100) : 0;
+    const inProcessPercent = totalProfiles > 0 ? Math.round((inProcessCount / totalProfiles) * 100) : 0;
     const yetToStartPercent = totalProfiles > 0 ? Math.round((yetToStart / totalProfiles) * 100) : 0;
 
     const handleExport = () => {
@@ -343,7 +357,7 @@ const Postings = () => {
             />
 
             {/* Cards section */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-6">
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
                         <CardTitle className="text-sm font-medium text-muted-foreground">Total Profiles</CardTitle>
@@ -368,8 +382,19 @@ const Postings = () => {
 
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-muted-foreground">Yet to Start</CardTitle>
+                        <CardTitle className="text-sm font-medium text-muted-foreground">In Process</CardTitle>
                         <Clock className="h-4 w-4 text-amber-500" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{inProcessCount}</div>
+                        <p className="text-xs text-muted-foreground mt-1">{inProcessPercent}% of Total</p>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground">Yet to Start</CardTitle>
+                        <Clock className="h-4 w-4 text-red-500" />
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">{yetToStart}</div>

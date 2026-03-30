@@ -12,6 +12,7 @@ const Location = require('./models/Location');
 const User = require('./models/User');
 const Alert = require('./models/Alert');
 const Posting = require('./models/Posting');
+const Optimization = require('./models/Optimization');
 
 dotenv.config();
 
@@ -344,6 +345,16 @@ app.get('/api/postings', async (req, res) => {
     try {
         const postings = await Posting.find({}).sort({ Date: -1 });
         res.json({ success: true, data: postings });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 7.0.1 Optimizations Route
+app.get('/api/optimizations', async (req, res) => {
+    try {
+        const optimizations = await Optimization.find({});
+        res.json({ success: true, data: optimizations });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }

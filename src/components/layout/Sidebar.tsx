@@ -27,6 +27,7 @@ const navItems = [
   { icon: Phone, label: "Phone", path: "/phone" },
   { icon: Target, label: "Keywords", path: "/keywords" },
   { icon: Search, label: "Search Perf.", path: "/search-performance" },
+  { icon: Target, label: "Monthly Optimisation", path: "/optimizations" },
   { icon: FileText, label: "GBP Optimisation", path: "/postings" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
