@@ -13,6 +13,7 @@ import {
   Menu,
   GitCompare,
   FileText,
+  Ticket,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SidebarFilters } from "@/components/dashboard/SidebarFilters";
@@ -28,7 +29,8 @@ const navItems = [
   { icon: Target, label: "Keywords", path: "/keywords" },
   { icon: Search, label: "Search Perf.", path: "/search-performance" },
   { icon: Target, label: "Monthly Optimisation", path: "/optimizations" },
-  { icon: FileText, label: "GBP Optimisation", path: "/postings" },
+  { icon: FileText, label: "GBP Postings", path: "/postings" },
+  { icon: Ticket, label: "Case Management", path: "/raising-case" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
 

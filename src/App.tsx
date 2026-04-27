@@ -16,6 +16,7 @@ import Settings from "./pages/Settings";
 import Phone from "./pages/Phone";
 import SearchPerformance from "./pages/SearchPerformance";
 import PanIndiaOptimization from "./pages/PanIndiaOptimization";
+import RaisingCase from "./pages/RaisingCase";
 import Postings from "./pages/Postings";
 import NotFound from "./pages/NotFound";
 
@@ -63,6 +64,7 @@ const App = () => (
             <Route path="/search-performance" element={<ProtectedRoute><SearchPerformance /></ProtectedRoute>} />
             <Route path="/optimizations" element={<ProtectedRoute><PanIndiaOptimization /></ProtectedRoute>} />
             <Route path="/postings" element={<ProtectedRoute><Postings /></ProtectedRoute>} />
+            <Route path="/raising-case" element={<ProtectedRoute><RaisingCase /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
