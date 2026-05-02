@@ -16,11 +16,11 @@ import confetti from "canvas-confetti";
 const OUT_OF_ORG_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbw8t4-Uuu8-l03YqagyWzGbXbykBqnEbT8IJJbEprgcoAeytUs4MheWLwLQFG6qWe7d/exec";
 const OPTIMIZATION_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzHwoe4dpmaCCLw0Ao4LD3HtC3lR6Rn0xnk8Yn78nn2FpBiZv_4bqFBxZoJSlVapV49-g/exec";
 const GMB_PROFILE_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyKt4EgL6aVxvu-ZJYYf8BBktwtWqhgTAth7CRqYdt4KLCdu1IrUOnnRv6nc7WN7RCx_g/exec";
-const GMB_POSTINGS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyoUw3d_K2XwB5VXz0ciOWeJYWdgPZXvct2GSGWzh37gi5BrZxON1_3CZ2QQURawH8t/execs";
+const GMB_POSTINGS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyoUw3d_K2XwB5VXz0ciOWeJYWdgPZXvct2GSGWzh37gi5BrZxON1_3CZ2QQURawH8t/exec";
 
 export default function RaisingCase() {
   const { toast } = useToast();
-  const { insights } = useMongoData();
+  const { insights, loading: dataLoading } = useMongoData();
 
   const [activeTab, setActiveTab] = useState<'out-of-org' | 'optimization' | 'gmb-profile' | 'gmb-postings'>('out-of-org');
   const [loading, setLoading] = useState(false);
@@ -63,10 +63,10 @@ export default function RaisingCase() {
   };
 
   // Derived Dropdown Data directly from the database context
-  const clusters = Array.from(new Set(insights?.map((i: any) => i.cluster))).filter(Boolean).sort() as string[];
+  const clusters = Array.from(new Set((insights || []).map((i: any) => i.cluster))).filter(Boolean).sort() as string[];
   const availableLocations = Array.from(
     new Set(
-      insights?.filter((i: any) => formData.cluster ? i.cluster === formData.cluster : true)
+      (insights || []).filter((i: any) => formData.cluster ? i.cluster === formData.cluster : true)
         .map((i: any) => i.branch)
     )
   ).filter(Boolean).sort() as string[];
@@ -345,9 +345,14 @@ export default function RaisingCase() {
 
                 <div className="space-y-2">
                   <Label>Cluster</Label>
-                  <Select required value={formData.cluster} onValueChange={(val) => handleSelectChange('cluster', val)}>
+                  <Select
+                    required
+                    value={formData.cluster}
+                    onValueChange={(val) => setFormData(prev => ({ ...prev, cluster: val, location: "" }))}
+                    disabled={dataLoading}
+                  >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select Cluster" />
+                      <SelectValue placeholder={dataLoading ? "Loading..." : clusters.length === 0 ? "No clusters found" : "Select Cluster"} />
                     </SelectTrigger>
                     <SelectContent className="bg-white">
                       {clusters.map((c) => (
@@ -359,9 +364,14 @@ export default function RaisingCase() {
 
                 <div className="space-y-2">
                   <Label>Location</Label>
-                  <Select required value={formData.location} onValueChange={(val) => handleSelectChange('location', val)} disabled={!formData.cluster && clusters.length > 0}>
+                  <Select
+                    required
+                    value={formData.location}
+                    onValueChange={(val) => handleSelectChange('location', val)}
+                    disabled={dataLoading || !formData.cluster}
+                  >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select Location" />
+                      <SelectValue placeholder={dataLoading ? "Loading..." : !formData.cluster ? "Select Cluster first" : "Select Location"} />
                     </SelectTrigger>
                     <SelectContent className="bg-white">
                       {availableLocations.map((l) => (

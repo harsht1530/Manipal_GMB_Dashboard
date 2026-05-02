@@ -537,6 +537,28 @@ app.delete('/api/users/:id', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+// 11.5 Critical GMB Profiles Route
+app.get('/api/critical-gmb-profiles', async (req, res) => {
+    try {
+        const collection = mongoose.connection.db.collection('manipalcriticalissues');
+        
+        // Exclude the summary doc from items
+        const items = await collection.find({ _id: { $ne: "latest_scan_summary" } }).toArray();
+        
+        // Find the summary doc
+        const summary = await collection.findOne({ _id: "latest_scan_summary" });
+        
+        res.json({
+            ok: true,
+            summary: summary || null,
+            items: items || []
+        });
+    } catch (error) {
+        console.error("Error fetching critical GMB profiles:", error);
+        res.status(500).json({ ok: false, error: error.message });
+    }
+});
+
 // 12. Alerts Endpoints
 
 // GET All Alerts (Hierarchical Filtering)

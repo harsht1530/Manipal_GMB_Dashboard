@@ -18,6 +18,7 @@ import SearchPerformance from "./pages/SearchPerformance";
 import PanIndiaOptimization from "./pages/PanIndiaOptimization";
 import RaisingCase from "./pages/RaisingCase";
 import Postings from "./pages/Postings";
+import CriticalIssues from "./pages/CriticalIssues";
 import NotFound from "./pages/NotFound";
 
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
@@ -65,6 +66,7 @@ const App = () => (
             <Route path="/optimizations" element={<ProtectedRoute><PanIndiaOptimization /></ProtectedRoute>} />
             <Route path="/postings" element={<ProtectedRoute><Postings /></ProtectedRoute>} />
             <Route path="/raising-case" element={<ProtectedRoute><RaisingCase /></ProtectedRoute>} />
+            <Route path="/critical-issues" element={<ProtectedRoute><CriticalIssues /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>

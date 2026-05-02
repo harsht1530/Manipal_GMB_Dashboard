@@ -1,0 +1,17 @@
+<IfModule mod_headers.c>
+    # Override Content Security Policy to allow our API and Google services
+    Header always set Content-Security-Policy "default-src 'self'; connect-src 'self' https://smldatamanagement.multiplierai.co https://script.google.com https://script.googleusercontent.com https://csp.secureserver.net https://www.youtube.com; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; frame-src 'self' https://www.youtube.com; media-src 'self' https:;"
+</IfModule>
+
+# Handle React Router (SPA) - rewrite all routes to index.html
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /GMB/
+
+    # Don't rewrite files or directories
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+
+    # Rewrite everything else to index.html
+    RewriteRule ^ index.html [L]
+</IfModule>

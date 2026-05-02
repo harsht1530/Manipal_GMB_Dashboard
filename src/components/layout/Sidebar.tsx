@@ -14,6 +14,7 @@ import {
   GitCompare,
   FileText,
   Ticket,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SidebarFilters } from "@/components/dashboard/SidebarFilters";
@@ -31,6 +32,7 @@ const navItems = [
   { icon: Target, label: "Monthly Optimisation", path: "/optimizations" },
   { icon: FileText, label: "GBP Postings", path: "/postings" },
   { icon: Ticket, label: "Case Management", path: "/raising-case" },
+  { icon: AlertTriangle, label: "Critical Issues", path: "/critical-issues" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
 
