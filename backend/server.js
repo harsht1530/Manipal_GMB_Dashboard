@@ -19,7 +19,25 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+app.use(cors({
+    origin: function (origin, callback) {
+        if (!origin) return callback(null, true);
+        const allowed = [
+            'https://multiplierai.co',
+            'https://www.multiplierai.co',
+            'http://localhost:5173',
+            'http://localhost:3000',
+            'http://localhost:8080'
+        ];
+        if (allowed.includes(origin) || origin.includes('localhost:')) {
+            callback(null, true);
+        } else {
+            callback(null, true); // Fallback to true for development, but specify allowed for safety
+        }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    credentials: true
+}));
 app.use(express.json());
 
 // MongoDB Connection
@@ -313,7 +331,25 @@ app.post('/api/search-keywords-impressions', async (req, res) => {
 // 5. Insights Route
 app.get('/api/insights', async (req, res) => {
     try {
-        const insights = await Insight.find({});
+        const insights = await Insight.find({}, {
+            "Business name": 1,
+            "Google Search - Mobile": 1,
+            "Google Search - Desktop": 1,
+            "Google Maps - Mobile": 1,
+            "Google Maps - Desktop": 1,
+            Directions: 1,
+            "Website clicks": 1,
+            Calls: 1,
+            Cluster: 1,
+            Month: 1,
+            Branch: 1,
+            Date: 1,
+            Speciality: 1,
+            Review: 1,
+            Rating: 1,
+            Department: 1,
+            Phone: 1
+        });
         res.json({ success: true, data: insights });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -323,7 +359,25 @@ app.get('/api/insights', async (req, res) => {
 // 6. Doctors Route
 app.get('/api/doctors', async (req, res) => {
     try {
-        const doctors = await Doctor.find({});
+        const doctors = await Doctor.find({}, {
+            business_name: 1,
+            name: 1,
+            phone: 1,
+            placeId: 1,
+            newReviewUri: 1,
+            mapsUri: 1,
+            websiteUrl: 1,
+            labels: 1,
+            primaryCategory: 1,
+            address: 1,
+            averageRating: 1,
+            totalReviewCount: 1,
+            mail_id: 1,
+            Cluster: 1,
+            Branch: 1,
+            profile_screenshot: 1,
+            account: 1
+        });
         res.json({ success: true, data: doctors });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -380,23 +434,25 @@ app.get('/api/clusters-branches', async (req, res) => {
 // 8. Top 10 Doctors
 app.get('/api/top10-doctors', async (req, res) => {
     try {
-        const insightsData = await Insight.find({});
-        if (!insightsData || insightsData.length === 0) {
-            return res.json({ success: true, data: { latestMonth: '', topDoctors: [] } });
-        }
-        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        const uniqueMonths = [...new Set(insightsData.map(d => d.Month))];
-        const sortedMonths = uniqueMonths.sort((a, b) => months.indexOf(b) - months.indexOf(a));
-        const latestMonth = sortedMonths[0] || '';
-        const latestMonthData = insightsData
-            .filter(d => d.Month === latestMonth)
-            .map(d => ({
-                ...d.toObject(),
-                totalGoogleSearch: (d["Google Search - Mobile"] || 0) + (d["Google Search - Desktop"] || 0)
-            }))
-            .sort((a, b) => b.totalGoogleSearch - a.totalGoogleSearch)
-            .slice(0, 10);
-        res.json({ success: true, data: { latestMonth, topDoctors: latestMonthData } });
+        // Find the latest month from the collection
+        const latestEntry = await Insight.findOne({ Month: { $ne: null } }).sort({ Date: -1 });
+        if (!latestEntry) return res.json({ success: true, data: { latestMonth: '', topDoctors: [] } });
+
+        const latestMonth = latestEntry.Month;
+
+        // Get top 10 doctors for that month using aggregation
+        const topDoctors = await Insight.aggregate([
+            { $match: { Month: latestMonth } },
+            {
+                $addFields: {
+                    totalGoogleSearch: { $add: [{ $ifNull: ["$Google Search - Mobile", 0] }, { $ifNull: ["$Google Search - Desktop", 0] }] }
+                }
+            },
+            { $sort: { totalGoogleSearch: -1 } },
+            { $limit: 10 }
+        ]);
+
+        res.json({ success: true, data: { latestMonth, topDoctors } });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -541,13 +597,29 @@ app.delete('/api/users/:id', async (req, res) => {
 app.get('/api/critical-gmb-profiles', async (req, res) => {
     try {
         const collection = mongoose.connection.db.collection('manipalcriticalissues');
-        
-        // Exclude the summary doc from items
-        const items = await collection.find({ _id: { $ne: "latest_scan_summary" } }).toArray();
-        
+
+        // Exclude the summary doc from items and project only needed fields
+        const items = await collection.find(
+            { _id: { $ne: "latest_scan_summary" } },
+            {
+                projection: {
+                    title: 1,
+                    email: 1,
+                    placeId: 1,
+                    locationid: 1,
+                    Cluster: 1,
+                    Branch: 1,
+                    primaryCategory: 1,
+                    issues: 1,
+                    updatedTime: 1,
+                    status: 1
+                }
+            }
+        ).toArray();
+
         // Find the summary doc
         const summary = await collection.findOne({ _id: "latest_scan_summary" });
-        
+
         res.json({
             ok: true,
             summary: summary || null,

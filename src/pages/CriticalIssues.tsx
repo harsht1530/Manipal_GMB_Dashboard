@@ -293,7 +293,7 @@ export default function CriticalIssues() {
               placeholder="Filter by Issue Types..."
             />
           </div>
-          
+
           <div className="grid gap-2">
             <Popover>
               <PopoverTrigger asChild>
@@ -321,7 +321,7 @@ export default function CriticalIssues() {
                     )}
                   </span>
                   {date?.from && (
-                    <div 
+                    <div
                       className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-md hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -375,7 +375,7 @@ export default function CriticalIssues() {
               </span>
             </CardContent>
           </Card>
-          <Card className="bg-white border shadow-sm">
+          {/* <Card className="bg-white border shadow-sm">
             <CardContent className="p-4 flex flex-col items-center text-center">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Total Profiles Checked</span>
               <span className="text-2xl font-bold text-slate-800">{data.summary?.totalProfilesScanned || 0}</span>
@@ -402,7 +402,7 @@ export default function CriticalIssues() {
                 {data.summary?.scanStatus === "running" ? "Running..." : (data.summary?.finishedAt ? format(new Date(data.summary.finishedAt), "dd MMM HH:mm") : "-")}
               </span>
             </CardContent>
-          </Card>
+          </Card> */}
         </div>
 
 
