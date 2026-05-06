@@ -11,6 +11,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/components/ui/use-toast";
 import { useMongoData } from "@/hooks/useMongoData";
+import { useAuth } from "@/contexts/AuthContext";
 import confetti from "canvas-confetti";
 import { Sparkles, Image as ImageIcon, Calendar as CalendarIcon, Clock, Eye, Ticket, ExternalLink, RefreshCw, Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -27,6 +28,7 @@ const API_BASE_URL = `${import.meta.env.VITE_API_BASE_URL || "https://smldataman
 
 export default function RaisingCase() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const { insights, loading: dataLoading } = useMongoData();
 
   const [activeTab, setActiveTab] = useState<'out-of-org' | 'optimization' | 'gmb-profile' | 'gmb-postings'>('out-of-org');
@@ -180,6 +182,19 @@ export default function RaisingCase() {
     loadSheetData();
   }, [activeTab]);
 
+  const sendEmailNotification = (payload: any, formTypeName: string) => {
+    if (!user) return;
+    fetch(`${API_BASE_URL}/send-case-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        formType: formTypeName,
+        formData: payload,
+        user: { name: user.name, email: user.email }
+      })
+    }).catch(err => console.error("Failed to send email notification:", err));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     let url = "";
@@ -247,6 +262,7 @@ export default function RaisingCase() {
 
         const resJson = await res.json();
         if (resJson.success) {
+          sendEmailNotification(postingPayload, "GMB Postings");
           triggerSuccessUI();
         } else {
           throw new Error(resJson.error || "Failed to save posting");
@@ -295,6 +311,10 @@ export default function RaisingCase() {
           body: JSON.stringify(payload)
         });
 
+        const formTypeName = activeTab === 'out-of-org' ? 'Out of Organization Request' 
+                           : activeTab === 'optimization' ? 'Optimization Cards' 
+                           : 'GMB Profile Creation';
+        sendEmailNotification(payload, formTypeName);
         triggerSuccessUI();
       }
     } catch (error: any) {

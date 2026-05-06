@@ -823,6 +823,80 @@ async function triggerActionPost(post) {
     }
 }
 
+// Send Case Email Notification
+app.post('/api/send-case-email', async (req, res) => {
+    const { formType, formData, user } = req.body;
+
+    if (!user || !user.email) {
+        return res.status(400).json({ success: false, error: "User email is required" });
+    }
+
+    try {
+        // Build table rows from formData ignoring empty values
+        let tableRows = '';
+        const skipKeys = ['images', 'drAccount', 'drEmail']; // Skip internal or bulky fields
+        for (const [key, value] of Object.entries(formData)) {
+            if (value && !skipKeys.includes(key)) {
+                // Formatting key to Title Case (e.g. businessName -> Business Name)
+                const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                
+                // Truncate extremely long values (like AI post descriptions) just for the email display
+                const displayValue = String(value).length > 300 ? String(value).substring(0, 300) + '...' : value;
+
+                tableRows += `
+                    <tr>
+                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: bold; width: 35%;">${formattedKey}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #334155; line-height: 1.5;">${displayValue}</td>
+                    </tr>
+                `;
+            }
+        }
+
+        const tableHtml = `
+            <table style="width: 100%; border-collapse: collapse; text-align: left; margin-top: 20px; font-size: 14px; background-color: #f8fafc; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0;">
+                <tbody>
+                    ${tableRows}
+                </tbody>
+            </table>
+        `;
+
+        // 1. Email to User (Sender's perspective)
+        const userContent = `
+            <div style="text-align: left; padding: 10px;">
+                <h2 style="color: #10b981; margin-bottom: 8px; font-size: 22px;">Thank You, ${user.name}!</h2>
+                <p style="color: #475569; font-size: 15px; margin-top: 0;">Your <strong>${formType}</strong> request has been successfully submitted. Our team is currently reviewing your submission and will process it shortly.</p>
+                <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #f1f5f9;">
+                    <h3 style="color: #1e293b; margin-bottom: 15px; font-size: 16px;">Submission Summary</h3>
+                    ${tableHtml}
+                </div>
+            </div>
+        `;
+        
+        // 2. Email to Team (Info perspective)
+        const teamContent = `
+            <div style="text-align: left; padding: 10px;">
+                <h2 style="color: #217a74; margin-bottom: 8px; font-size: 22px;">New Case ID Raised</h2>
+                <p style="color: #475569; font-size: 15px; margin-top: 0;">A new <strong>${formType}</strong> request was just submitted by <strong>${user.name}</strong> (<a href="mailto:${user.email}" style="color: #3b82f6; text-decoration: none;">${user.email}</a>).</p>
+                <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #f1f5f9;">
+                    <h3 style="color: #1e293b; margin-bottom: 15px; font-size: 16px;">Request Details</h3>
+                    ${tableHtml}
+                </div>
+            </div>
+        `;
+
+        // Send emails concurrently
+        await Promise.all([
+            sendEmail(user.email, `Confirmation: Your ${formType} Request`, getEmailTemplate(userContent)),
+            sendEmail('gmb@multipliersolutions.com', `New Request: ${formType} - ${user.name}`, getEmailTemplate(teamContent))
+        ]);
+
+        res.json({ success: true, message: "Emails sent successfully" });
+    } catch (error) {
+        console.error("Error sending case emails:", error);
+        res.status(500).json({ success: false, error: "Failed to send emails" });
+    }
+});
+
 // Scheduler: Check every minute for scheduled posts
 cron.schedule('* * * * *', async () => {
     const now = new Date();
