@@ -747,7 +747,7 @@ app.post('/api/upload-image', upload.single('image'), (req, res) => {
     if (!req.file) {
         return res.status(400).json({ success: false, error: "No file uploaded" });
     }
-    const imageUrl = `https://multiplierai.co/GMB/#/assets/images/${req.file.filename}`;
+    const imageUrl = `https://multiplierai.co/GMB/assets/images/${req.file.filename}`;
     res.json({ success: true, imageUrl, filename: req.file.filename });
 });
 
