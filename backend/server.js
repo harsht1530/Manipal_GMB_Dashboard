@@ -13,6 +13,12 @@ const User = require('./models/User');
 const Alert = require('./models/Alert');
 const Posting = require('./models/Posting');
 const Optimization = require('./models/Optimization');
+const GMBPost = require('./models/GMBPost');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const cron = require('node-cron');
+const axios = require('axios');
 
 dotenv.config();
 
@@ -39,6 +45,22 @@ app.use(cors({
     credentials: true
 }));
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Multer Configuration
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        const dir = path.join(__dirname, '../src/assets/images');
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        cb(null, dir);
+    },
+    filename: function (req, file, cb) {
+        cb(null, Date.now() + '-' + file.originalname.replace(/\s+/g, '-'));
+    }
+});
+const upload = multer({ storage: storage });
 
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://vasudeva:ommN1EMg2KsURyPQ@cluster0.n3ejr.mongodb.net/HarshDB';
@@ -700,6 +722,113 @@ app.delete('/api/alerts', async (req, res) => {
         res.json({ success: true, message: "All alerts deleted successfully" });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 13. GMB Postings Functionality
+
+// Proxy for AI Post Generation
+app.post('/api/generate-gmb-post', async (req, res) => {
+    const { source_url, business_name } = req.body;
+    try {
+        const response = await axios.post('https://demo.gmbapi.multipliersolutions.in/generate_gmb_post', {
+            source_url,
+            business_name
+        });
+        res.json(response.data);
+    } catch (error) {
+        console.error("AI Generation Error:", error.message);
+        res.status(500).json({ success: false, error: "Failed to generate post" });
+    }
+});
+
+// Image Upload
+app.post('/api/upload-image', upload.single('image'), (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ success: false, error: "No file uploaded" });
+    }
+    const imageUrl = `https://multiplierai.co/GMB/#/assets/images/${req.file.filename}`;
+    res.json({ success: true, imageUrl, filename: req.file.filename });
+});
+
+// Save GMB Posting
+app.post('/api/gmb-postings', async (req, res) => {
+    try {
+        const newPost = new GMBPost(req.body);
+        await newPost.save();
+
+        // If status is Approved and no schedule, trigger immediate post
+        if (newPost.status === 'Approved' && !newPost.scheduledTime) {
+            triggerActionPost(newPost);
+        }
+
+        res.json({ success: true, data: newPost });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Get GMB Postings for Tracker
+app.get('/api/gmb-postings', async (req, res) => {
+    try {
+        const posts = await GMBPost.find({}).sort({ createdAt: -1 });
+        res.json({ success: true, data: posts });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Helper function to trigger the external actionpost API
+async function triggerActionPost(post) {
+    try {
+        let mediaUrl = post.imageUrl || "";
+
+        const payload = {
+            function: "actionpost",
+            location: post.account, // Location ID from manipalfinaldatas 'account' field
+            email: post.email,
+            posts_text: post.postsText,
+            post_action_type: "CALL"
+        };
+
+        if (mediaUrl) {
+            payload.post_media_type = "Photo";
+            payload.post_media_url = mediaUrl;
+        }
+
+        const response = await axios.post('http://multipliersolutions.in/gmbhospitals/gmb_api/api.php', payload);
+        
+        // Ensure we handle various success responses properly
+        if (response.data.status === 'success' || response.data.response === 'Success' || response.data.status === true) {
+            post.status = 'Posted';
+        } else {
+            post.status = 'Failed';
+            console.error("GMB API Error Response:", response.data);
+        }
+        await post.save();
+        console.log(`Post ${post._id} processed with status: ${post.status}`);
+    } catch (error) {
+        console.error(`Error triggering actionpost for ${post._id}:`, error.message);
+        post.status = 'Failed';
+        await post.save();
+    }
+}
+
+// Scheduler: Check every minute for scheduled posts
+cron.schedule('* * * * *', async () => {
+    const now = new Date();
+    try {
+        const pendingPosts = await GMBPost.find({
+            status: 'Pending',
+            scheduledTime: { $lte: now }
+        });
+
+        for (const post of pendingPosts) {
+            console.log(`Processing scheduled post: ${post._id}`);
+            await triggerActionPost(post);
+        }
+    } catch (error) {
+        console.error("Scheduler Error:", error.message);
     }
 });
 

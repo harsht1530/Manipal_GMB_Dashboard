@@ -7,16 +7,23 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Ticket, ExternalLink, RefreshCw } from "lucide-react";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/components/ui/use-toast";
 import { useMongoData } from "@/hooks/useMongoData";
 import confetti from "canvas-confetti";
+import { Sparkles, Image as ImageIcon, Calendar as CalendarIcon, Clock, Eye, Ticket, ExternalLink, RefreshCw, Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Calendar } from "@/components/ui/calendar";
+import { format } from "date-fns";
 
 // TODO: Replace these securely provided URLs once you deploy the Apps Script Web Apps.
 const OUT_OF_ORG_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbw8t4-Uuu8-l03YqagyWzGbXbykBqnEbT8IJJbEprgcoAeytUs4MheWLwLQFG6qWe7d/exec";
 const OPTIMIZATION_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzHwoe4dpmaCCLw0Ao4LD3HtC3lR6Rn0xnk8Yn78nn2FpBiZv_4bqFBxZoJSlVapV49-g/exec";
 const GMB_PROFILE_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyKt4EgL6aVxvu-ZJYYf8BBktwtWqhgTAth7CRqYdt4KLCdu1IrUOnnRv6nc7WN7RCx_g/exec";
 const GMB_POSTINGS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyoUw3d_K2XwB5VXz0ciOWeJYWdgPZXvct2GSGWzh37gi5BrZxON1_3CZ2QQURawH8t/exec";
+
+const API_BASE_URL = `${import.meta.env.VITE_API_BASE_URL || "https://smldatamanagement.multiplierai.co"}/api`;
 
 export default function RaisingCase() {
   const { toast } = useToast();
@@ -27,6 +34,14 @@ export default function RaisingCase() {
   const [isAnimating, setIsAnimating] = useState(false);
   const [tableLoading, setTableLoading] = useState(false);
   const [tableData, setTableData] = useState<any[]>([]);
+  
+  // GMB Post Specific State
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [aiPreview, setAiPreview] = useState<any | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState<Date | undefined>();
+  const [scheduleTime, setScheduleTime] = useState("");
+  const [drSearchOpen, setDrSearchOpen] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -50,7 +65,10 @@ export default function RaisingCase() {
     gmbProfileLink: "",
     images: "",
     whereToPost: "",
-    status: "Pending"
+    status: "Pending",
+    // Hidden fields for doctor account/email
+    drAccount: "",
+    drEmail: ""
   });
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -70,6 +88,62 @@ export default function RaisingCase() {
         .map((i: any) => i.branch)
     )
   ).filter(Boolean).sort() as string[];
+  
+  const { doctors } = useMongoData();
+  const availableDoctors = (doctors || []).filter(d => 
+    (formData.cluster ? d.cluster === formData.cluster : true) && 
+    (formData.location ? d.branch === formData.location : true)
+  );
+
+  const handleDoctorSelect = (val: string) => {
+    const doc = availableDoctors.find(d => d.name === val);
+    if (doc) {
+      setFormData(prev => ({ 
+        ...prev, 
+        drName: doc.name,
+        drAccount: doc.account || "",
+        drEmail: doc.mailId || ""
+      }));
+    } else {
+      setFormData(prev => ({ ...prev, drName: val }));
+    }
+  };
+
+  const handleGenerateAI = async () => {
+    if (!formData.sourceLink) {
+      toast({ title: "Source Link Required", description: "Please enter a source link first.", variant: "destructive" });
+      return;
+    }
+    setAiLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/generate-gmb-post`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source_url: formData.sourceLink,
+          business_name: formData.drName || "Manipal Hospitals"
+        })
+      });
+      const data = await res.json();
+      if (data.generated_post) {
+        setAiPreview(data.generated_post);
+        toast({ title: "Post Generated!", description: "AI has created a preview for your post." });
+      } else {
+        throw new Error("Invalid AI response");
+      }
+    } catch (e) {
+      console.error(e);
+      toast({ title: "Generation Failed", description: "Could not generate AI post content.", variant: "destructive" });
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setSelectedFile(e.target.files[0]);
+    }
+  };
 
   const loadSheetData = async () => {
     let url = "";
@@ -78,16 +152,23 @@ export default function RaisingCase() {
     else if (activeTab === 'gmb-profile') url = GMB_PROFILE_WEBAPP_URL;
     else if (activeTab === 'gmb-postings') url = GMB_POSTINGS_WEBAPP_URL;
 
-    if (url.includes("YOUR_")) {
+    if (url.includes("YOUR_") && activeTab !== 'gmb-postings') {
       setTableData([]);
       return;
     }
 
     setTableLoading(true);
+    setTableData([]); // Clear previous data
     try {
-      const res = await fetch(url);
-      const data = await res.json();
-      setTableData(data || []);
+      if (activeTab === 'gmb-postings') {
+        const res = await fetch(`${API_BASE_URL}/gmb-postings`);
+        const data = await res.json();
+        setTableData(data.data || []);
+      } else {
+        const res = await fetch(url);
+        const data = await res.json();
+        setTableData(data || []);
+      }
     } catch (e) {
       console.error("Failed to load sheet data:", e);
     } finally {
@@ -107,7 +188,7 @@ export default function RaisingCase() {
     else if (activeTab === 'gmb-profile') url = GMB_PROFILE_WEBAPP_URL;
     else if (activeTab === 'gmb-postings') url = GMB_POSTINGS_WEBAPP_URL;
 
-    if (url.includes("YOUR_")) {
+    if (url.includes("YOUR_") && activeTab !== 'gmb-postings') {
       toast({
         title: "Configuration Missing",
         description: "Please configure your Google Apps Script Web App URLs first!",
@@ -118,127 +199,157 @@ export default function RaisingCase() {
 
     setLoading(true);
 
-    let payload: any = {};
-    if (activeTab === 'out-of-org') {
-      payload = {
-        "Cluster": formData.cluster,
-        "Location": formData.location,
-        "Business name": formData.businessName,
-        "GMB Link": formData.gmbLink,
-        "Description": formData.description,
-        "Status": formData.status
-      };
-    } else if (activeTab === 'optimization') {
-      payload = {
-        "Cluster": formData.cluster,
-        "Location": formData.location,
-        "Business Name": formData.businessName,
-        "Google Link": formData.googleLink,
-        "Drop Down": formData.dropDownOption,
-        "Description": formData.description,
-        "Status": formData.status
-      };
-    } else if (activeTab === 'gmb-profile') {
-      payload = {
-        "Cluster": formData.cluster,
-        "Location": formData.location,
-        "Doctor Name": formData.drName,
-        "Speciality": formData.speciality,
-        "Address": formData.address,
-        "Phone Number": formData.phone,
-        "Website Link": formData.website,
-        "OPD Timings": formData.opdTimings,
-        "Cover Photo": formData.coverPhoto,
-        "Status": formData.status
-      };
-    } else if (activeTab === 'gmb-postings') {
-      payload = {
-        "Cluster": formData.cluster,
-        "Location": formData.location,
-        "Doctor Name": formData.drName,
-        "Specialty": formData.speciality,
-        "Type of Post": formData.typeOfPost,
-        "Source Link": formData.sourceLink,
-        "GMB Profile Link": formData.gmbProfileLink,
-        "Images": formData.images,
-        "Where to Post": formData.whereToPost,
-        "Status": formData.status
-      };
-    }
-
     try {
-      // mode: 'no-cors' specifically prevents browser preflight blocks for simple Google Scripts POST requests
-      await fetch(url, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: {
-          'Content-Type': 'text/plain'
-        },
-        body: JSON.stringify(payload)
-      });
-
-      // Trigger Joyful Animation
-      setIsAnimating(true);
-
-      // Fire confetti sequence right exactly when the ticket lands in the center at 1.5 seconds!
-      setTimeout(() => {
-        const duration = 1500;
-        const animationEnd = Date.now() + duration;
-        const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 99999 };
-
-        const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min;
-
-        const interval: any = setInterval(function () {
-          const timeLeft = animationEnd - Date.now();
-
-          if (timeLeft <= 0) {
-            return clearInterval(interval);
+      if (activeTab === 'gmb-postings') {
+        let imageUrl = formData.images;
+        
+        // 1. Upload image if selected
+        if (selectedFile) {
+          const fileData = new FormData();
+          fileData.append('image', selectedFile);
+          const uploadRes = await fetch(`${API_BASE_URL}/upload-image`, {
+            method: 'POST',
+            body: fileData
+          });
+          const uploadJson = await uploadRes.json();
+          if (uploadJson.success) {
+            imageUrl = uploadJson.imageUrl;
           }
+        }
 
-          const particleCount = 50 * (timeLeft / duration);
-          confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } });
-          confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } });
-        }, 250);
+        // 2. Prepare Payload
+        const scheduledTime = (scheduleDate && scheduleTime) ? new Date(`${format(scheduleDate, 'yyyy-MM-dd')}T${scheduleTime}`) : null;
+        
+        const postingPayload = {
+          cluster: formData.cluster,
+          location: formData.location,
+          doctorName: formData.drName,
+          account: formData.drAccount,
+          email: formData.drEmail,
+          sourceLink: formData.sourceLink,
+          imageUrl: imageUrl,
+          postsText: aiPreview ? `${aiPreview.headline}\n\n${aiPreview.main_post}\n\n${aiPreview.hashtags.map((h: string) => `#${h}`).join(' ')}` : formData.description,
+          status: scheduledTime ? "Pending" : formData.status,
+          scheduledTime: scheduledTime,
+          aiResponse: aiPreview
+        };
 
-        // Huge massive center burst instantly
-        confetti({
-          particleCount: 150,
-          spread: 120,
-          origin: { y: 0.5, x: 0.5 },
-          colors: ['#217a74', '#ffffff', '#ffb020', '#10b981'],
-          zIndex: 99999
-        });
-      }, 1500);
-
-      // Finish sequence after 3.2 seconds
-      setTimeout(() => {
-        setIsAnimating(false);
-
-        toast({
-          title: "Request Submitted!",
-          description: "Your ticket has been successfully submitted to the Sheet!",
-        });
-
-        // Clear form
-        setFormData({
-          cluster: "", location: "", businessName: "", gmbLink: "", googleLink: "", dropDownOption: "", description: "",
-          drName: "", speciality: "", address: "", phone: "", website: "", opdTimings: "", coverPhoto: "",
-          typeOfPost: "", sourceLink: "", gmbProfileLink: "", images: "", whereToPost: "", status: "Pending"
+        // 3. Save to MongoDB
+        const res = await fetch(`${API_BASE_URL}/gmb-postings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(postingPayload)
         });
 
-        loadSheetData();
-      }, 3200);
+        const resJson = await res.json();
+        if (resJson.success) {
+          triggerSuccessUI();
+        } else {
+          throw new Error(resJson.error || "Failed to save posting");
+        }
+      } else {
+        // Handle Apps Script submissions
+        let payload: any = {};
+        if (activeTab === 'out-of-org') {
+          payload = {
+            "Cluster": formData.cluster,
+            "Location": formData.location,
+            "Business name": formData.businessName,
+            "GMB Link": formData.gmbLink,
+            "Description": formData.description,
+            "Status": formData.status
+          };
+        } else if (activeTab === 'optimization') {
+          payload = {
+            "Cluster": formData.cluster,
+            "Location": formData.location,
+            "Business Name": formData.businessName,
+            "Google Link": formData.googleLink,
+            "Drop Down": formData.dropDownOption,
+            "Description": formData.description,
+            "Status": formData.status
+          };
+        } else if (activeTab === 'gmb-profile') {
+          payload = {
+            "Cluster": formData.cluster,
+            "Location": formData.location,
+            "Doctor Name": formData.drName,
+            "Speciality": formData.speciality,
+            "Address": formData.address,
+            "Phone Number": formData.phone,
+            "Website Link": formData.website,
+            "OPD Timings": formData.opdTimings,
+            "Cover Photo": formData.coverPhoto,
+            "Status": formData.status
+          };
+        }
 
-    } catch (error) {
+        await fetch(url, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify(payload)
+        });
+
+        triggerSuccessUI();
+      }
+    } catch (error: any) {
       console.error("Submission error:", error);
       toast({
-        title: "Error submitting ticket",
-        description: "Please try again later. Check your connection or Apps Script setup.",
+        title: "Submission Failed",
+        description: error.message || "Please try again later. Check your connection or Apps Script setup.",
         variant: "destructive"
       });
     } finally {
       setLoading(false);
     }
+  };
+
+  const triggerSuccessUI = () => {
+    // Trigger Joyful Animation
+    setIsAnimating(true);
+
+    // Fire confetti sequence
+    setTimeout(() => {
+      const duration = 1500;
+      const animationEnd = Date.now() + duration;
+      const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 99999 };
+      const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min;
+      const interval: any = setInterval(function () {
+        const timeLeft = animationEnd - Date.now();
+        if (timeLeft <= 0) return clearInterval(interval);
+        const particleCount = 50 * (timeLeft / duration);
+        confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } });
+        confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } });
+      }, 250);
+      confetti({
+        particleCount: 150,
+        spread: 120,
+        origin: { y: 0.5, x: 0.5 },
+        colors: ['#217a74', '#ffffff', '#ffb020', '#10b981'],
+        zIndex: 99999
+      });
+    }, 1500);
+
+    setTimeout(() => {
+      setIsAnimating(false);
+      toast({
+        title: "Request Submitted!",
+        description: "Your request has been successfully recorded!",
+      });
+      // Clear form
+      setFormData({
+        cluster: "", location: "", businessName: "", gmbLink: "", googleLink: "", dropDownOption: "", description: "",
+        drName: "", speciality: "", address: "", phone: "", website: "", opdTimings: "", coverPhoto: "",
+        typeOfPost: "", sourceLink: "", gmbProfileLink: "", images: "", whereToPost: "", status: "Pending",
+        drAccount: "", drEmail: ""
+      });
+      setSelectedFile(null);
+      setAiPreview(null);
+      setScheduleDate(undefined);
+      setScheduleTime("");
+      loadSheetData();
+    }, 3200);
   };
 
   return (
@@ -460,55 +571,144 @@ export default function RaisingCase() {
                   </>
                 )}
 
-                {activeTab === 'gmb-postings' && (
+                 {activeTab === 'gmb-postings' && (
                   <>
                     <div className="space-y-2">
                       <Label>Doctor Name</Label>
-                      <Input required name="drName" value={formData.drName} onChange={handleInputChange} placeholder="Dr. Name" />
+                      <Popover open={drSearchOpen} onOpenChange={setDrSearchOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={drSearchOpen}
+                            disabled={dataLoading}
+                            className="w-full justify-between font-normal bg-white"
+                          >
+                            {formData.drName
+                              ? formData.drName
+                              : dataLoading ? "Loading..." : "Search and select doctor..."}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0 bg-white" align="start">
+                          <Command>
+                            <CommandInput placeholder="Search doctor name..." />
+                            <CommandList>
+                              <CommandEmpty>No doctor found.</CommandEmpty>
+                              <CommandGroup>
+                                {availableDoctors.map((d) => (
+                                  <CommandItem
+                                    key={d.id}
+                                    value={d.name}
+                                    onSelect={(currentValue) => {
+                                      handleDoctorSelect(currentValue);
+                                      setDrSearchOpen(false);
+                                    }}
+                                  >
+                                    <Check
+                                      className={cn(
+                                        "mr-2 h-4 w-4",
+                                        formData.drName === d.name ? "opacity-100" : "opacity-0"
+                                      )}
+                                    />
+                                    {d.name}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Specialty</Label>
-                      <Input required name="speciality" value={formData.speciality} onChange={handleInputChange} placeholder="Specialty" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Type of Post</Label>
-                      <Select required value={formData.typeOfPost} onValueChange={(val) => handleSelectChange('typeOfPost', val)}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select Post Type" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white">
-                          <SelectItem value="PR Article">PR Article</SelectItem>
-                          <SelectItem value="Blogs">Blogs</SelectItem>
-                          <SelectItem value="Youtube video">Youtube video</SelectItem>
-                          <SelectItem value="Facebook">Facebook</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+
                     <div className="space-y-2">
                       <Label>Source Link (PR, Blog, Video, etc.)</Label>
-                      <Input type="url" name="sourceLink" value={formData.sourceLink} onChange={handleInputChange} placeholder="https://..." />
+                      <div className="flex gap-2">
+                        <Input 
+                          type="url" 
+                          name="sourceLink" 
+                          value={formData.sourceLink} 
+                          onChange={handleInputChange} 
+                          placeholder="https://..." 
+                          className="flex-1"
+                        />
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="icon" 
+                          onClick={handleGenerateAI}
+                          disabled={aiLoading}
+                          className="shrink-0 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 text-indigo-600"
+                        >
+                          <Sparkles className={`h-4 w-4 ${aiLoading ? 'animate-pulse' : ''}`} />
+                        </Button>
+                      </div>
                     </div>
+
+                    {aiPreview && (
+                      <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2 animate-in fade-in slide-in-from-top-1">
+                        <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          <span className="flex items-center gap-1"><Eye className="h-3 w-3" /> Preview</span>
+                          <Button variant="ghost" size="sm" className="h-5 px-1 text-[9px]" onClick={() => setAiPreview(null)}>Clear</Button>
+                        </div>
+                        <h4 className="font-bold text-sm text-slate-900 leading-tight">{aiPreview.headline}</h4>
+                        <p className="text-xs text-slate-700 whitespace-pre-wrap">{aiPreview.main_post}</p>
+                        <div className="flex flex-wrap gap-1">
+                          {aiPreview.hashtags.slice(0, 4).map((h: string) => (
+                            <span key={h} className="text-[10px] text-indigo-600 font-medium">#{h}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="space-y-2">
-                      <Label>GMB Profile Link (If available)</Label>
-                      <Input type="url" name="gmbProfileLink" value={formData.gmbProfileLink} onChange={handleInputChange} placeholder="https://..." />
+                      <Label>Post Image</Label>
+                      <div className="flex items-center gap-2">
+                        <Input 
+                          type="file" 
+                          accept="image/*" 
+                          onChange={handleFileChange} 
+                          className="text-xs file:bg-indigo-50 file:text-indigo-700 file:border-0 file:rounded-md file:px-2 file:py-1 file:mr-2 hover:file:bg-indigo-100 cursor-pointer"
+                        />
+                        {selectedFile && <ImageIcon className="h-4 w-4 text-emerald-500" />}
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Images (If no source link)</Label>
-                      <Input name="images" value={formData.images} onChange={handleInputChange} placeholder="Image URLs" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Where to post</Label>
-                      <Select required value={formData.whereToPost} onValueChange={(val) => handleSelectChange('whereToPost', val)}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select Destination" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white">
-                          <SelectItem value="Hospital & Doctor's Pages">Hospital & Doctor's Pages</SelectItem>
-                          <SelectItem value="Only Hospital Page">Only Hospital Page</SelectItem>
-                          <SelectItem value="Only Doctor's Page">Only Doctor's Page</SelectItem>
-                          <SelectItem value="Doctor, Department, MARS, Clinics & Hospital pages">Doctor, Department, MARS, Clinics & Hospital pages</SelectItem>
-                        </SelectContent>
-                      </Select>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label className="flex items-center gap-1"><CalendarIcon className="h-3 w-3" /> Schedule Date</Label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full justify-start text-left font-normal bg-white text-xs h-9",
+                                !scheduleDate && "text-muted-foreground"
+                              )}
+                            >
+                              <CalendarIcon className="mr-2 h-3 w-3" />
+                              {scheduleDate ? format(scheduleDate, "PPP") : <span>Pick a date</span>}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={scheduleDate}
+                              onSelect={setScheduleDate}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="flex items-center gap-1"><Clock className="h-3 w-3" /> Time</Label>
+                        <Input 
+                          type="time" 
+                          value={scheduleTime} 
+                          onChange={(e) => setScheduleTime(e.target.value)} 
+                          className="text-xs h-9"
+                        />
+                      </div>
                     </div>
                   </>
                 )}
@@ -521,7 +721,10 @@ export default function RaisingCase() {
                     </SelectTrigger>
                     <SelectContent className="bg-white">
                       <SelectItem value="Pending">Pending</SelectItem>
-                      <SelectItem value="Done">Done</SelectItem>
+                      {(activeTab !== 'gmb-postings' || (!scheduleDate && !scheduleTime)) && (
+                        <SelectItem value="Approved">Approve</SelectItem>
+                      )}
+                      {activeTab !== 'gmb-postings' && <SelectItem value="Done">Done</SelectItem>}
                     </SelectContent>
                   </Select>
                 </div>
@@ -539,7 +742,10 @@ export default function RaisingCase() {
               <div>
                 <CardTitle className="text-lg">Live Sheet Tracker</CardTitle>
                 <CardDescription>
-                  Showing records synced from {activeTab === 'out-of-org' ? 'Out of Organization' : 'Optimization Cards'} sheet.
+                  {activeTab === 'gmb-postings' 
+                    ? "Tracking GMB Postings and their live statuses."
+                    : `Showing records synced from ${activeTab === 'out-of-org' ? 'Out of Organization' : 'Optimization Cards'} sheet.`
+                  }
                 </CardDescription>
               </div>
               <Button variant="outline" size="sm" onClick={loadSheetData} disabled={tableLoading} className="flex gap-2 bg-white">
@@ -582,8 +788,8 @@ export default function RaisingCase() {
                       )}
                       {activeTab === 'gmb-postings' && (
                         <>
-                          <TableHead>Type</TableHead>
-                          <TableHead>Target</TableHead>
+                          <TableHead>AI Post</TableHead>
+                          <TableHead>Scheduled</TableHead>
                         </>
                       )}
                       <TableHead>Status</TableHead>
@@ -599,7 +805,7 @@ export default function RaisingCase() {
                           <TableCell>{row["Business name"] || row["Business Name"] || '-'}</TableCell>
                         )}
                         {(activeTab === 'gmb-profile' || activeTab === 'gmb-postings') && (
-                          <TableCell>{row["Doctor Name"] || '-'}</TableCell>
+                          <TableCell>{row["Doctor Name"] || row.doctorName || '-'}</TableCell>
                         )}
 
                         {activeTab === 'out-of-org' && (
@@ -634,11 +840,15 @@ export default function RaisingCase() {
 
                         {activeTab === 'gmb-postings' && (
                           <>
-                            <TableCell>{row["Type of Post"] || '-'}</TableCell>
                             <TableCell>
-                              <span className="px-2 py-1 bg-blue-50 text-blue-700 text-[10px] rounded-md font-medium border border-blue-100">
-                                {row["Where to Post"] || '-'}
-                              </span>
+                              <div className="max-w-[150px] truncate text-xs text-slate-500" title={row.postsText}>
+                                {row.postsText || '-'}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="text-[10px] text-slate-500">
+                                {row.scheduledTime ? new Date(row.scheduledTime).toLocaleString() : 'Immediate'}
+                              </div>
                             </TableCell>
                           </>
                         )}

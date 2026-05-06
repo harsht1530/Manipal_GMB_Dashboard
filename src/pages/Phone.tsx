@@ -45,18 +45,26 @@ const PhonePage = () => {
     const dashboardTitle = user?.role === "Admin" ? "Phone Directory" : (user?.branch || user?.cluster || "Phone Directory");
     const dashboardSubtitle = user?.role === "Admin" ? "Manage and view contact details" : `${user?.branch ? 'Branch' : 'Cluster'} Level Access - Contact Details`;
 
-    // Get the chronologically latest month from the data
-    const latestDataMonth = useMemo(() => {
-        const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-        if (!mounted || loading || insights.length === 0) return monthOrder[new Date().getMonth() - 1] || "Dec";
-        const uniqueMonths = [...new Set(insights.map(i => i.month))];
-        return uniqueMonths.sort((a, b) => monthOrder.indexOf(b) - monthOrder.indexOf(a))[0];
+    // Get the absolute latest Date string from the data
+    const latestDataDate = useMemo(() => {
+        if (!mounted || loading || insights.length === 0) return "";
+        
+        // Find the record with the maximum Date value
+        const latestEntry = [...insights].sort((a, b) => {
+            const dateA = new Date(a.date).getTime();
+            const dateB = new Date(b.date).getTime();
+            if (isNaN(dateA)) return 1;
+            if (isNaN(dateB)) return -1;
+            return dateB - dateA;
+        })[0];
+
+        return latestEntry?.date || "";
     }, [insights, mounted, loading]);
 
     // Derive unique filter options from the insights data
     const filterOptions = useMemo(() => {
         if (!mounted || loading) {
-            return { clusters: [], branches: [], months: [], specialities: [] };
+            return { clusters: [], branches: [], months: [], specialities: [], years: [] };
         }
         // Extract unique years
         const uniqueYears = [...new Set(insights.map(i => {
@@ -94,7 +102,7 @@ const PhonePage = () => {
         const months = [...new Set(monthData.map(i => i.month))].filter(Boolean);
         const specialities = [...new Set(insights.map(i => i.speciality))].filter(Boolean).sort();
 
-        // Sort months chronologically (if needed elsewhere, but FilterBar handles it)
+        // Sort months chronologically
         const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         months.sort((a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b));
 
@@ -106,25 +114,31 @@ const PhonePage = () => {
         return insights.filter((item) => {
             const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(item.cluster);
             const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(item.branch);
-
-            // If no month is selected, default to the latest available month
-            const effectiveMonths = selectedMonth.length > 0 ? selectedMonth : [latestDataMonth];
-            const monthMatch = effectiveMonths.includes(item.month);
-
             const specialityMatch = selectedSpeciality.length === 0 || selectedSpeciality.includes(item.speciality);
             const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(item.department);
             const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(item.rating) === r);
 
-            let yearMatch = true;
-            if (selectedYear.length > 0) {
-                const d = new Date(item.date);
-                const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
-                yearMatch = selectedYear.includes(y);
+            // Date filtering logic
+            let dateMatch = true;
+            if (selectedMonth.length === 0 && selectedYear.length === 0) {
+                // If no month/year selected, default to the absolute latest available date snapshot
+                dateMatch = item.date === latestDataDate;
+            } else {
+                // If month or year filters are used, use them
+                const monthMatch = selectedMonth.length === 0 || selectedMonth.includes(item.month);
+                
+                let yearMatch = true;
+                if (selectedYear.length > 0) {
+                    const itemDate = new Date(item.date);
+                    const itemYearStr = !isNaN(itemDate.getFullYear()) ? itemDate.getFullYear().toString() : "";
+                    yearMatch = selectedYear.includes(itemYearStr);
+                }
+                dateMatch = monthMatch && yearMatch;
             }
 
-            return clusterMatch && branchMatch && monthMatch && specialityMatch && departmentMatch && ratingMatch && yearMatch;
+            return clusterMatch && branchMatch && specialityMatch && departmentMatch && ratingMatch && dateMatch;
         });
-    }, [insights, selectedCluster, selectedBranch, selectedMonth, selectedSpeciality, selectedDepartments, selectedRatings, latestDataMonth, selectedYear, mounted, loading]);
+    }, [insights, selectedCluster, selectedBranch, selectedMonth, selectedSpeciality, selectedDepartments, selectedRatings, latestDataDate, selectedYear, mounted, loading]);
 
     if (!mounted || loading) {
         return (
