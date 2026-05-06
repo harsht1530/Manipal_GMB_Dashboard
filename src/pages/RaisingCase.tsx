@@ -207,13 +207,17 @@ export default function RaisingCase() {
         if (selectedFile) {
           const fileData = new FormData();
           fileData.append('image', selectedFile);
-          const uploadRes = await fetch(`${API_BASE_URL}/upload-image`, {
+          
+          // Send directly to the live frontend server where it's hosted
+          const uploadRes = await fetch("https://multiplierai.co/GMB/upload.php", {
             method: 'POST',
             body: fileData
           });
           const uploadJson = await uploadRes.json();
           if (uploadJson.success) {
-            imageUrl = uploadJson.imageUrl;
+            imageUrl = uploadJson.imageUrl; // This will now be the full public URL from the PHP script
+          } else {
+            console.error("Upload failed:", uploadJson.error);
           }
         }
 
@@ -798,8 +802,8 @@ export default function RaisingCase() {
                   <TableBody>
                     {tableData.map((row, idx) => (
                       <TableRow key={idx}>
-                        <TableCell className="font-medium">{row.Cluster || '-'}</TableCell>
-                        <TableCell>{row.Location || '-'}</TableCell>
+                        <TableCell className="font-medium">{row.Cluster || row.cluster || '-'}</TableCell>
+                        <TableCell>{row.Location || row.location || '-'}</TableCell>
 
                         {(activeTab === 'out-of-org' || activeTab === 'optimization') && (
                           <TableCell>{row["Business name"] || row["Business Name"] || '-'}</TableCell>
@@ -855,14 +859,14 @@ export default function RaisingCase() {
 
                         <TableCell>
                           <span className={`px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider rounded-full border ${(() => {
-                            const s = (row.Status || '').toLowerCase();
-                            if (s === 'resolved' || s === 'completed' || s === 'done') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                            const s = (row.Status || row.status || '').toLowerCase();
+                            if (s === 'resolved' || s === 'completed' || s === 'done' || s === 'posted') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
                             if (s === 'processing' || s === 'in process' || s === 'in progress') return 'bg-amber-50 text-amber-700 border-amber-200';
                             if (s === 'pending' || s === 'new') return 'bg-blue-50 text-blue-700 border-blue-200';
-                            if (s === 'cancelled' || s === 'rejected') return 'bg-red-50 text-red-700 border-red-200';
+                            if (s === 'cancelled' || s === 'rejected' || s === 'failed') return 'bg-red-50 text-red-700 border-red-200';
                             return 'bg-slate-50 text-slate-700 border-slate-200';
                           })()}`}>
-                            {row.Status || 'Pending'}
+                            {row.Status || row.status || 'Pending'}
                           </span>
                         </TableCell>
                       </TableRow>

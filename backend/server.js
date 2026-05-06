@@ -50,7 +50,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Multer Configuration
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
-        const dir = path.join(__dirname, '../src/assets/images');
+        const dir = './uploads/GMB';
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
         }
@@ -747,7 +747,10 @@ app.post('/api/upload-image', upload.single('image'), (req, res) => {
     if (!req.file) {
         return res.status(400).json({ success: false, error: "No file uploaded" });
     }
-    const imageUrl = `https://multiplierai.co/GMB/assets/images/${req.file.filename}`;
+    // We construct the production backend URL because Google API cannot fetch from localhost or static frontend builds
+    const isLocal = req.get('host').includes('localhost');
+    const baseUrl = isLocal ? "https://smldatamanagement.multiplierai.co" : `${req.protocol}://${req.get('host')}`;
+    const imageUrl = `${baseUrl}/uploads/GMB/${req.file.filename}`;
     res.json({ success: true, imageUrl, filename: req.file.filename });
 });
 
@@ -799,7 +802,13 @@ async function triggerActionPost(post) {
         const response = await axios.post('http://multipliersolutions.in/gmbhospitals/gmb_api/api.php', payload);
         
         // Ensure we handle various success responses properly
-        if (response.data.status === 'success' || response.data.response === 'Success' || response.data.status === true) {
+        const resStr = JSON.stringify(response.data).toLowerCase();
+        if (
+            response.data.status === 'success' || 
+            response.data.response === 'Success' || 
+            response.data.status === true ||
+            (response.status === 200 && !resStr.includes('error') && !resStr.includes('failed'))
+        ) {
             post.status = 'Posted';
         } else {
             post.status = 'Failed';
