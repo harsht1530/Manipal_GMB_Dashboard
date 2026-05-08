@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { FilterBar } from "@/components/dashboard/FilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Globe, Clock, Phone, MapPin, Key, Image as ImageIcon, Camera, Building2, Download, ChevronLeft, ChevronRight } from "lucide-react";
+import { Globe, Clock, Phone, MapPin, Key, Image as ImageIcon, Camera, Building2, Download, ChevronLeft, ChevronRight, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import * as XLSX from "xlsx";
 import { useAuth } from "@/contexts/AuthContext";
@@ -40,6 +40,7 @@ const PanIndiaOptimization = () => {
   // Sidebar Filters (From Layout)
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
   const [selectedRatings, setSelectedRatings] = useState<number[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
 
   // Page Level Filters
   const [selectedBranch, setSelectedBranch] = useState<string[]>([]);
@@ -332,26 +333,39 @@ const PanIndiaOptimization = () => {
         selectedRatings={selectedRatings}
         onRatingsChange={(val) => startTransition(() => setSelectedRatings(val))}
     >
-        <FilterBar
-            selectedCluster={[]} // Not applicable for optimization data based on schema provided
-            selectedBranch={selectedBranch}
-            selectedMonth={[]}
-            selectedSpeciality={[]}
-            onClusterChange={() => {}} 
-            onBranchChange={(val) => startTransition(() => setSelectedBranch(val))}
-            onMonthChange={() => {}}
-            onSpecialityChange={() => {}}
-            clusterOptions={[]}
-            branchOptions={filterOptions.branches}
-            monthOptions={[]}
-            specialityOptions={[]}
-            hideCluster={true}
-            hideBranch={isBranchRestricted}
-            hideSpeciality={true}
-            selectedYear={[]}
-            yearOptions={[]}
-            onYearChange={() => {}}
-        />
+        <div className="flex justify-end mb-4">
+            <Button 
+                variant="outline" 
+                onClick={() => setShowFilters(!showFilters)}
+                className="gap-2"
+            >
+                <Filter className="h-4 w-4" />
+                {showFilters ? 'Hide Filters' : 'Show Filters'}
+            </Button>
+        </div>
+
+        {showFilters && (
+            <FilterBar
+                selectedCluster={[]} // Not applicable for optimization data based on schema provided
+                selectedBranch={selectedBranch}
+                selectedMonth={[]}
+                selectedSpeciality={[]}
+                onClusterChange={() => {}} 
+                onBranchChange={(val) => startTransition(() => setSelectedBranch(val))}
+                onMonthChange={() => {}}
+                onSpecialityChange={() => {}}
+                clusterOptions={[]}
+                branchOptions={filterOptions.branches}
+                monthOptions={[]}
+                specialityOptions={[]}
+                hideCluster={true}
+                hideBranch={isBranchRestricted}
+                hideSpeciality={true}
+                selectedYear={[]}
+                yearOptions={[]}
+                onYearChange={() => {}}
+            />
+        )}
 
         {/* Cards section */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">

@@ -53,6 +53,7 @@ const Doctors = () => {
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
   const [selectedRatings, setSelectedRatings] = useState<number[]>([]);
   const [comboOpen, setComboOpen] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
 
   const { doctors, insights, loading } = useMongoData();
   const [mounted, setMounted] = useState(false);
@@ -286,115 +287,129 @@ const Doctors = () => {
       selectedRatings={selectedRatings}
       onRatingsChange={(val) => startTransition(() => setSelectedRatings(val))}
     >
-      <FilterBar
-        selectedCluster={selectedCluster}
-        selectedBranch={selectedBranch}
-        selectedMonth={[]}
-        selectedSpeciality={selectedSpeciality}
-        clusterOptions={filterOptions.clusters}
-        branchOptions={filterOptions.branches}
-        monthOptions={[]}
-        specialityOptions={filterOptions.specialities}
-        onClusterChange={(val) => startTransition(() => setSelectedCluster(val))}
-        onBranchChange={(val) => startTransition(() => setSelectedBranch(val))}
-        onMonthChange={() => { }}
-        onSpecialityChange={(val) => startTransition(() => setSelectedSpeciality(val))}
-        hideCluster={isBranchRestricted || isClusterRestricted}
-        hideBranch={isBranchRestricted}
-        hideMonth={true}
-        hideYear={true}
-      />
-
-      {/* Search Bar / Profile Selector */}
-      <div className="relative mb-6 animate-fade-in flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-        <div className="w-full max-w-md">
-          <label className="text-xs font-semibold text-muted-foreground mb-1.5 flex items-center gap-1.5 ml-1">
-            <Search className="h-3 w-3" />
-            Search Profiles
-          </label>
-          <Popover open={comboOpen} onOpenChange={setComboOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                role="combobox"
-                aria-expanded={comboOpen}
-                className="w-full justify-between text-left font-normal border-primary/20 focus:border-primary bg-background h-10"
+      <div className="flex flex-col sm:flex-row items-end sm:items-center justify-between gap-4 mb-6">
+        {/* Search Bar / Profile Selector */}
+        <div className="relative flex flex-row gap-2 items-center w-full max-w-md">
+          <div className="flex-1">
+            <label className="text-xs font-semibold text-muted-foreground mb-1.5 flex items-center gap-1.5 ml-1">
+              <Search className="h-3 w-3" />
+              Search Profiles
+            </label>
+            <Popover open={comboOpen} onOpenChange={setComboOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={comboOpen}
+                  className="w-full justify-between text-left font-normal border-primary/20 focus:border-primary bg-background h-10"
+                >
+                  <span className="truncate">
+                    {searchQuery ? searchQuery : "Search profiles by name..."}
+                  </span>
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                className="p-0 w-[--radix-popover-trigger-width] min-w-[300px]"
+                align="start"
               >
-                <span className="truncate">
-                  {searchQuery ? searchQuery : "Search profiles by name..."}
-                </span>
-                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent
-              className="p-0 w-[--radix-popover-trigger-width] min-w-[300px]"
-              align="start"
-            >
-              <Command className="w-full">
-                <CommandInput placeholder="Type name to search..." className="h-9" />
-                <CommandList className="max-h-[300px]">
-                  <CommandEmpty>No profile found.</CommandEmpty>
-                  <CommandGroup>
-                    <CommandItem
-                      value="all"
-                      onSelect={() => {
-                        startTransition(() => {
-                          setSearchQuery("");
-                        });
-                        setComboOpen(false);
-                      }}
-                      className="cursor-pointer text-primary font-medium"
-                    >
-                      <Check
-                        className={cn(
-                          "mr-2 h-4 w-4",
-                          searchQuery === "" ? "opacity-100" : "opacity-0"
-                        )}
-                      />
-                      All Profiles
-                    </CommandItem>
-                    {validSearchProfiles.map((profile) => (
+                <Command className="w-full">
+                  <CommandInput placeholder="Type name to search..." className="h-9" />
+                  <CommandList className="max-h-[300px]">
+                    <CommandEmpty>No profile found.</CommandEmpty>
+                    <CommandGroup>
                       <CommandItem
-                        key={profile.id}
-                        value={profile.name}
+                        value="all"
                         onSelect={() => {
                           startTransition(() => {
-                            setSearchQuery(profile.name === searchQuery ? "" : profile.name);
+                            setSearchQuery("");
                           });
                           setComboOpen(false);
                         }}
-                        className="cursor-pointer"
+                        className="cursor-pointer text-primary font-medium"
                       >
                         <Check
                           className={cn(
                             "mr-2 h-4 w-4",
-                            searchQuery === profile.name ? "opacity-100" : "opacity-0"
+                            searchQuery === "" ? "opacity-100" : "opacity-0"
                           )}
                         />
-                        <div className="flex flex-col">
-                          <span>{profile.name}</span>
-                          <span className="text-[10px] text-muted-foreground truncate">{profile.businessName}</span>
-                        </div>
+                        All Profiles
                       </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
+                      {validSearchProfiles.map((profile) => (
+                        <CommandItem
+                          key={profile.id}
+                          value={profile.name}
+                          onSelect={() => {
+                            startTransition(() => {
+                              setSearchQuery(profile.name === searchQuery ? "" : profile.name);
+                            });
+                            setComboOpen(false);
+                          }}
+                          className="cursor-pointer"
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              searchQuery === profile.name ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          <div className="flex flex-col">
+                            <span>{profile.name}</span>
+                            <span className="text-[10px] text-muted-foreground truncate">{profile.businessName}</span>
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          </div>
+          {searchQuery && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSearchQuery("")}
+              className="text-xs text-muted-foreground hover:text-primary mt-6"
+            >
+              Clear
+            </Button>
+          )}
         </div>
 
-        {searchQuery && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setSearchQuery("")}
-            className="text-xs text-muted-foreground hover:text-primary mt-6 sm:mt-5"
-          >
-            Clear Search
-          </Button>
-        )}
+        <Button 
+          variant="outline" 
+          onClick={() => setShowFilters(!showFilters)}
+          className="gap-2"
+        >
+          <Filter className="h-4 w-4" />
+          {showFilters ? 'Hide Filters' : 'Show Filters'}
+        </Button>
       </div>
+
+      {showFilters && (
+        <div className="bg-card p-4 rounded-xl border border-border shadow-sm mb-6 animate-in fade-in slide-in-from-top-2 duration-300">
+          <FilterBar
+            selectedCluster={selectedCluster}
+            selectedBranch={selectedBranch}
+            selectedMonth={[]}
+            selectedSpeciality={selectedSpeciality}
+            clusterOptions={filterOptions.clusters}
+            branchOptions={filterOptions.branches}
+            monthOptions={[]}
+            specialityOptions={filterOptions.specialities}
+            onClusterChange={(val) => startTransition(() => setSelectedCluster(val))}
+            onBranchChange={(val) => startTransition(() => setSelectedBranch(val))}
+            onMonthChange={() => { }}
+            onSpecialityChange={(val) => startTransition(() => setSelectedSpeciality(val))}
+            hideCluster={isBranchRestricted || isClusterRestricted}
+            hideBranch={isBranchRestricted}
+            hideMonth={true}
+            hideYear={true}
+          />
+        </div>
+      )}
 
       {/* Doctors Grid */}
       <div className={cn("relative transition-all duration-300", (isPending || deferredSearchQuery !== searchQuery) ? "opacity-60" : "opacity-100")}>

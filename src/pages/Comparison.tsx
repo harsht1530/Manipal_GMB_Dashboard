@@ -5,7 +5,8 @@ import { ComparisonChart } from "@/components/comparison/ComparisonChart";
 import { MonthlyComparisonTable } from "@/components/comparison/MonthlyComparisonTable";
 import { useMongoData, getAggregatedMetrics } from "@/hooks/useMongoData";
 import { MetricCard } from "@/components/dashboard/MetricCard";
-import { Search, Navigation, Globe, Phone, Loader2, CalendarDays } from "lucide-react";
+import { Search, Navigation, Globe, Phone, Loader2, CalendarDays, Filter } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -27,6 +28,7 @@ const Comparison = () => {
     // Global filters managed by Layout
     const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
     const [selectedRatings, setSelectedRatings] = useState<number[]>([]);
+    const [showFilters, setShowFilters] = useState(false);
 
     // ── Detect latest data point ──────────────────────────────────────────────
     const latestDataInfo = useMemo(() => {
@@ -229,28 +231,41 @@ const Comparison = () => {
                     </div>
                 )}
 
-                <ComparisonFilterBar
-                    compareBy={compareBy}
-                    entity1={entity1}
-                    entity2={entity2}
-                    selectedMonth={selectedMonth}
-                    selectedYear={selectedYear}
-                    optionsMonth={filterOptions.months}
-                    optionsYear={filterOptions.years}
-                    optionsEntity={filterOptions.entities}
-                    activeWindowLabel={activeWindowLabel}
-                    onCompareByChange={(val) => startTransition(() => {
-                        setCompareBy(val);
-                        setEntity1(""); setEntity2("");
-                    })}
-                    onEntity1Change={(val) => startTransition(() => setEntity1(val))}
-                    onEntity2Change={(val) => startTransition(() => setEntity2(val))}
-                    onMonthChange={(val) => startTransition(() => setSelectedMonth(val))}
-                    onYearChange={(val) => startTransition(() => {
-                        setSelectedYear(val);
-                        setSelectedMonth([]); // clear month when year changes
-                    })}
-                />
+                <div className="flex justify-end mb-4">
+                    <Button 
+                        variant="outline" 
+                        onClick={() => setShowFilters(!showFilters)}
+                        className="gap-2"
+                    >
+                        <Filter className="h-4 w-4" />
+                        {showFilters ? 'Hide Comparison Controls' : 'Show Comparison Controls'}
+                    </Button>
+                </div>
+
+                {showFilters && (
+                    <ComparisonFilterBar
+                        compareBy={compareBy}
+                        entity1={entity1}
+                        entity2={entity2}
+                        selectedMonth={selectedMonth}
+                        selectedYear={selectedYear}
+                        optionsMonth={filterOptions.months}
+                        optionsYear={filterOptions.years}
+                        optionsEntity={filterOptions.entities}
+                        activeWindowLabel={activeWindowLabel}
+                        onCompareByChange={(val) => startTransition(() => {
+                            setCompareBy(val);
+                            setEntity1(""); setEntity2("");
+                        })}
+                        onEntity1Change={(val) => startTransition(() => setEntity1(val))}
+                        onEntity2Change={(val) => startTransition(() => setEntity2(val))}
+                        onMonthChange={(val) => startTransition(() => setSelectedMonth(val))}
+                        onYearChange={(val) => startTransition(() => {
+                            setSelectedYear(val);
+                            setSelectedMonth([]); // clear month when year changes
+                        })}
+                    />
+                )}
 
                 {entity1 && entity2 && (
                     <div className="space-y-8 animate-fade-in">

@@ -78,6 +78,7 @@ const SearchPerformance = () => {
     const [comboOpen, setComboOpen] = useState(false);
     const [isPending, startTransition] = useTransition();
     const [mounted, setMounted] = useState(false);
+    const [showFilters, setShowFilters] = useState(false);
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -277,24 +278,37 @@ const SearchPerformance = () => {
             onRatingsChange={(val) => startTransition(() => setSelectedRatings(val))}
         >
 
-            <FilterBar
-                selectedCluster={selectedCluster}
-                selectedBranch={selectedBranch}
-                selectedMonth={selectedMonth}
-                selectedSpeciality={selectedSpeciality}
-                clusterOptions={filterOptions.clusters}
-                branchOptions={filterOptions.branches}
-                monthOptions={filterOptions.months}
-                specialityOptions={filterOptions.specialities}
-                onClusterChange={(val) => startTransition(() => setSelectedCluster(val))}
-                onBranchChange={(val) => startTransition(() => setSelectedBranch(val))}
-                onMonthChange={(val) => startTransition(() => setSelectedMonth(val))}
-                onSpecialityChange={(val) => startTransition(() => setSelectedSpeciality(val))}
-                hideMonth={true}
-                hideYear={true}
-                hideCluster={isBranchRestricted || isClusterRestricted}
-                hideBranch={isBranchRestricted}
-            />
+            <div className="flex justify-end mb-4">
+                <Button 
+                    variant="outline" 
+                    onClick={() => setShowFilters(!showFilters)}
+                    className="gap-2"
+                >
+                    <Filter className="h-4 w-4" />
+                    {showFilters ? 'Hide Filters' : 'Show Filters'}
+                </Button>
+            </div>
+
+            {showFilters && (
+                <FilterBar
+                    selectedCluster={selectedCluster}
+                    selectedBranch={selectedBranch}
+                    selectedMonth={selectedMonth}
+                    selectedSpeciality={selectedSpeciality}
+                    clusterOptions={filterOptions.clusters}
+                    branchOptions={filterOptions.branches}
+                    monthOptions={filterOptions.months}
+                    specialityOptions={filterOptions.specialities}
+                    onClusterChange={(val) => startTransition(() => setSelectedCluster(val))}
+                    onBranchChange={(val) => startTransition(() => setSelectedBranch(val))}
+                    onMonthChange={(val) => startTransition(() => setSelectedMonth(val))}
+                    onSpecialityChange={(val) => startTransition(() => setSelectedSpeciality(val))}
+                    hideMonth={true}
+                    hideYear={true}
+                    hideCluster={isBranchRestricted || isClusterRestricted}
+                    hideBranch={isBranchRestricted}
+                />
+            )}
 
             <Alert className="mb-6 bg-blue-50 border-blue-200">
                 <Info className="h-4 w-4 text-blue-600" />

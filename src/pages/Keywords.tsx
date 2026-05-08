@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -50,6 +51,7 @@ const Keywords = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [rankFilter, setRankFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const [showFilters, setShowFilters] = useState(false);
   const pageSize = 10;
 
   useEffect(() => {
@@ -279,43 +281,56 @@ const Keywords = () => {
           </Card>
         </div>
 
+        <div className="flex justify-end mb-4">
+          <Button 
+            variant="outline" 
+            onClick={() => setShowFilters(!showFilters)}
+            className="gap-2"
+          >
+            <Filter className="h-4 w-4" />
+            {showFilters ? 'Hide Filters' : 'Show Filters'}
+          </Button>
+        </div>
+
         {/* Filters */}
-        <Card className="mb-6 animate-fade-in">
-          <CardContent className="p-4">
-            <div className="flex flex-wrap gap-4 items-center">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Filter className="h-4 w-4" />
-                <span>Filters:</span>
+        {showFilters && (
+          <Card className="mb-6 animate-in fade-in slide-in-from-top-2 duration-300">
+            <CardContent className="p-4">
+              <div className="flex flex-wrap gap-4 items-center">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Filter className="h-4 w-4" />
+                  <span>Filters:</span>
+                </div>
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Search keywords or doctors..."
+                    value={searchQuery}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSearchQuery(val);
+                      startTransition(() => {
+                        // This creates a low-priority update for the filtered list
+                      });
+                    }}
+                    className="pl-10 bg-secondary border-0"
+                  />
+                </div>
+                <Select value={rankFilter} onValueChange={(val) => startTransition(() => setRankFilter(val))}>
+                  <SelectTrigger className="w-[150px] bg-secondary border-0">
+                    <SelectValue placeholder="Rank filter" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Keywords</SelectItem>
+                    <SelectItem value="top3">Top 3</SelectItem>
+                    <SelectItem value="top10">Top 10</SelectItem>
+                    <SelectItem value="notranking">Not Ranking</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Search keywords or doctors..."
-                  value={searchQuery}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setSearchQuery(val);
-                    startTransition(() => {
-                      // This creates a low-priority update for the filtered list
-                    });
-                  }}
-                  className="pl-10 bg-secondary border-0"
-                />
-              </div>
-              <Select value={rankFilter} onValueChange={(val) => startTransition(() => setRankFilter(val))}>
-                <SelectTrigger className="w-[150px] bg-secondary border-0">
-                  <SelectValue placeholder="Rank filter" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Keywords</SelectItem>
-                  <SelectItem value="top3">Top 3</SelectItem>
-                  <SelectItem value="top10">Top 10</SelectItem>
-                  <SelectItem value="notranking">Not Ranking</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Keywords Table */}
         <Card className="animate-slide-up" style={{ animationDelay: "250ms" }}>

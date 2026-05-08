@@ -31,6 +31,7 @@ export interface PostingData {
   department: string;
   typeOfPost: string;
   gmbPostLink: string;
+  newReviewUri?: string;
   date: string;
   month: string;
 }
@@ -160,6 +161,7 @@ function transformPosting(doc: any): PostingData {
     department: doc["Department"] || "",
     typeOfPost: doc["Type of post"] || "",
     gmbPostLink: doc["GMB Post Link"] || "",
+    newReviewUri: doc.newReviewUri || "",
     date: doc["Date"]?.$date || doc["Date"] || "",
     month: doc["Month"] || "",
   };

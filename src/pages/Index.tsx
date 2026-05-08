@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useTransition } from "react";
+import { useState, useMemo, useEffect, useTransition, useRef } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { MetricCard } from "@/components/dashboard/MetricCard";
 import { FilterBar } from "@/components/dashboard/FilterBar";
@@ -7,7 +7,7 @@ import { TopPerformers } from "@/components/dashboard/TopPerformers";
 import { PerformanceChart } from "@/components/dashboard/PerformanceChart";
 import { LocationsOverview } from "@/components/dashboard/LocationsOverview";
 import { useMongoData, getAggregatedMetrics } from "@/hooks/useMongoData";
-import { Search, Map, Navigation, Globe, Phone, Star, Smartphone, Monitor, MapPin, Loader2, Download } from "lucide-react";
+import { Search, Map, Navigation, Globe, Phone, Star, Smartphone, Monitor, MapPin, Loader2, Download, Filter, FileSpreadsheet, FileText } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,6 +15,9 @@ import { Card, CardHeader, CardContent } from "@/components/ui/card";
 
 import { ReviewSummary } from "@/components/dashboard/ReviewSummary";
 import { cn } from "@/lib/utils";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -27,6 +30,9 @@ const Index = () => {
   const [selectedSpeciality, setSelectedSpeciality] = useState<string[]>([]);
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
   const [selectedRatings, setSelectedRatings] = useState<number[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const printRef = useRef<HTMLDivElement>(null);
 
   const { insights, doctors, locations, top10Data, loading } = useMongoData();
   const [mounted, setMounted] = useState(false);
@@ -429,6 +435,62 @@ const Index = () => {
 
   const metrics = dynamicMetrics.current;
 
+  const handleDownloadPDF = async () => {
+    if (!printRef.current) return;
+
+    setIsGeneratingPDF(true);
+    console.log("Generating Dashboard PDF...");
+    try {
+        // Wait for a moment to ensure DOM is ready
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Wait for images to load
+        const images = printRef.current.getElementsByTagName('img');
+        const imagePromises = Array.from(images).map(img => {
+            if (img.complete) return Promise.resolve();
+            return new Promise((resolve) => {
+                img.onload = resolve;
+                img.onerror = resolve;
+            });
+        });
+
+        // 3-second timeout for image loading
+        await Promise.race([
+            Promise.all(imagePromises),
+            new Promise(resolve => setTimeout(resolve, 3000))
+        ]);
+
+        await new Promise(resolve => setTimeout(resolve, 500)); // Allow charts to finish rendering
+
+        const canvas = await html2canvas(printRef.current, {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            backgroundColor: "#ffffff",
+            allowTaint: true,
+            windowWidth: printRef.current.scrollWidth,
+            windowHeight: printRef.current.scrollHeight
+        });
+
+        const imgData = canvas.toDataURL("image/png");
+        const imgWidth = 210; // A4 width in mm
+        const pageHeight = (canvas.height * imgWidth) / canvas.width;
+
+        const pdf = new jsPDF({
+            orientation: pageHeight > imgWidth ? "portrait" : "landscape",
+            unit: "mm",
+            format: [imgWidth, pageHeight],
+        });
+
+        pdf.addImage(imgData, "PNG", 0, 0, imgWidth, pageHeight);
+        pdf.save(`Dashboard_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+    } catch (error) {
+        console.error("PDF generation failed:", error);
+    } finally {
+        setIsGeneratingPDF(false);
+    }
+  };
+
   const handleExport = () => {
     // 1. Insights Data Sheet
     let exportInsights = filteredData;
@@ -547,7 +609,7 @@ const Index = () => {
       selectedRatings={selectedRatings}
       onRatingsChange={(val) => startTransition(() => setSelectedRatings(val))}
     >
-      <div className={cn("relative transition-all duration-300", isPending ? "opacity-60" : "opacity-100")}>
+      <div ref={printRef} className={cn("relative transition-all duration-300 bg-background pb-4", isPending ? "opacity-60" : "opacity-100")}>
         {isPending && (
           <div className="absolute inset-x-0 -top-4 bottom-0 z-[60] flex items-start justify-center pt-32 bg-background/5 backdrop-blur-[1px] rounded-xl pointer-events-none">
             <div className="flex items-center gap-3 px-4 py-2 bg-background/80 border border-border shadow-lg rounded-full animate-in fade-in zoom-in duration-300">
@@ -561,31 +623,58 @@ const Index = () => {
             <h2 className="text-xl font-bold text-foreground">Analytics Overview {user?.branch || user?.cluster ? `(${user?.branch || user?.cluster})` : ''}</h2>
             <p className="text-sm text-muted-foreground">Detailed metrics and performance trends</p>
           </div>
-          <Button onClick={handleExport} className="gap-2 bg-primary hover:bg-primary/90">
-            <Download className="h-4 w-4" />
-            Export Data
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button 
+              variant="outline" 
+              onClick={() => setShowFilters(!showFilters)}
+              className="gap-2"
+            >
+              <Filter className="h-4 w-4" />
+              {showFilters ? 'Hide Filters' : 'Show Filters'}
+            </Button>
+            
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button disabled={isGeneratingPDF} className="gap-2 bg-primary hover:bg-primary/90">
+                  {isGeneratingPDF ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                  {isGeneratingPDF ? 'Generating...' : 'Export Data'}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExport} className="cursor-pointer gap-2">
+                  <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                  Download Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleDownloadPDF} className="cursor-pointer gap-2">
+                  <FileText className="h-4 w-4 text-rose-600" />
+                  Download PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
-        <FilterBar
-          selectedCluster={selectedCluster}
-          selectedBranch={selectedBranch}
-          selectedMonth={selectedMonth}
-          selectedYear={selectedYear}
-          selectedSpeciality={selectedSpeciality}
-          clusterOptions={filterOptions.clusters}
-          branchOptions={filterOptions.branches}
-          monthOptions={filterOptions.months}
-          yearOptions={filterOptions.years}
-          specialityOptions={filterOptions.specialities}
-          onClusterChange={(val) => startTransition(() => setSelectedCluster(val))}
-          onBranchChange={(val) => startTransition(() => setSelectedBranch(val))}
-          onMonthChange={(val) => startTransition(() => setSelectedMonth(val))}
-          onYearChange={(val) => startTransition(() => setSelectedYear(val))}
-          onSpecialityChange={(val) => startTransition(() => setSelectedSpeciality(val))}
-          hideCluster={isBranchRestricted || isClusterRestricted}
-          hideBranch={isBranchRestricted}
-        />
+        {showFilters && (
+          <FilterBar
+            selectedCluster={selectedCluster}
+            selectedBranch={selectedBranch}
+            selectedMonth={selectedMonth}
+            selectedYear={selectedYear}
+            selectedSpeciality={selectedSpeciality}
+            clusterOptions={filterOptions.clusters}
+            branchOptions={filterOptions.branches}
+            monthOptions={filterOptions.months}
+            yearOptions={filterOptions.years}
+            specialityOptions={filterOptions.specialities}
+            onClusterChange={(val) => startTransition(() => setSelectedCluster(val))}
+            onBranchChange={(val) => startTransition(() => setSelectedBranch(val))}
+            onMonthChange={(val) => startTransition(() => setSelectedMonth(val))}
+            onYearChange={(val) => startTransition(() => setSelectedYear(val))}
+            onSpecialityChange={(val) => startTransition(() => setSelectedSpeciality(val))}
+            hideCluster={isBranchRestricted || isClusterRestricted}
+            hideBranch={isBranchRestricted}
+          />
+        )}
 
         <div className="mb-6">
           <LocationsOverview data={processedLocations} selectedMonths={selectedMonth.map(m => m.substring(0, 3))} />

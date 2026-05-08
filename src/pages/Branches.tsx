@@ -15,7 +15,9 @@ import {
   Star,
   TrendingUp,
   Loader2,
+  Filter,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface BranchStats {
@@ -41,6 +43,7 @@ const Branches = () => {
   const [selectedMonth, setSelectedMonth] = useState<string[]>([]);
   const [selectedYear, setSelectedYear] = useState<string[]>([]);
   const [selectedSpeciality, setSelectedSpeciality] = useState<string[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
     if (user?.branch) {
@@ -297,26 +300,39 @@ const Branches = () => {
   return (
     <DashboardLayout title={dashboardTitle} subtitle={dashboardSubtitle}>
 
-      <FilterBar
-        selectedCluster={selectedCluster}
-        selectedBranch={selectedBranch}
-        selectedMonth={selectedMonth}
-        selectedSpeciality={selectedSpeciality}
-        clusterOptions={filterOptions.clusters}
-        branchOptions={filterOptions.branches}
-        monthOptions={filterOptions.months}
-        specialityOptions={filterOptions.specialities}
-        onClusterChange={setSelectedCluster}
-        onBranchChange={setSelectedBranch}
-        onMonthChange={setSelectedMonth}
-        onYearChange={setSelectedYear}
-        selectedYear={selectedYear}
-        onSpecialityChange={setSelectedSpeciality}
-        hideMonth={false}
-        yearOptions={filterOptions.years}
-        hideCluster={isBranchRestricted || isClusterRestricted}
-        hideBranch={isBranchRestricted}
-      />
+      <div className="flex justify-end mb-4">
+        <Button 
+          variant="outline" 
+          onClick={() => setShowFilters(!showFilters)}
+          className="gap-2"
+        >
+          <Filter className="h-4 w-4" />
+          {showFilters ? 'Hide Filters' : 'Show Filters'}
+        </Button>
+      </div>
+
+      {showFilters && (
+        <FilterBar
+          selectedCluster={selectedCluster}
+          selectedBranch={selectedBranch}
+          selectedMonth={selectedMonth}
+          selectedSpeciality={selectedSpeciality}
+          clusterOptions={filterOptions.clusters}
+          branchOptions={filterOptions.branches}
+          monthOptions={filterOptions.months}
+          specialityOptions={filterOptions.specialities}
+          onClusterChange={setSelectedCluster}
+          onBranchChange={setSelectedBranch}
+          onMonthChange={setSelectedMonth}
+          onYearChange={setSelectedYear}
+          selectedYear={selectedYear}
+          onSpecialityChange={setSelectedSpeciality}
+          hideMonth={false}
+          yearOptions={filterOptions.years}
+          hideCluster={isBranchRestricted || isClusterRestricted}
+          hideBranch={isBranchRestricted}
+        />
+      )}
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-4 mb-6">

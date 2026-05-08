@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Search, Phone, Star, FileWarning, ChevronDown, ChevronUp, MapPin, RefreshCw, Activity, CheckCircle2, Calendar as CalendarIcon, X } from "lucide-react";
+import { AlertTriangle, Search, Phone, Star, FileWarning, ChevronDown, ChevronUp, MapPin, RefreshCw, Activity, CheckCircle2, Calendar as CalendarIcon, X, Filter } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import { format, addDays } from "date-fns";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -28,6 +28,7 @@ export default function CriticalIssues() {
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
   const [showResolved, setShowResolved] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const [date, setDate] = useState<DateRange | undefined>({
     from: undefined,
     to: undefined,
@@ -253,99 +254,112 @@ export default function CriticalIssues() {
           </div>
         )}
 
-        {/* Filters */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border flex flex-wrap gap-4 items-center">
-          <div className="flex-1 min-w-[200px] relative">
-            <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
-            <Input
-              placeholder="Search by name, email, cluster..."
-              className="pl-9"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-          <Select value={selectedCluster} onValueChange={(val) => {
-            setSelectedCluster(val);
-            if (val === "all") setSelectedBranch("all");
-          }}>
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="All Clusters" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Clusters</SelectItem>
-              {clusters.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={selectedBranch} onValueChange={setSelectedBranch} disabled={selectedCluster === "all"}>
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="All Branches" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Branches</SelectItem>
-              {branches.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <div className="w-[240px]">
-            <MultiSelect
-              options={issueTypeOptions}
-              selected={selectedIssueTypes}
-              onChange={setSelectedIssueTypes}
-              placeholder="Filter by Issue Types..."
-            />
-          </div>
-
-          <div className="grid gap-2">
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  id="date"
-                  variant={"outline"}
-                  className={cn(
-                    "w-[240px] justify-start text-left font-normal bg-slate-50 relative pr-8",
-                    !date && "text-muted-foreground"
-                  )}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-                  <span className="truncate">
-                    {date?.from ? (
-                      date.to ? (
-                        <>
-                          {format(date.from, "LLL dd, y")} -{" "}
-                          {format(date.to, "LLL dd, y")}
-                        </>
-                      ) : (
-                        format(date.from, "LLL dd, y")
-                      )
-                    ) : (
-                      <span>Pick a date range</span>
-                    )}
-                  </span>
-                  {date?.from && (
-                    <div
-                      className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-md hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDate(undefined);
-                      }}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </div>
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="end">
-                <Calendar
-                  initialFocus
-                  mode="range"
-                  defaultMonth={date?.from}
-                  selected={date}
-                  onSelect={setDate}
-                  numberOfMonths={2}
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
+        <div className="flex justify-end">
+          <Button 
+            variant="outline" 
+            onClick={() => setShowFilters(!showFilters)}
+            className="gap-2"
+          >
+            <Filter className="h-4 w-4" />
+            {showFilters ? 'Hide Filters' : 'Show Filters'}
+          </Button>
         </div>
+
+        {/* Filters */}
+        {showFilters && (
+          <div className="bg-white p-4 rounded-xl shadow-sm border flex flex-wrap gap-4 items-center animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex-1 min-w-[200px] relative">
+              <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+              <Input
+                placeholder="Search by name, email, cluster..."
+                className="pl-9"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            <Select value={selectedCluster} onValueChange={(val) => {
+              setSelectedCluster(val);
+              if (val === "all") setSelectedBranch("all");
+            }}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="All Clusters" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Clusters</SelectItem>
+                {clusters.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={selectedBranch} onValueChange={setSelectedBranch} disabled={selectedCluster === "all"}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="All Branches" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Branches</SelectItem>
+                {branches.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <div className="w-[240px]">
+              <MultiSelect
+                options={issueTypeOptions}
+                selected={selectedIssueTypes}
+                onChange={setSelectedIssueTypes}
+                placeholder="Filter by Issue Types..."
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="date"
+                    variant={"outline"}
+                    className={cn(
+                      "w-[240px] justify-start text-left font-normal bg-slate-50 relative pr-8",
+                      !date && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                    <span className="truncate">
+                      {date?.from ? (
+                        date.to ? (
+                          <>
+                            {format(date.from, "LLL dd, y")} -{" "}
+                            {format(date.to, "LLL dd, y")}
+                          </>
+                        ) : (
+                          format(date.from, "LLL dd, y")
+                        )
+                      ) : (
+                        <span>Pick a date range</span>
+                      )}
+                    </span>
+                    {date?.from && (
+                      <div
+                        className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-md hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDate(undefined);
+                        }}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </div>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="end">
+                  <Calendar
+                    initialFocus
+                    mode="range"
+                    defaultMonth={date?.from}
+                    selected={date}
+                    onSelect={setDate}
+                    numberOfMonths={2}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+        )}
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

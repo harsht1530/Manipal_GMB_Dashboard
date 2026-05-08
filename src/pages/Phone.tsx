@@ -3,8 +3,9 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { FilterBar } from "@/components/dashboard/FilterBar";
 import { PhoneDetailsTable } from "@/components/dashboard/PhoneDetailsTable";
 import { useMongoData } from "@/hooks/useMongoData";
-import { Loader2 } from "lucide-react";
+import { Loader2, Filter } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +24,7 @@ const PhonePage = () => {
     const { insights, loading } = useMongoData();
     const [mounted, setMounted] = useState(false);
     const [isPending, startTransition] = useTransition();
+    const [showFilters, setShowFilters] = useState(false);
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -173,25 +175,38 @@ const PhonePage = () => {
                         </div>
                     </div>
                 )}
-                <FilterBar
-                    selectedCluster={selectedCluster}
-                    selectedBranch={selectedBranch}
-                    selectedMonth={selectedMonth}
-                    selectedSpeciality={selectedSpeciality}
-                    clusterOptions={filterOptions.clusters}
-                    branchOptions={filterOptions.branches}
-                    monthOptions={filterOptions.months}
-                    specialityOptions={filterOptions.specialities}
-                    onClusterChange={(val) => startTransition(() => setSelectedCluster(val))}
-                    onBranchChange={(val) => startTransition(() => setSelectedBranch(val))}
-                    onMonthChange={(val) => startTransition(() => setSelectedMonth(val))}
-                    selectedYear={selectedYear}
-                    onYearChange={(val) => startTransition(() => setSelectedYear(val))}
-                    onSpecialityChange={(val) => startTransition(() => setSelectedSpeciality(val))}
-                    hideCluster={isBranchRestricted || isClusterRestricted}
-                    hideBranch={isBranchRestricted}
-                    yearOptions={filterOptions.years}
-                />
+                <div className="flex justify-end mb-4">
+                    <Button 
+                        variant="outline" 
+                        onClick={() => setShowFilters(!showFilters)}
+                        className="gap-2"
+                    >
+                        <Filter className="h-4 w-4" />
+                        {showFilters ? 'Hide Filters' : 'Show Filters'}
+                    </Button>
+                </div>
+
+                {showFilters && (
+                    <FilterBar
+                        selectedCluster={selectedCluster}
+                        selectedBranch={selectedBranch}
+                        selectedMonth={selectedMonth}
+                        selectedSpeciality={selectedSpeciality}
+                        clusterOptions={filterOptions.clusters}
+                        branchOptions={filterOptions.branches}
+                        monthOptions={filterOptions.months}
+                        specialityOptions={filterOptions.specialities}
+                        onClusterChange={(val) => startTransition(() => setSelectedCluster(val))}
+                        onBranchChange={(val) => startTransition(() => setSelectedBranch(val))}
+                        onMonthChange={(val) => startTransition(() => setSelectedMonth(val))}
+                        selectedYear={selectedYear}
+                        onYearChange={(val) => startTransition(() => setSelectedYear(val))}
+                        onSpecialityChange={(val) => startTransition(() => setSelectedSpeciality(val))}
+                        hideCluster={isBranchRestricted || isClusterRestricted}
+                        hideBranch={isBranchRestricted}
+                        yearOptions={filterOptions.years}
+                    />
+                )}
 
                 <div className="mb-6">
                     <PhoneDetailsTable data={filteredData} />

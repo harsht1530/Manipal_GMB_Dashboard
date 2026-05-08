@@ -9,6 +9,7 @@ const gmbPostSchema = new mongoose.Schema({
     sourceLink: String,
     imageUrl: String,
     postsText: String,
+    newReviewUri: String,
     status: {
         type: String,
         enum: ['Pending', 'Approved', 'Posted', 'Failed'],

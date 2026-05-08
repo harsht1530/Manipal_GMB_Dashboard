@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { FilterBar } from "@/components/dashboard/FilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Video, FileText, Image as ImageIcon, Send, Instagram, Facebook, Download, Users, CheckCircle, Clock } from "lucide-react";
+import { Video, FileText, Image as ImageIcon, Send, Instagram, Facebook, Download, Users, CheckCircle, Clock, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import * as XLSX from "xlsx";
 import { useAuth } from "@/contexts/AuthContext";
@@ -16,6 +16,7 @@ const Postings = () => {
     const { postings, locations, loading: dataLoading } = useMongoData();
     const [isPending, startTransition] = useTransition();
     const [mounted, setMounted] = useState(false);
+    const [showFilters, setShowFilters] = useState(false);
 
     // Sidebar Filters (From Layout)
     const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
@@ -335,26 +336,39 @@ const Postings = () => {
             selectedRatings={selectedRatings}
             onRatingsChange={(val) => startTransition(() => setSelectedRatings(val))}
         >
-            <FilterBar
-                selectedCluster={selectedCluster}
-                selectedBranch={selectedBranch}
-                selectedMonth={selectedMonth}
-                selectedSpeciality={[]} // Explicitly empty as requested by user
-                onClusterChange={(val) => startTransition(() => setSelectedCluster(val))}
-                onBranchChange={(val) => startTransition(() => setSelectedBranch(val))}
-                onMonthChange={(val) => startTransition(() => setSelectedMonth(val))}
-                onSpecialityChange={() => { }} // No-op
-                clusterOptions={filterOptions.clusters}
-                branchOptions={filterOptions.branches}
-                monthOptions={filterOptions.months}
-                specialityOptions={[]}
-                hideCluster={isBranchRestricted || isClusterRestricted}
-                hideBranch={isBranchRestricted}
-                hideSpeciality={true} // Hide speciality completely
-                selectedYear={selectedYear}
-                yearOptions={filterOptions.years}
-                onYearChange={(val) => startTransition(() => setSelectedYear(val))}
-            />
+            <div className="flex justify-end mb-4">
+                <Button 
+                    variant="outline" 
+                    onClick={() => setShowFilters(!showFilters)}
+                    className="gap-2"
+                >
+                    <Filter className="h-4 w-4" />
+                    {showFilters ? 'Hide Filters' : 'Show Filters'}
+                </Button>
+            </div>
+
+            {showFilters && (
+                <FilterBar
+                    selectedCluster={selectedCluster}
+                    selectedBranch={selectedBranch}
+                    selectedMonth={selectedMonth}
+                    selectedSpeciality={[]} // Explicitly empty as requested by user
+                    onClusterChange={(val) => startTransition(() => setSelectedCluster(val))}
+                    onBranchChange={(val) => startTransition(() => setSelectedBranch(val))}
+                    onMonthChange={(val) => startTransition(() => setSelectedMonth(val))}
+                    onSpecialityChange={() => { }} // No-op
+                    clusterOptions={filterOptions.clusters}
+                    branchOptions={filterOptions.branches}
+                    monthOptions={filterOptions.months}
+                    specialityOptions={[]}
+                    hideCluster={isBranchRestricted || isClusterRestricted}
+                    hideBranch={isBranchRestricted}
+                    hideSpeciality={true} // Hide speciality completely
+                    selectedYear={selectedYear}
+                    yearOptions={filterOptions.years}
+                    onYearChange={(val) => startTransition(() => setSelectedYear(val))}
+                />
+            )}
 
             {/* Cards section */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-6">
@@ -492,6 +506,16 @@ const Postings = () => {
                                                             {post.sourceUrl}
                                                         </div>
                                                     )
+                                                )}
+                                                {post.newReviewUri && (
+                                                    <a
+                                                        href={post.newReviewUri}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="block text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline"
+                                                    >
+                                                        View Profile
+                                                    </a>
                                                 )}
                                             </TableCell>
                                         </TableRow>

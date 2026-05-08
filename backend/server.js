@@ -845,15 +845,15 @@ app.post('/api/send-case-email', async (req, res) => {
 
                 tableRows += `
                     <tr>
-                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: bold; width: 35%;">${formattedKey}</td>
-                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #334155; line-height: 1.5;">${displayValue}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: bold; width: 35%; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word;">${formattedKey}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #334155; line-height: 1.5; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word;">${displayValue}</td>
                     </tr>
                 `;
             }
         }
 
         const tableHtml = `
-            <table style="width: 100%; border-collapse: collapse; text-align: left; margin-top: 20px; font-size: 14px; background-color: #f8fafc; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0;">
+            <table style="width: 100%; table-layout: fixed; border-collapse: collapse; text-align: left; margin-top: 20px; font-size: 14px; background-color: #f8fafc; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0;">
                 <tbody>
                     ${tableRows}
                 </tbody>

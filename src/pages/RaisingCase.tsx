@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ export default function RaisingCase() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { insights, loading: dataLoading } = useMongoData();
+  const timeInputRef = useRef<HTMLInputElement>(null);
 
   const [activeTab, setActiveTab] = useState<'out-of-org' | 'optimization' | 'gmb-profile' | 'gmb-postings'>('out-of-org');
   const [loading, setLoading] = useState(false);
@@ -70,7 +71,8 @@ export default function RaisingCase() {
     status: "Pending",
     // Hidden fields for doctor account/email
     drAccount: "",
-    drEmail: ""
+    drEmail: "",
+    newReviewUri: ""
   });
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -104,7 +106,8 @@ export default function RaisingCase() {
         ...prev, 
         drName: doc.name,
         drAccount: doc.account || "",
-        drEmail: doc.mailId || ""
+        drEmail: doc.mailId || "",
+        newReviewUri: doc.newReviewUri || ""
       }));
     } else {
       setFormData(prev => ({ ...prev, drName: val }));
@@ -245,6 +248,7 @@ export default function RaisingCase() {
           doctorName: formData.drName,
           account: formData.drAccount,
           email: formData.drEmail,
+          newReviewUri: formData.newReviewUri,
           sourceLink: formData.sourceLink,
           imageUrl: imageUrl,
           postsText: aiPreview ? `${aiPreview.headline}\n\n${aiPreview.main_post}\n\n${aiPreview.hashtags.map((h: string) => `#${h}`).join(' ')}` : formData.description,
@@ -726,32 +730,53 @@ export default function RaisingCase() {
                       </div>
                       <div className="space-y-2">
                         <Label className="flex items-center gap-1"><Clock className="h-3 w-3" /> Time</Label>
-                        <Input 
-                          type="time" 
-                          value={scheduleTime} 
-                          onChange={(e) => setScheduleTime(e.target.value)} 
-                          className="text-xs h-9"
-                        />
+                        <div className="relative">
+                          <Button 
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              try {
+                                if (timeInputRef.current && typeof timeInputRef.current.showPicker === 'function') {
+                                  timeInputRef.current.showPicker();
+                                }
+                              } catch (e) {
+                                console.log("showPicker not supported on this browser.");
+                              }
+                            }}
+                            className={cn("w-full justify-start text-left font-normal bg-white text-xs h-9", !scheduleTime && "text-muted-foreground")}
+                          >
+                            <Clock className="mr-2 h-3 w-3" />
+                            {scheduleTime ? scheduleTime : <span>Pick a time</span>}
+                          </Button>
+                          <input 
+                            type="time" 
+                            ref={timeInputRef}
+                            value={scheduleTime} 
+                            onChange={(e) => setScheduleTime(e.target.value)} 
+                            className="absolute bottom-0 left-0 w-0 h-0 opacity-0 pointer-events-none"
+                          />
+                        </div>
                       </div>
                     </div>
                   </>
                 )}
 
-                <div className="space-y-2">
-                  <Label>Status</Label>
-                  <Select required value={formData.status} onValueChange={(val) => handleSelectChange('status', val)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Status" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-white">
-                      <SelectItem value="Pending">Pending</SelectItem>
-                      {(activeTab !== 'gmb-postings' || (!scheduleDate && !scheduleTime)) && (
-                        <SelectItem value="Approved">Approve</SelectItem>
-                      )}
-                      {activeTab !== 'gmb-postings' && <SelectItem value="Done">Done</SelectItem>}
-                    </SelectContent>
-                  </Select>
-                </div>
+                {activeTab === 'gmb-postings' && (
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <Select required value={formData.status} onValueChange={(val) => handleSelectChange('status', val)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Status" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white">
+                        <SelectItem value="Pending">Pending</SelectItem>
+                        {(!scheduleDate && !scheduleTime) && (
+                          <SelectItem value="Approved">Approve</SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 <Button type="submit" disabled={loading} className="w-full bg-[#217a74] hover:bg-[#1a625d] text-white">
                   {loading ? "Submitting..." : "Submit Ticket"}
@@ -814,6 +839,7 @@ export default function RaisingCase() {
                         <>
                           <TableHead>AI Post</TableHead>
                           <TableHead>Scheduled</TableHead>
+                          <TableHead>Profile</TableHead>
                         </>
                       )}
                       <TableHead>Status</TableHead>
@@ -873,6 +899,11 @@ export default function RaisingCase() {
                               <div className="text-[10px] text-slate-500">
                                 {row.scheduledTime ? new Date(row.scheduledTime).toLocaleString() : 'Immediate'}
                               </div>
+                            </TableCell>
+                            <TableCell>
+                              {row.newReviewUri ? (
+                                <a href={row.newReviewUri} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline text-xs font-medium">View Profile</a>
+                              ) : '-'}
                             </TableCell>
                           </>
                         )}
