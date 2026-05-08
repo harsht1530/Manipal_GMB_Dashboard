@@ -816,19 +816,35 @@ async function triggerActionPost(post) {
             
             // Extract detailed error message from response
             let msg = "API Error";
-            const data = response.data;
-            if (data.error) {
-                msg = data.error.message || msg;
-                if (data.error.details && data.error.details[0] && data.error.details[0].errorDetails) {
-                    const firstDetail = data.error.details[0].errorDetails[0];
-                    if (firstDetail && firstDetail.message) {
-                        msg = firstDetail.message; // Use the specific validation message if available
-                    }
+            let data = response.data;
+
+            // Handle string responses that contain JSON (common in this specific API)
+            if (typeof data === 'string' && data.includes('Error creating post:')) {
+                try {
+                    const jsonPart = data.replace('Error creating post:', '').trim();
+                    data = JSON.parse(jsonPart);
+                } catch (e) {
+                    // Not valid JSON, just use the string
                 }
-            } else if (data.message) {
-                msg = data.message;
-            } else if (typeof data === 'string' && data.length < 200) {
-                msg = data;
+            }
+            
+            if (data && typeof data === 'object') {
+                if (data.error) {
+                    msg = data.error.message || msg;
+                    // Check for deep validation details (e.g. "Image too small")
+                    const details = data.error.details;
+                    if (details && details[0]) {
+                        if (details[0].errorDetails && details[0].errorDetails[0]) {
+                            msg = details[0].errorDetails[0].message || msg;
+                        } else if (details[0].message) {
+                            msg = details[0].message;
+                        }
+                    }
+                } else if (data.message) {
+                    msg = data.message;
+                }
+            } else if (typeof data === 'string') {
+                msg = data.length > 250 ? data.substring(0, 250) + "..." : data;
             }
             
             post.errorMessage = msg;
@@ -843,10 +859,28 @@ async function triggerActionPost(post) {
         // Extract error from axios error object
         let msg = error.message;
         if (error.response && error.response.data) {
-            const data = error.response.data;
-            if (data.error && data.error.message) msg = data.error.message;
-            if (data.error?.details?.[0]?.errorDetails?.[0]?.message) {
-                msg = data.error.details[0].errorDetails[0].message;
+            let data = error.response.data;
+            
+            // Handle string-prefixed JSON in error response too
+            if (typeof data === 'string' && data.includes('Error creating post:')) {
+                try {
+                    const jsonPart = data.replace('Error creating post:', '').trim();
+                    data = JSON.parse(jsonPart);
+                } catch (e) { }
+            }
+
+            if (data && typeof data === 'object') {
+                if (data.error) {
+                    msg = data.error.message || msg;
+                    const details = data.error.details;
+                    if (details?.[0]?.errorDetails?.[0]?.message) {
+                        msg = details[0].errorDetails[0].message;
+                    } else if (details?.[0]?.message) {
+                        msg = details[0].message;
+                    }
+                } else if (data.message) {
+                    msg = data.message;
+                }
             }
         }
         
