@@ -37,7 +37,7 @@ export default function RaisingCase() {
   const [isAnimating, setIsAnimating] = useState(false);
   const [tableLoading, setTableLoading] = useState(false);
   const [tableData, setTableData] = useState<any[]>([]);
-  
+
   // GMB Post Specific State
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [aiPreview, setAiPreview] = useState<any | null>(null);
@@ -92,18 +92,18 @@ export default function RaisingCase() {
         .map((i: any) => i.branch)
     )
   ).filter(Boolean).sort() as string[];
-  
+
   const { doctors } = useMongoData();
-  const availableDoctors = (doctors || []).filter(d => 
-    (formData.cluster ? d.cluster === formData.cluster : true) && 
+  const availableDoctors = (doctors || []).filter(d =>
+    (formData.cluster ? d.cluster === formData.cluster : true) &&
     (formData.location ? d.branch === formData.location : true)
   );
 
   const handleDoctorSelect = (val: string) => {
     const doc = availableDoctors.find(d => d.name === val);
     if (doc) {
-      setFormData(prev => ({ 
-        ...prev, 
+      setFormData(prev => ({
+        ...prev,
         drName: doc.name,
         drAccount: doc.account || "",
         drEmail: doc.mailId || "",
@@ -147,29 +147,46 @@ export default function RaisingCase() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Validate image dimensions
-      const img = new Image();
-      img.src = URL.createObjectURL(file);
-      img.onload = () => {
-        if (img.width < 250 || img.height < 250) {
-          toast({
-            title: "Image too small",
-            description: `The selected image is ${img.width}x${img.height} pixels. GMB requires at least 250x250 pixels. Please use a larger image.`,
-            variant: "destructive"
-          });
-          e.target.value = ""; // Clear input
-          setSelectedFile(null);
-        } else {
-          setSelectedFile(file);
-        }
-        URL.revokeObjectURL(img.src);
-      };
-      img.onerror = () => {
-        toast({ title: "Invalid File", description: "The selected file is not a valid image.", variant: "destructive" });
+      // 1. Basic type check
+      if (!file.type.startsWith('image/')) {
+        toast({ title: "Invalid File Type", description: "Please select a valid image file (JPG, PNG, WebP).", variant: "destructive" });
         e.target.value = "";
         setSelectedFile(null);
-        URL.revokeObjectURL(img.src);
+        return;
+      }
+
+      // 2. Load image to check dimensions
+      const reader = new FileReader();
+      reader.onload = (readerEvent: any) => {
+        const img = new Image();
+        img.onload = () => {
+          if (img.width < 250 || img.height < 250) {
+            toast({
+              title: "Image too small",
+              description: `The selected image is ${img.width}x${img.height} pixels. GMB requires at least 250x250 pixels. Please use a larger image.`,
+              variant: "destructive"
+            });
+            e.target.value = ""; // Clear input
+            setSelectedFile(null);
+          } else {
+            // Success! Dimensions are good
+            setSelectedFile(file);
+          }
+        };
+        img.onerror = () => {
+          // If the browser can't parse the image dimensions but the file type is valid,
+          // we'll allow it as a fallback but log the warning.
+          console.warn("Could not verify image dimensions, but file type is valid.");
+          setSelectedFile(file);
+        };
+        img.src = readerEvent.target.result;
       };
+      reader.onerror = () => {
+        toast({ title: "Read Error", description: "Could not read the selected file.", variant: "destructive" });
+        e.target.value = "";
+        setSelectedFile(null);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -251,14 +268,14 @@ export default function RaisingCase() {
           setLoading(false);
           return;
         }
-        
+
         let imageUrl = formData.images;
-        
+
         // 1. Upload image if selected
         if (selectedFile) {
           const fileData = new FormData();
           fileData.append('image', selectedFile);
-          
+
           // Send directly to the live frontend server where it's hosted
           const uploadRes = await fetch("https://multiplierai.co/GMB/upload.php", {
             method: 'POST',
@@ -274,7 +291,7 @@ export default function RaisingCase() {
 
         // 2. Prepare Payload
         const scheduledTime = (scheduleDate && scheduleTime) ? new Date(`${format(scheduleDate, 'yyyy-MM-dd')}T${scheduleTime}`) : null;
-        
+
         const postingPayload = {
           cluster: formData.cluster,
           location: formData.location,
@@ -348,9 +365,9 @@ export default function RaisingCase() {
           body: JSON.stringify(payload)
         });
 
-        const formTypeName = activeTab === 'out-of-org' ? 'Out of Organization Request' 
-                           : activeTab === 'optimization' ? 'Optimization Cards' 
-                           : 'GMB Profile Creation';
+        const formTypeName = activeTab === 'out-of-org' ? 'Out of Organization Request'
+          : activeTab === 'optimization' ? 'Optimization Cards'
+            : 'GMB Profile Creation';
         sendEmailNotification(payload, formTypeName);
         triggerSuccessUI();
       }
@@ -632,7 +649,7 @@ export default function RaisingCase() {
                   </>
                 )}
 
-                 {activeTab === 'gmb-postings' && (
+                {activeTab === 'gmb-postings' && (
                   <>
                     <div className="space-y-2">
                       <Label>Doctor Name</Label>
@@ -683,20 +700,20 @@ export default function RaisingCase() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Source Link (PR, Blog, Video, etc.)</Label>
+                      <Label>Source Link (PR, Blog etc.)</Label>
                       <div className="flex gap-2">
-                        <Input 
-                          type="url" 
-                          name="sourceLink" 
-                          value={formData.sourceLink} 
-                          onChange={handleInputChange} 
-                          placeholder="https://..." 
+                        <Input
+                          type="url"
+                          name="sourceLink"
+                          value={formData.sourceLink}
+                          onChange={handleInputChange}
+                          placeholder="https://..."
                           className="flex-1"
                         />
-                        <Button 
-                          type="button" 
-                          variant="outline" 
-                          size="icon" 
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
                           onClick={handleGenerateAI}
                           disabled={aiLoading}
                           className="shrink-0 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 text-indigo-600"
@@ -722,16 +739,16 @@ export default function RaisingCase() {
                       </div>
                     )}
 
-                     <div className="space-y-2">
+                    <div className="space-y-2">
                       <Label className="flex items-center gap-2">
                         Post Image <span className="text-red-500 font-bold text-xs">* (Min 250x250)</span>
                       </Label>
                       <div className="flex items-center gap-2">
-                        <Input 
+                        <Input
                           required={activeTab === 'gmb-postings'}
-                          type="file" 
-                          accept="image/*" 
-                          onChange={handleFileChange} 
+                          type="file"
+                          accept="image/*"
+                          onChange={handleFileChange}
                           className="text-xs file:bg-indigo-50 file:text-indigo-700 file:border-0 file:rounded-md file:px-2 file:py-1 file:mr-2 hover:file:bg-indigo-100 cursor-pointer"
                         />
                         {selectedFile && <ImageIcon className="h-4 w-4 text-emerald-500" />}
@@ -767,7 +784,7 @@ export default function RaisingCase() {
                       <div className="space-y-2">
                         <Label className="flex items-center gap-1"><Clock className="h-3 w-3" /> Time</Label>
                         <div className="relative">
-                          <Button 
+                          <Button
                             type="button"
                             variant="outline"
                             onClick={() => {
@@ -784,11 +801,11 @@ export default function RaisingCase() {
                             <Clock className="mr-2 h-3 w-3" />
                             {scheduleTime ? scheduleTime : <span>Pick a time</span>}
                           </Button>
-                          <input 
-                            type="time" 
+                          <input
+                            type="time"
                             ref={timeInputRef}
-                            value={scheduleTime} 
-                            onChange={(e) => setScheduleTime(e.target.value)} 
+                            value={scheduleTime}
+                            onChange={(e) => setScheduleTime(e.target.value)}
                             className="absolute bottom-0 left-0 w-0 h-0 opacity-0 pointer-events-none"
                           />
                         </div>
@@ -827,7 +844,7 @@ export default function RaisingCase() {
               <div>
                 <CardTitle className="text-lg">Live Sheet Tracker</CardTitle>
                 <CardDescription>
-                  {activeTab === 'gmb-postings' 
+                  {activeTab === 'gmb-postings'
                     ? "Tracking GMB Postings and their live statuses."
                     : `Showing records synced from ${activeTab === 'out-of-org' ? 'Out of Organization' : 'Optimization Cards'} sheet.`
                   }

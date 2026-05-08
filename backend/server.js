@@ -949,7 +949,7 @@ app.post('/api/send-case-email', async (req, res) => {
     try {
         // Build table rows from formData ignoring empty values
         let tableRows = '';
-        const skipKeys = ['images', 'drAccount', 'drEmail']; // Skip internal or bulky fields
+        const skipKeys = ['images', 'drAccount', 'drEmail', 'aiResponse']; // Skip internal or bulky fields
         for (const [key, value] of Object.entries(formData)) {
             if (value && !skipKeys.includes(key)) {
                 // Formatting key to Title Case (e.g. businessName -> Business Name)
