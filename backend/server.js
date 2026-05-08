@@ -781,6 +781,47 @@ app.get('/api/gmb-postings', async (req, res) => {
     }
 });
 
+// Helper function to translate technical GMB API errors into user-friendly messages
+function getFriendlyErrorMessage(techMsg) {
+    if (!techMsg) return "An unexpected error occurred while posting.";
+    
+    const msg = techMsg.toLowerCase();
+    
+    if (msg.includes("image too small")) {
+        // Extract dimensions if possible (e.g. "Got: 243px/174px (min: 250px/250px w/h)")
+        const minMatch = techMsg.match(/min: (\d+px\/\d+px)/i);
+        const minSize = minMatch ? minMatch[1].replace('/', 'x') : "250x250";
+        return `The image you uploaded is too small. Please use an image of at least ${minSize} pixels.`;
+    }
+    
+    if (msg.includes("photos.additional_photo_urls")) {
+        return "There was an issue with the image you provided. Please ensure the image is valid and accessible.";
+    }
+    
+    if (msg.includes("invalid argument")) {
+        return "The post content contains invalid information. Please check the text and images and try again.";
+    }
+    
+    if (msg.includes("quota exceeded")) {
+        return "The daily limit for GMB postings has been reached. Please try again tomorrow.";
+    }
+    
+    if (msg.includes("not verified")) {
+        return "This GMB profile is not verified. You can only post to verified locations.";
+    }
+
+    if (msg.includes("permission denied") || msg.includes("do not have permission")) {
+        return "The system does not have permission to post to this location. Please check account access.";
+    }
+
+    if (msg.includes("timeout") || msg.includes("econnreset")) {
+        return "The connection to the posting service timed out. Please try again in a few minutes.";
+    }
+
+    // Fallback: Clean up the technical message slightly if no mapping found
+    return techMsg.length > 150 ? techMsg.substring(0, 150) + "..." : techMsg;
+}
+
 // Helper function to trigger the external actionpost API
 async function triggerActionPost(post) {
     try {
@@ -849,9 +890,9 @@ async function triggerActionPost(post) {
                 msg = data.length > 250 ? data.substring(0, 250) + "..." : data;
             }
             
-            post.errorMessage = msg;
+            post.errorMessage = getFriendlyErrorMessage(msg);
             console.error("GMB API Error Response:", response.data);
-            console.log("Extracted Error Message:", msg);
+            console.log("Extracted Error Message:", post.errorMessage);
         }
         await post.save();
         console.log(`Post ${post._id} processed with status: ${post.status}`);
@@ -892,7 +933,7 @@ async function triggerActionPost(post) {
             }
         }
         
-        post.errorMessage = msg;
+        post.errorMessage = getFriendlyErrorMessage(msg);
         await post.save();
     }
 }
