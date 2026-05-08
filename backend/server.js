@@ -810,8 +810,28 @@ async function triggerActionPost(post) {
             (response.status === 200 && !resStr.includes('error') && !resStr.includes('failed'))
         ) {
             post.status = 'Posted';
+            post.errorMessage = undefined;
         } else {
             post.status = 'Failed';
+            
+            // Extract detailed error message from response
+            let msg = "API Error";
+            const data = response.data;
+            if (data.error) {
+                msg = data.error.message || msg;
+                if (data.error.details && data.error.details[0] && data.error.details[0].errorDetails) {
+                    const firstDetail = data.error.details[0].errorDetails[0];
+                    if (firstDetail && firstDetail.message) {
+                        msg = firstDetail.message; // Use the specific validation message if available
+                    }
+                }
+            } else if (data.message) {
+                msg = data.message;
+            } else if (typeof data === 'string' && data.length < 200) {
+                msg = data;
+            }
+            
+            post.errorMessage = msg;
             console.error("GMB API Error Response:", response.data);
         }
         await post.save();
@@ -819,6 +839,18 @@ async function triggerActionPost(post) {
     } catch (error) {
         console.error(`Error triggering actionpost for ${post._id}:`, error.message);
         post.status = 'Failed';
+        
+        // Extract error from axios error object
+        let msg = error.message;
+        if (error.response && error.response.data) {
+            const data = error.response.data;
+            if (data.error && data.error.message) msg = data.error.message;
+            if (data.error?.details?.[0]?.errorDetails?.[0]?.message) {
+                msg = data.error.details[0].errorDetails[0].message;
+            }
+        }
+        
+        post.errorMessage = msg;
         await post.save();
     }
 }

@@ -6,8 +6,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { FilterBar } from "@/components/dashboard/FilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Video, FileText, Image as ImageIcon, Send, Instagram, Facebook, Download, Users, CheckCircle, Clock, Filter } from "lucide-react";
+import { Video, FileText, Image as ImageIcon, Send, Instagram, Facebook, Download, Users, CheckCircle, Clock, Filter, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import * as XLSX from "xlsx";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -447,6 +448,7 @@ const Postings = () => {
                                     <TableHead className="font-semibold text-foreground h-12">Department</TableHead>
                                     <TableHead className="font-semibold text-foreground h-12">Post Type</TableHead>
                                     <TableHead className="font-semibold text-foreground h-12">Date Issued</TableHead>
+                                    <TableHead className="font-semibold text-foreground h-12">Status</TableHead>
                                     <TableHead className="font-semibold text-foreground h-12 text-right">Links</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -473,6 +475,37 @@ const Postings = () => {
                                                     {formatDate(post.date)}
                                                 </div>
                                                 <div className="text-xs text-muted-foreground mt-0.5 font-medium">{post.month}</div>
+                                            </TableCell>
+                                            <TableCell className="py-4 align-top">
+                                                <div className="flex items-center gap-1.5">
+                                                    <Badge 
+                                                        className={cn(
+                                                            "font-bold uppercase text-[10px] px-2 py-0.5",
+                                                            (() => {
+                                                                const s = (post.status || 'Posted').toLowerCase();
+                                                                if (s === 'posted' || s === 'completed' || s === 'done') return 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50';
+                                                                if (s === 'processing' || s === 'in progress') return 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-50';
+                                                                if (s === 'failed' || s === 'rejected') return 'bg-red-50 text-red-700 border-red-200 hover:bg-red-50';
+                                                                return 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-50';
+                                                            })()
+                                                        )}
+                                                        variant="outline"
+                                                    >
+                                                        {post.status || 'Posted'}
+                                                    </Badge>
+                                                    {post.errorMessage && (
+                                                        <TooltipProvider>
+                                                            <Tooltip>
+                                                                <TooltipTrigger asChild>
+                                                                    <AlertCircle className="h-4 w-4 text-red-500 cursor-help animate-pulse" />
+                                                                </TooltipTrigger>
+                                                                <TooltipContent className="bg-red-900 text-white border-red-800 max-w-[200px]">
+                                                                    <p className="text-xs font-medium">{post.errorMessage}</p>
+                                                                </TooltipContent>
+                                                            </Tooltip>
+                                                        </TooltipProvider>
+                                                    )}
+                                                </div>
                                             </TableCell>
                                             <TableCell className="py-4 align-top text-right space-y-2">
                                                 {post.gmbPostLink && post.gmbPostLink !== "N/A" && (
@@ -522,7 +555,7 @@ const Postings = () => {
                                     ))
                                 ) : (
                                     <TableRow>
-                                        <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
+                                        <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
                                             No postings found matching your current filters.
                                         </TableCell>
                                     </TableRow>

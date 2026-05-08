@@ -32,6 +32,7 @@ export interface PostingData {
   typeOfPost: string;
   gmbPostLink: string;
   newReviewUri?: string;
+  errorMessage?: string;
   date: string;
   month: string;
 }
@@ -162,6 +163,7 @@ function transformPosting(doc: any): PostingData {
     typeOfPost: doc["Type of post"] || "",
     gmbPostLink: doc["GMB Post Link"] || "",
     newReviewUri: doc.newReviewUri || "",
+    errorMessage: doc.errorMessage || "",
     date: doc["Date"]?.$date || doc["Date"] || "",
     month: doc["Month"] || "",
   };

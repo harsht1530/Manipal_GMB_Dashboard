@@ -17,6 +17,7 @@ const gmbPostSchema = new mongoose.Schema({
     },
     scheduledTime: Date,
     aiResponse: mongoose.Schema.Types.Mixed,
+    errorMessage: String,
     createdAt: {
         type: Date,
         default: Date.now
