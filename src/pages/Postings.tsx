@@ -6,9 +6,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { FilterBar } from "@/components/dashboard/FilterBar";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Video, FileText, Image as ImageIcon, Send, Instagram, Facebook, Download, Users, CheckCircle, Clock, Filter, AlertCircle } from "lucide-react";
+import { Video, FileText, Image as ImageIcon, Send, Instagram, Facebook, Download, Users, CheckCircle, Clock, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import * as XLSX from "xlsx";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -493,18 +492,6 @@ const Postings = () => {
                                                     >
                                                         {post.status || 'Posted'}
                                                     </Badge>
-                                                    {post.errorMessage && (
-                                                        <TooltipProvider>
-                                                            <Tooltip>
-                                                                <TooltipTrigger asChild>
-                                                                    <AlertCircle className="h-4 w-4 text-red-500 cursor-help animate-pulse" />
-                                                                </TooltipTrigger>
-                                                                <TooltipContent className="bg-red-900 text-white border-red-800 max-w-[200px]">
-                                                                    <p className="text-xs font-medium">{post.errorMessage}</p>
-                                                                </TooltipContent>
-                                                            </Tooltip>
-                                                        </TooltipProvider>
-                                                    )}
                                                 </div>
                                             </TableCell>
                                             <TableCell className="py-4 align-top text-right space-y-2">

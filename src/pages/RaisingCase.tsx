@@ -9,12 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/use-toast";
 import { useMongoData } from "@/hooks/useMongoData";
 import { useAuth } from "@/contexts/AuthContext";
 import confetti from "canvas-confetti";
-import { Sparkles, Image as ImageIcon, Calendar as CalendarIcon, Clock, Eye, Ticket, ExternalLink, RefreshCw, Check, ChevronsUpDown, AlertCircle } from "lucide-react";
+import { Sparkles, Image as ImageIcon, Calendar as CalendarIcon, Clock, Eye, Ticket, ExternalLink, RefreshCw, Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
@@ -146,8 +145,31 @@ export default function RaisingCase() {
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
+    const file = e.target.files?.[0];
+    if (file) {
+      // Validate image dimensions
+      const img = new Image();
+      img.src = URL.createObjectURL(file);
+      img.onload = () => {
+        if (img.width < 250 || img.height < 250) {
+          toast({
+            title: "Image too small",
+            description: `The selected image is ${img.width}x${img.height} pixels. GMB requires at least 250x250 pixels. Please use a larger image.`,
+            variant: "destructive"
+          });
+          e.target.value = ""; // Clear input
+          setSelectedFile(null);
+        } else {
+          setSelectedFile(file);
+        }
+        URL.revokeObjectURL(img.src);
+      };
+      img.onerror = () => {
+        toast({ title: "Invalid File", description: "The selected file is not a valid image.", variant: "destructive" });
+        e.target.value = "";
+        setSelectedFile(null);
+        URL.revokeObjectURL(img.src);
+      };
     }
   };
 
@@ -220,6 +242,16 @@ export default function RaisingCase() {
 
     try {
       if (activeTab === 'gmb-postings') {
+        if (!selectedFile) {
+          toast({
+            title: "Post Image Required",
+            description: "Please upload an image for the GMB post. It must be at least 250x250 pixels.",
+            variant: "destructive"
+          });
+          setLoading(false);
+          return;
+        }
+        
         let imageUrl = formData.images;
         
         // 1. Upload image if selected
@@ -690,10 +722,13 @@ export default function RaisingCase() {
                       </div>
                     )}
 
-                    <div className="space-y-2">
-                      <Label>Post Image</Label>
+                     <div className="space-y-2">
+                      <Label className="flex items-center gap-2">
+                        Post Image <span className="text-red-500 font-bold text-xs">* (Min 250x250)</span>
+                      </Label>
                       <div className="flex items-center gap-2">
                         <Input 
+                          required={activeTab === 'gmb-postings'}
                           type="file" 
                           accept="image/*" 
                           onChange={handleFileChange} 
@@ -910,31 +945,16 @@ export default function RaisingCase() {
                         )}
 
                         <TableCell>
-                          <div className="flex items-center gap-1.5">
-                            <span className={`px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider rounded-full border ${(() => {
-                              const s = (row.Status || row.status || '').toLowerCase();
-                              if (s === 'resolved' || s === 'completed' || s === 'done' || s === 'posted') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-                              if (s === 'processing' || s === 'in process' || s === 'in progress') return 'bg-amber-50 text-amber-700 border-amber-200';
-                              if (s === 'pending' || s === 'new') return 'bg-blue-50 text-blue-700 border-blue-200';
-                              if (s === 'cancelled' || s === 'rejected' || s === 'failed') return 'bg-red-50 text-red-700 border-red-200';
-                              return 'bg-slate-50 text-slate-700 border-slate-200';
-                            })()}`}>
-                              {row.Status || row.status || 'Pending'}
-                            </span>
-                            
-                            {(row.errorMessage || (row.status === 'Failed' && row.aiResponse?.error)) && (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <AlertCircle className="h-4 w-4 text-red-500 cursor-help animate-pulse" />
-                                  </TooltipTrigger>
-                                  <TooltipContent className="bg-red-900 text-white border-red-800 max-w-[250px]">
-                                    <p className="text-xs font-medium">{row.errorMessage || "Submission failed. Please check your inputs."}</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            )}
-                          </div>
+                          <span className={`px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider rounded-full border ${(() => {
+                            const s = (row.Status || row.status || '').toLowerCase();
+                            if (s === 'resolved' || s === 'completed' || s === 'done' || s === 'posted') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                            if (s === 'processing' || s === 'in process' || s === 'in progress') return 'bg-amber-50 text-amber-700 border-amber-200';
+                            if (s === 'pending' || s === 'new') return 'bg-blue-50 text-blue-700 border-blue-200';
+                            if (s === 'cancelled' || s === 'rejected' || s === 'failed') return 'bg-red-50 text-red-700 border-red-200';
+                            return 'bg-slate-50 text-slate-700 border-slate-200';
+                          })()}`}>
+                            {row.Status || row.status || 'Pending'}
+                          </span>
                         </TableCell>
                       </TableRow>
                     ))}
