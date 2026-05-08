@@ -460,7 +460,7 @@ const Index = () => {
             new Promise(resolve => setTimeout(resolve, 3000))
         ]);
 
-        await new Promise(resolve => setTimeout(resolve, 500)); // Allow charts to finish rendering
+        await new Promise(resolve => setTimeout(resolve, 800)); // Allow charts to finish rendering
 
         const canvas = await html2canvas(printRef.current, {
             scale: 2,
@@ -468,21 +468,33 @@ const Index = () => {
             logging: false,
             backgroundColor: "#ffffff",
             allowTaint: true,
-            windowWidth: printRef.current.scrollWidth,
-            windowHeight: printRef.current.scrollHeight
+            windowWidth: 1400, // Force a wider window width for desktop-like layout in PDF
+            onclone: (clonedDoc) => {
+                // Ensure all charts have enough space in the clone
+                const charts = clonedDoc.querySelectorAll('.recharts-responsive-container');
+                charts.forEach((chart: any) => {
+                    chart.style.width = '100%';
+                    chart.style.height = '100%';
+                });
+            }
         });
 
         const imgData = canvas.toDataURL("image/png");
-        const imgWidth = 210; // A4 width in mm
-        const pageHeight = (canvas.height * imgWidth) / canvas.width;
+        
+        // Define margins (in mm)
+        const margin = 10;
+        const pdfWidth = 210; // A4 width
+        const imgWidth = pdfWidth - (margin * 2);
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        const pdfHeight = imgHeight + (margin * 2);
 
         const pdf = new jsPDF({
-            orientation: pageHeight > imgWidth ? "portrait" : "landscape",
+            orientation: pdfHeight > pdfWidth ? "portrait" : "landscape",
             unit: "mm",
-            format: [imgWidth, pageHeight],
+            format: [pdfWidth, pdfHeight],
         });
 
-        pdf.addImage(imgData, "PNG", 0, 0, imgWidth, pageHeight);
+        pdf.addImage(imgData, "PNG", margin, margin, imgWidth, imgHeight);
         pdf.save(`Dashboard_Report_${new Date().toISOString().split('T')[0]}.pdf`);
     } catch (error) {
         console.error("PDF generation failed:", error);
@@ -623,7 +635,7 @@ const Index = () => {
             <h2 className="text-xl font-bold text-foreground">Analytics Overview {user?.branch || user?.cluster ? `(${user?.branch || user?.cluster})` : ''}</h2>
             <p className="text-sm text-muted-foreground">Detailed metrics and performance trends</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3" data-html2canvas-ignore>
             <Button 
               variant="outline" 
               onClick={() => setShowFilters(!showFilters)}
