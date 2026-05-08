@@ -818,23 +818,25 @@ async function triggerActionPost(post) {
             let msg = "API Error";
             let data = response.data;
 
-            // Handle string responses that contain JSON (common in this specific API)
-            if (typeof data === 'string' && data.includes('Error creating post:')) {
-                try {
-                    const jsonPart = data.replace('Error creating post:', '').trim();
-                    data = JSON.parse(jsonPart);
-                } catch (e) {
-                    // Not valid JSON, just use the string
+            // Robust JSON extraction from string (handles "Error creating post: { ... }")
+            if (typeof data === 'string') {
+                const startIdx = data.indexOf('{');
+                const endIdx = data.lastIndexOf('}');
+                if (startIdx !== -1 && endIdx !== -1) {
+                    try {
+                        const jsonPart = data.substring(startIdx, endIdx + 1);
+                        data = JSON.parse(jsonPart);
+                    } catch (e) { }
                 }
             }
             
             if (data && typeof data === 'object') {
                 if (data.error) {
                     msg = data.error.message || msg;
-                    // Check for deep validation details (e.g. "Image too small")
+                    // Deep dive into GMB validation details
                     const details = data.error.details;
-                    if (details && details[0]) {
-                        if (details[0].errorDetails && details[0].errorDetails[0]) {
+                    if (Array.isArray(details) && details[0]) {
+                        if (Array.isArray(details[0].errorDetails) && details[0].errorDetails[0]) {
                             msg = details[0].errorDetails[0].message || msg;
                         } else if (details[0].message) {
                             msg = details[0].message;
@@ -849,6 +851,7 @@ async function triggerActionPost(post) {
             
             post.errorMessage = msg;
             console.error("GMB API Error Response:", response.data);
+            console.log("Extracted Error Message:", msg);
         }
         await post.save();
         console.log(`Post ${post._id} processed with status: ${post.status}`);
@@ -856,27 +859,32 @@ async function triggerActionPost(post) {
         console.error(`Error triggering actionpost for ${post._id}:`, error.message);
         post.status = 'Failed';
         
-        // Extract error from axios error object
         let msg = error.message;
         if (error.response && error.response.data) {
             let data = error.response.data;
             
-            // Handle string-prefixed JSON in error response too
-            if (typeof data === 'string' && data.includes('Error creating post:')) {
-                try {
-                    const jsonPart = data.replace('Error creating post:', '').trim();
-                    data = JSON.parse(jsonPart);
-                } catch (e) { }
+            // Robust JSON extraction from string in catch block too
+            if (typeof data === 'string') {
+                const startIdx = data.indexOf('{');
+                const endIdx = data.lastIndexOf('}');
+                if (startIdx !== -1 && endIdx !== -1) {
+                    try {
+                        const jsonPart = data.substring(startIdx, endIdx + 1);
+                        data = JSON.parse(jsonPart);
+                    } catch (e) { }
+                }
             }
 
             if (data && typeof data === 'object') {
                 if (data.error) {
                     msg = data.error.message || msg;
                     const details = data.error.details;
-                    if (details?.[0]?.errorDetails?.[0]?.message) {
-                        msg = details[0].errorDetails[0].message;
-                    } else if (details?.[0]?.message) {
-                        msg = details[0].message;
+                    if (Array.isArray(details) && details[0]) {
+                        if (Array.isArray(details[0].errorDetails) && details[0].errorDetails[0]) {
+                            msg = details[0].errorDetails[0].message;
+                        } else if (details[0].message) {
+                            msg = details[0].message;
+                        }
                     }
                 } else if (data.message) {
                     msg = data.message;
