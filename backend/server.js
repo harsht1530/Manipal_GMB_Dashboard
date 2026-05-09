@@ -1016,14 +1016,30 @@ app.post('/api/send-case-email', async (req, res) => {
 cron.schedule('* * * * *', async () => {
     const now = new Date();
     try {
+        // Find posts that are due or immediate (null scheduledTime) and still Pending
         const pendingPosts = await GMBPost.find({
             status: 'Pending',
-            scheduledTime: { $lte: now }
+            $or: [
+                { scheduledTime: { $lte: now } },
+                { scheduledTime: null }
+            ]
         });
 
         for (const post of pendingPosts) {
-            console.log(`Processing scheduled post: ${post._id}`);
-            await triggerActionPost(post);
+            // Atomic lock: Try to update status from 'Pending' to 'Processing'
+            // This ensures only one scheduler instance/worker processes this specific post
+            const lockedPost = await GMBPost.findOneAndUpdate(
+                { _id: post._id, status: 'Pending' },
+                { $set: { status: 'Processing' } },
+                { new: true }
+            );
+
+            if (lockedPost) {
+                console.log(`Processing scheduled post: ${lockedPost._id}`);
+                // Note: We don't 'await' here if we want parallel processing, 
+                // but since it's a small scale and inside a loop, await is safer for now.
+                await triggerActionPost(lockedPost);
+            }
         }
     } catch (error) {
         console.error("Scheduler Error:", error.message);
