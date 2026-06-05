@@ -13,7 +13,7 @@ export const KeywordRankings = ({ doctors }: KeywordRankingsProps) => {
   const allLabels = doctors.flatMap((doctor) =>
     doctor.labels.map((label) => ({
       ...label,
-      doctorName: doctor.name,
+      doctorName: doctor.businessName,
       branch: doctor.branch,
     }))
   );

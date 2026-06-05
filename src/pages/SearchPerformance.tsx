@@ -156,7 +156,7 @@ const SearchPerformance = () => {
             const doctor = doctors.find(d => d.businessName === insight.businessName);
             return {
                 id: insight._id || `${insight.businessName}-${idx}`,
-                name: doctor?.name || insight.businessName,
+                name: doctor?.businessName || insight.businessName,
                 businessName: insight.businessName,
                 cluster: insight.cluster || doctor?.cluster || "",
                 branch: insight.branch || doctor?.branch || "",
@@ -346,7 +346,7 @@ const SearchPerformance = () => {
                                     >
                                         <span className="truncate">
                                             {selectedDoctorId
-                                                ? (doctors.find((doctor) => doctor.id === selectedDoctorId)?.name || selectedDoctorId)
+                                                ? (doctors.find((doctor) => doctor.id === selectedDoctorId)?.businessName || selectedDoctorId)
                                                 : "Select profile..."}
                                         </span>
                                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />

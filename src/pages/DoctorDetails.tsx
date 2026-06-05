@@ -332,7 +332,7 @@ const DoctorDetails = () => {
 
             pdf.addImage(imgData, "PNG", 0, 0, imgWidth, pageHeight);
 
-            pdf.save(`${profile?.name || "Doctor"}_Detailed_Report.pdf`);
+            pdf.save(`${profile?.businessName || "Doctor"}_Detailed_Report.pdf`);
         } catch (error) {
             console.error("PDF generation failed:", error);
             // Ensure we hide the print layout on error
@@ -358,7 +358,7 @@ const DoctorDetails = () => {
 
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Monthly Insights");
-        XLSX.writeFile(workbook, `${profile?.name || "Doctor"}_Monthly_Data.xlsx`);
+        XLSX.writeFile(workbook, `${profile?.businessName || "Doctor"}_Monthly_Data.xlsx`);
     };
 
     if (!mounted || globalLoading || isLoading) {
@@ -378,7 +378,7 @@ const DoctorDetails = () => {
                 title="Doctor Not Found"
                 subtitle="The requested doctor profile could not be found."
             >
-                <div className="text-center py-24">
+                <div className="text-center py-24 mt-4">
                     <p className="text-muted-foreground mb-4">We couldn't find a doctor with the business name "{businessName}".</p>
                     <Button onClick={() => navigate("/doctors")}>
                         <ArrowLeft className="h-4 w-4 mr-2" />
@@ -391,10 +391,10 @@ const DoctorDetails = () => {
 
     return (
         <DashboardLayout
-            title={`${profile.name}`}
-            subtitle="Detailed Performance Report"
+            // title={`${profile.businessName}`}
+            title="Detailed Performance Report"
         >
-            <div className="mb-6 flex items-center justify-between">
+            <div className="mt-4 mb-6 flex items-center justify-between">
                 <Button variant="outline" size="sm" onClick={() => navigate("/doctors")}>
                     <ArrowLeft className="h-4 w-4 mr-2" />
                     Back to Doctors List
@@ -426,7 +426,7 @@ const DoctorDetails = () => {
                             <div className="grid md:grid-cols-2 gap-6">
                                 <div className="space-y-3">
                                     <div className="flex items-center justify-between">
-                                        <h3 className="text-2xl font-bold text-primary">{profile.name}</h3>
+                                        <h3 className="text-2xl font-bold text-primary">{profile.businessName}</h3>
                                         <Badge variant="secondary" className="text-sm px-3 py-1">{profile.primaryCategory}</Badge>
                                     </div>
 
@@ -873,12 +873,12 @@ const DoctorDetails = () => {
                 </TabsContent>
             </Tabs >
             {/* Hidden Print Layout */}
-            <div ref={printRef} ref-id="print-container" style={{ display: 'none' }} className="bg-white text-black p-10 w-[1200px] mx-auto absolute top-0 left-0 z-50">
-                <div className="space-y-10">
+            <div ref={printRef} ref-id="print-container" style={{ display: 'none' }} className="bg-white text-black p-12 pt-20 w-[1200px] mx-auto absolute top-0 left-0 z-50">
+                <div className="space-y-12">
                     {/* Header */}
-                    <div className="flex items-center justify-between border-b pb-6">
+                    <div className="flex items-center justify-between border-b-2 border-primary/20 pb-8">
                         <div>
-                            <h1 className="text-3xl font-bold mb-2 text-primary">{profile.name}</h1>
+                            <h1 className="text-4xl font-bold mb-3 text-primary">{profile.businessName}</h1>
                             <p className="text-xl text-muted-foreground">Detailed Performance Report</p>
                         </div>
                         <div className="text-right">
@@ -1048,7 +1048,7 @@ const DoctorDetails = () => {
 
 const DoctorDetailsSkeleton = () => {
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 mt-4">
             {/* Action Buttons Skeleton */}
             <div className="flex items-center justify-between mb-6">
                 <Skeleton className="h-9 w-32" />

@@ -200,8 +200,8 @@ const Doctors = () => {
 
         return {
           id: doctor?.id || bName,
-          name: doctor?.name || latestInsights.find(i => (i.businessName || "").trim().toLowerCase() === bName)?.businessName || bName,
-          businessName: latestInsights.find(i => (i.businessName || "").trim().toLowerCase() === bName)?.businessName || bName
+          name: doctor?.businessName || bName,
+          businessName: doctor?.name || bName
         };
       })
       .filter(Boolean)
@@ -227,6 +227,7 @@ const Doctors = () => {
         // Search Filter (Using deferred search query for performance)
         const lowerSearch = deferredSearchQuery.toLowerCase();
         const matchesSearch = deferredSearchQuery === "" ||
+          doctor.businessName.toLowerCase().includes(lowerSearch) ||
           doctor.name.toLowerCase().includes(lowerSearch) ||
           doctor.primaryCategory.toLowerCase().includes(lowerSearch) ||
           doctor.branch.toLowerCase().includes(lowerSearch);
@@ -356,7 +357,9 @@ const Doctors = () => {
                           />
                           <div className="flex flex-col">
                             <span>{profile.name}</span>
-                            <span className="text-[10px] text-muted-foreground truncate">{profile.businessName}</span>
+                            {profile.name !== profile.businessName && (
+                              <span className="text-[10px] text-muted-foreground truncate">{profile.businessName}</span>
+                            )}
                           </div>
                         </CommandItem>
                       ))}
@@ -486,7 +489,7 @@ const DoctorCard = React.memo(({ doctor, index, insights, latestData, onViewDeta
       <CardHeader className="pb-4 bg-muted/5">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
-            <CardTitle className="text-lg leading-tight font-bold">{doctor.name}</CardTitle>
+            <CardTitle className="text-lg leading-tight font-bold">{doctor.businessName}</CardTitle>
             <div className="flex flex-wrap items-center gap-2 mt-2">
               <Badge variant="secondary" className="bg-primary/10 text-primary border-none">
                 {doctor.primaryCategory}

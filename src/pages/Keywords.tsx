@@ -70,7 +70,7 @@ const Keywords = () => {
     return doctors.flatMap((doctor) =>
       doctor.labels.map((label) => ({
         keyword: label.label,
-        doctorName: doctor.name,
+        doctorName: doctor.businessName,
         branch: doctor.branch,
         rank: label.rank,
         competitorCount: label.competitors.length,

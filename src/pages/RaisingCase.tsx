@@ -301,7 +301,9 @@ export default function RaisingCase() {
           newReviewUri: formData.newReviewUri,
           sourceLink: formData.sourceLink,
           imageUrl: imageUrl,
-          postsText: aiPreview ? `${aiPreview.headline}\n\n${aiPreview.main_post}\n\n${aiPreview.hashtags.map((h: string) => `#${h}`).join(' ')}` : formData.description,
+          postsText: aiPreview 
+            ? `${aiPreview.headline}\n\n${aiPreview.main_post}\n\nKnow More: ${formData.sourceLink}\n\n${aiPreview.hashtags.map((h: string) => `#${h}`).join(' ')}` 
+            : formData.description,
           status: scheduledTime ? "Pending" : formData.status,
           scheduledTime: scheduledTime,
           aiResponse: aiPreview
@@ -731,6 +733,9 @@ export default function RaisingCase() {
                         </div>
                         <h4 className="font-bold text-sm text-slate-900 leading-tight">{aiPreview.headline}</h4>
                         <p className="text-xs text-slate-700 whitespace-pre-wrap">{aiPreview.main_post}</p>
+                        {formData.sourceLink && (
+                          <p className="text-xs text-slate-700 font-medium break-all">Know More: {formData.sourceLink}</p>
+                        )}
                         <div className="flex flex-wrap gap-1">
                           {aiPreview.hashtags.slice(0, 4).map((h: string) => (
                             <span key={h} className="text-[10px] text-indigo-600 font-medium">#{h}</span>
