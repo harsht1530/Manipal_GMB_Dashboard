@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useTransition } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useMongoData } from "@/hooks/useMongoData";
+import { useMongoData, parseDateString } from "@/hooks/useMongoData";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -69,7 +69,8 @@ const SearchPerformance = () => {
     const [startYear, setStartYear] = useState<string>(CURRENT_YEAR.toString());
     const [startMonth, setStartMonth] = useState<string>("1");
     const [endYear, setEndYear] = useState<string>(CURRENT_YEAR.toString());
-    const [endMonth, setEndMonth] = useState<string>("3");
+    const [endMonth, setEndMonth] = useState<string>("1");
+    const [isDateInitialized, setIsDateInitialized] = useState(false);
 
     const [loading, setLoading] = useState(false);
     const [data, setData] = useState<SearchKeywordData[]>([]);
@@ -119,27 +120,56 @@ const SearchPerformance = () => {
             const now = new Date();
             const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
             return {
-                month: monthOrder[now.getMonth() - 1] || "Dec",
-                year: (now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()).toString()
+                month: monthOrder[now.getMonth() === 0 ? 11 : now.getMonth() - 1] || "Dec",
+                year: (now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()).toString(),
+                numericMonth: (now.getMonth() === 0 ? 12 : now.getMonth()).toString()
             };
         }
 
-        // Sort by Date object to find the absolute latest entry
+        const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+        // Sort by Year (from Date field) and then by Month string to ensure logical chronologic order
         const sortedInsights = [...insights].sort((a, b) => {
-            const dateA = new Date(a.date).getTime();
-            const dateB = new Date(b.date).getTime();
-            return dateB - dateA;
+            const getYear = (dateStr: string) => {
+                if (!dateStr) return 0;
+                const d = parseDateString(dateStr);
+                if (!isNaN(d.getFullYear())) return d.getFullYear();
+                const parts = dateStr.split('-');
+                if (parts.length === 3 && parts[2].length === 4) return parseInt(parts[2]);
+                return 0;
+            };
+
+            const yearA = getYear(a.date);
+            const yearB = getYear(b.date);
+            
+            if (yearA !== yearB) return yearB - yearA;
+            return monthOrder.indexOf(b.month) - monthOrder.indexOf(a.month);
         });
 
         const latest = sortedInsights[0];
+        const latestDate = parseDateString(latest.date);
+        const fallbackYear = latest.date?.split('-')[2]?.length === 4 ? latest.date?.split('-')[2] : new Date().getFullYear().toString();
+        
         return {
             month: latest.month,
-            year: new Date(latest.date).getFullYear().toString()
+            year: !isNaN(latestDate.getFullYear()) ? latestDate.getFullYear().toString() : fallbackYear,
+            numericMonth: (monthOrder.indexOf(latest.month) + 1).toString()
         };
     }, [insights]);
 
     const latestDataMonth = latestDataInfo.month;
     const latestDataYear = latestDataInfo.year;
+
+    // Initialize dates based on the latest available data
+    useEffect(() => {
+        if (!isDateInitialized && insights.length > 0) {
+            setStartYear(latestDataInfo.year);
+            setEndYear(latestDataInfo.year);
+            setStartMonth(latestDataInfo.numericMonth);
+            setEndMonth(latestDataInfo.numericMonth);
+            setIsDateInitialized(true);
+        }
+    }, [insights, isDateInitialized, latestDataInfo]);
 
     // List of profiles that exist in Insights data for the latest month and year
     const insightProfiles = useMemo(() => {
@@ -147,8 +177,9 @@ const SearchPerformance = () => {
 
         // Get all insights for the latest month AND year
         const latestMonthInsights = insights.filter(i => {
-            const itemYear = new Date(i.date).getFullYear().toString();
-            return i.month === latestDataMonth && itemYear === latestDataYear;
+            const itemDate = parseDateString(i.date);
+            const itemYearStr = !isNaN(itemDate.getFullYear()) ? itemDate.getFullYear().toString() : "";
+            return i.month === latestDataMonth && itemYearStr === latestDataYear;
         });
 
         // Map them to profile objects, matching with doctor metadata for account/mailId

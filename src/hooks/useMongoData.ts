@@ -95,7 +95,7 @@ function transformInsight(doc: any): InsightData {
     cluster: doc["Cluster"] || "",
     month: doc["Month"] || "",
     branch: doc["Branch"] || "",
-    date: doc["Date"] || "",
+    date: doc["Date"]?.$date || doc["Date"] || "",
     speciality: doc["Speciality"] || "",
     review: doc["Review"] || 0,
     rating: doc["Rating"] || 0,
@@ -141,13 +141,13 @@ function transformLocation(doc: any): LocationData {
     cluster: doc["Cluster"] || "",
     unitName: doc["Unit Name"] || "",
     department: doc["Department"] || "",
-    totalProfiles: doc["Total Profiles"] || 0,
-    verifiedProfiles: doc["Verified Profiles"] || 0,
-    unverifiedProfiles: doc["Unverfied Profiles"] || 0,
-    needAccess: doc["Need Access"] || 0,
-    notInterested: doc["Not Intrested"] || 0,
-    outOfOrganization: doc["Out Of Organization"] || 0,
-    date: doc.Date || ""
+    totalProfiles: parseInt(doc["Total Profiles"]) || doc["Total Profiles"] || 0,
+    verifiedProfiles: parseInt(doc["Verified Profiles"]) || doc["Verified Profiles"] || 0,
+    unverifiedProfiles: parseInt(doc["Unverified Profiles"] || doc["Unverfied Profiles"]) || doc["Unverfied Profiles"] || 0,
+    needAccess: parseInt(doc["Need Access"]) || doc["Need Access"] || 0,
+    notInterested: parseInt(doc["Not Interested"] || doc["Not Intrested"]) || doc["Not Intrested"] || 0,
+    outOfOrganization: parseInt(doc["Out Of Organization"]) || doc["Out Of Organization"] || 0,
+    date: doc["Date"]?.$date || doc["Date"] || ""
   };
 }
 
@@ -350,3 +350,16 @@ export function getAggregatedMetrics(data: InsightData[]) {
     totalSearches: data.reduce((acc, item) => acc + item.googleSearchMobile + item.googleSearchDesktop + item.googleMapsMobile + item.googleMapsDesktop, 0)
   };
 }
+
+export function parseDateString(dateStr: string): Date {
+  if (!dateStr) return new Date("");
+  if (dateStr.includes('-')) {
+    const parts = dateStr.split('-');
+    if (parts.length === 3 && parts[2].length === 4) {
+      // DD-MM-YYYY format
+      return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+    }
+  }
+  return new Date(dateStr);
+}
+

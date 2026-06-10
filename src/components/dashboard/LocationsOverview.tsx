@@ -10,7 +10,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { CheckCircle, XCircle, AlertCircle, Building2 } from "lucide-react";
-import { LocationData } from "@/data/dummyData";
+import { LocationData, parseDateString } from "@/hooks/useMongoData";
 
 interface LocationsOverviewProps {
   data: LocationData[];
@@ -18,13 +18,38 @@ interface LocationsOverviewProps {
 }
 
 export const LocationsOverview = ({ data, selectedMonths }: LocationsOverviewProps) => {
-  // Get the latest month from selected months or all data
   const getLatestMonth = () => {
-    const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     if (selectedMonths.length === 0 || selectedMonths.includes("All")) {
-      const availableMonths = [...new Set(data.map(d => d.month))];
-      return availableMonths.sort((a, b) => monthOrder.indexOf(b) - monthOrder.indexOf(a))[0];
+      // Data is already filtered to the target month by the parent component, 
+      // or we find the most frequent month in the dataset.
+      if (data.length > 0) {
+          // If we have valid dates, sort them. Otherwise just return the first item's month
+          const hasValidDates = data.some(d => d.date);
+          if (hasValidDates) {
+            const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            const sortedData = [...data].sort((a, b) => {
+              const getYear = (dateStr: string) => {
+                if (!dateStr) return 0;
+                const d = parseDateString(dateStr);
+                if (!isNaN(d.getFullYear())) return d.getFullYear();
+                const parts = dateStr.split('-');
+                if (parts.length === 3 && parts[2].length === 4) return parseInt(parts[2]);
+                return 0;
+              };
+              
+              const yearA = getYear(a.date);
+              const yearB = getYear(b.date);
+              
+              if (yearA !== yearB) return yearB - yearA;
+              return monthOrder.indexOf(b.month) - monthOrder.indexOf(a.month);
+            });
+            return sortedData[0].month;
+          }
+          return data[0].month;
+      }
+      return "Jan";
     }
+    const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     return selectedMonths.sort((a, b) => monthOrder.indexOf(b) - monthOrder.indexOf(a))[0];
   };
 

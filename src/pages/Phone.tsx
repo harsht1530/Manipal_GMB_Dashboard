@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useTransition } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { FilterBar } from "@/components/dashboard/FilterBar";
 import { PhoneDetailsTable } from "@/components/dashboard/PhoneDetailsTable";
-import { useMongoData } from "@/hooks/useMongoData";
+import { useMongoData, parseDateString } from "@/hooks/useMongoData";
 import { Loader2, Filter } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -47,20 +47,40 @@ const PhonePage = () => {
     const dashboardTitle = user?.role === "Admin" ? "Phone Directory" : (user?.branch || user?.cluster || "Phone Directory");
     const dashboardSubtitle = user?.role === "Admin" ? "Manage and view contact details" : `${user?.branch ? 'Branch' : 'Cluster'} Level Access - Contact Details`;
 
-    // Get the absolute latest Date string from the data
-    const latestDataDate = useMemo(() => {
-        if (!mounted || loading || insights.length === 0) return "";
+    // Get the latest month and year from the Date field
+    const latestDataInfo = useMemo(() => {
+        if (!mounted || loading || insights.length === 0) {
+            return { month: "", year: "" };
+        }
+        const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         
         // Find the record with the maximum Date value
         const latestEntry = [...insights].sort((a, b) => {
-            const dateA = new Date(a.date).getTime();
-            const dateB = new Date(b.date).getTime();
-            if (isNaN(dateA)) return 1;
-            if (isNaN(dateB)) return -1;
-            return dateB - dateA;
+            const getYear = (dateStr: string) => {
+                if (!dateStr) return 0;
+                const d = parseDateString(dateStr);
+                if (!isNaN(d.getFullYear())) return d.getFullYear();
+                const parts = dateStr.split('-');
+                if (parts.length === 3 && parts[2].length === 4) return parseInt(parts[2]);
+                return 0;
+            };
+
+            const yearA = getYear(a.date);
+            const yearB = getYear(b.date);
+            
+            if (yearA !== yearB) return yearB - yearA;
+            return monthOrder.indexOf(b.month) - monthOrder.indexOf(a.month);
         })[0];
 
-        return latestEntry?.date || "";
+        if (!latestEntry) return { month: "", year: "" };
+        
+        const latestDate = parseDateString(latestEntry.date);
+        const fallbackYear = latestEntry.date?.split('-')[2]?.length === 4 ? latestEntry.date?.split('-')[2] : new Date().getFullYear().toString();
+        
+        return {
+            month: latestEntry.month,
+            year: !isNaN(latestDate.getFullYear()) ? latestDate.getFullYear().toString() : fallbackYear
+        };
     }, [insights, mounted, loading]);
 
     // Derive unique filter options from the insights data
@@ -71,7 +91,7 @@ const PhonePage = () => {
         // Extract unique years
         const uniqueYears = [...new Set(insights.map(i => {
             try {
-                const d = new Date(i.date);
+                const d = parseDateString(i.date);
                 return !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
             } catch (e) { return ""; }
         }))].filter(Boolean).sort().reverse();
@@ -95,7 +115,7 @@ const PhonePage = () => {
         // Filter by year for months list
         const monthData = selectedYear.length > 0
             ? insights.filter(i => {
-                const d = new Date(i.date);
+                const d = parseDateString(i.date);
                 const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
                 return selectedYear.includes(y);
             })
@@ -123,15 +143,17 @@ const PhonePage = () => {
             // Date filtering logic
             let dateMatch = true;
             if (selectedMonth.length === 0 && selectedYear.length === 0) {
-                // If no month/year selected, default to the absolute latest available date snapshot
-                dateMatch = item.date === latestDataDate;
+                // If no month/year selected, default to the latest available month and year from Date
+                const itemDate = parseDateString(item.date);
+                const itemYearStr = !isNaN(itemDate.getFullYear()) ? itemDate.getFullYear().toString() : "";
+                dateMatch = item.month === latestDataInfo.month && itemYearStr === latestDataInfo.year;
             } else {
                 // If month or year filters are used, use them
                 const monthMatch = selectedMonth.length === 0 || selectedMonth.includes(item.month);
                 
                 let yearMatch = true;
                 if (selectedYear.length > 0) {
-                    const itemDate = new Date(item.date);
+                    const itemDate = parseDateString(item.date);
                     const itemYearStr = !isNaN(itemDate.getFullYear()) ? itemDate.getFullYear().toString() : "";
                     yearMatch = selectedYear.includes(itemYearStr);
                 }
@@ -140,7 +162,7 @@ const PhonePage = () => {
 
             return clusterMatch && branchMatch && specialityMatch && departmentMatch && ratingMatch && dateMatch;
         });
-    }, [insights, selectedCluster, selectedBranch, selectedMonth, selectedSpeciality, selectedDepartments, selectedRatings, latestDataDate, selectedYear, mounted, loading]);
+    }, [insights, selectedCluster, selectedBranch, selectedMonth, selectedSpeciality, selectedDepartments, selectedRatings, latestDataInfo, selectedYear, mounted, loading]);
 
     if (!mounted || loading) {
         return (

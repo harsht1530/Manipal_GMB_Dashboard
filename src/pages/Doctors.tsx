@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useMongoData, DoctorData, InsightData } from "@/hooks/useMongoData";
+import { useMongoData, DoctorData, InsightData, parseDateString } from "@/hooks/useMongoData";
 import { DoctorAggregatedStats } from "@/components/dashboard/DoctorAggregatedStats";
 import { FilterBar } from "@/components/dashboard/FilterBar";
 import {
@@ -119,17 +119,33 @@ const Doctors = () => {
       };
     }
 
-    // Sort by Date object to find the absolute latest entry
+    const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+    // Sort by Year (from Date field) and then by Month string to ensure logical chronologic order
     const sortedInsights = [...insights].sort((a, b) => {
-      const dateA = new Date(a.date).getTime();
-      const dateB = new Date(b.date).getTime();
-      return dateB - dateA;
+      const getYear = (dateStr: string) => {
+        if (!dateStr) return 0;
+        const d = parseDateString(dateStr);
+        if (!isNaN(d.getFullYear())) return d.getFullYear();
+        const parts = dateStr.split('-');
+        if (parts.length === 3 && parts[2].length === 4) return parseInt(parts[2]);
+        return 0;
+      };
+
+      const yearA = getYear(a.date);
+      const yearB = getYear(b.date);
+      
+      if (yearA !== yearB) return yearB - yearA;
+      return monthOrder.indexOf(b.month) - monthOrder.indexOf(a.month);
     });
 
     const latest = sortedInsights[0];
+    const latestDate = parseDateString(latest.date);
+    const fallbackYear = latest.date?.split('-')[2]?.length === 4 ? latest.date?.split('-')[2] : new Date().getFullYear().toString();
+    
     return {
       month: latest.month,
-      year: new Date(latest.date).getFullYear().toString()
+      year: !isNaN(latestDate.getFullYear()) ? latestDate.getFullYear().toString() : fallbackYear
     };
   }, [insights]);
 
@@ -163,7 +179,7 @@ const Doctors = () => {
 
     // 1. Get unique business names from insights for the latest month AND year ONLY
     const latestInsights = insights.filter(i => {
-      const itemYear = new Date(i.date).getFullYear().toString();
+      const itemYear = parseDateString(i.date).getFullYear().toString();
       return i.month === latestDataMonth && itemYear === latestDataYear;
     });
     const uniqueBusinessNames = [...new Set(latestInsights.map(i => (i.businessName || "").trim().toLowerCase()))].filter(Boolean);

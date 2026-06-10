@@ -6,7 +6,7 @@ import { PerformanceTable } from "@/components/dashboard/PerformanceTable";
 import { TopPerformers } from "@/components/dashboard/TopPerformers";
 import { PerformanceChart } from "@/components/dashboard/PerformanceChart";
 import { LocationsOverview } from "@/components/dashboard/LocationsOverview";
-import { useMongoData, getAggregatedMetrics } from "@/hooks/useMongoData";
+import { useMongoData, getAggregatedMetrics, parseDateString } from "@/hooks/useMongoData";
 import { Search, Map, Navigation, Globe, Phone, Star, Smartphone, Monitor, MapPin, Loader2, Download, Filter, FileSpreadsheet, FileText } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
@@ -73,7 +73,7 @@ const Index = () => {
       // Based on typical behavior, let's try creating a Date object.
       // If invalid, fallback or handle error.
       try {
-        const d = new Date(i.date);
+        const d = parseDateString(i.date);
         return !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
       } catch (e) { return ""; }
     }))].filter(Boolean).sort().reverse();
@@ -96,7 +96,7 @@ const Index = () => {
 
     const monthData = selectedYear.length > 0
       ? insights.filter(i => {
-        const d = new Date(i.date);
+        const d = parseDateString(i.date);
         const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
         return selectedYear.includes(y);
       })
@@ -107,7 +107,7 @@ const Index = () => {
       if (!i.month) return;
       let y = "Unknown Year";
       if (i.date) {
-        const d = new Date(i.date);
+        const d = parseDateString(i.date);
         y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : y;
       }
       monthSet.add(JSON.stringify({ month: i.month, year: y }));
@@ -130,7 +130,7 @@ const Index = () => {
       const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(i.rating) === r);
       let yearMatch = true;
       if (selectedYear.length > 0) {
-        const d = new Date(i.date);
+        const d = parseDateString(i.date);
         const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
         yearMatch = selectedYear.includes(y);
       }
@@ -149,7 +149,7 @@ const Index = () => {
 
       let itemYear = "";
       if (item.date) {
-        const d = new Date(item.date);
+        const d = parseDateString(item.date);
         itemYear = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
       }
 
@@ -210,17 +210,33 @@ const Index = () => {
       };
     }
 
-    // Sort by Date object to find the absolute latest entry
+    const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    
+    // Sort by Year (from Date field) and then by Month string to ensure logical chronologic order
     const sortedInsights = [...insights].sort((a, b) => {
-      const dateA = new Date(a.date).getTime();
-      const dateB = new Date(b.date).getTime();
-      return dateB - dateA;
+      const getYear = (dateStr: string) => {
+        if (!dateStr) return 0;
+        const d = parseDateString(dateStr);
+        if (!isNaN(d.getFullYear())) return d.getFullYear();
+        const parts = dateStr.split('-');
+        if (parts.length === 3 && parts[2].length === 4) return parseInt(parts[2]);
+        return 0;
+      };
+
+      const yearA = getYear(a.date);
+      const yearB = getYear(b.date);
+      
+      if (yearA !== yearB) return yearB - yearA;
+      return monthOrder.indexOf(b.month) - monthOrder.indexOf(a.month);
     });
 
     const latest = sortedInsights[0];
+    const latestDate = parseDateString(latest.date);
+    const fallbackYear = latest.date?.split('-')[2]?.length === 4 ? latest.date?.split('-')[2] : new Date().getFullYear().toString();
+    
     return {
       month: latest.month,
-      year: new Date(latest.date).getFullYear().toString()
+      year: !isNaN(latestDate.getFullYear()) ? latestDate.getFullYear().toString() : fallbackYear
     };
   }, [insights]);
 
@@ -265,7 +281,7 @@ const Index = () => {
     if (isSpecialityFiltered || isRatingFiltered) {
       // If rating or speciality are selected, show count of unique business names in target month and year
       const filteredInsights = insights.filter(i => {
-        const itemYear = new Date(i.date).getFullYear().toString();
+        const itemYear = parseDateString(i.date).getFullYear().toString();
         const yearMatch = selectedYear.length === 0 ? itemYear === targetYear : selectedYear.includes(itemYear);
 
         return i.month === targetMonth &&
@@ -319,7 +335,7 @@ const Index = () => {
 
       let locYear = "Unknown Year";
       if (loc.date) {
-        const d = new Date(loc.date);
+        const d = parseDateString(loc.date);
         locYear = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
       }
 
@@ -373,7 +389,7 @@ const Index = () => {
         const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(item.rating) === r);
         let itemYear = "";
         if (item.date) {
-          const d = new Date(item.date);
+          const d = parseDateString(item.date);
           itemYear = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
         }
 
@@ -514,12 +530,17 @@ const Index = () => {
         const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(item.department);
         const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(item.rating) === r);
 
-        let yearMatch = true;
-        if (selectedYear.length > 0) {
-          const d = new Date(item.date);
-          const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
-          yearMatch = selectedYear.includes(y);
-        }
+        const getYear = (dateStr: string) => {
+          if (!dateStr) return 0;
+          const d = parseDateString(dateStr);
+          if (!isNaN(d.getFullYear())) return d.getFullYear();
+          const parts = dateStr.split('-');
+          if (parts.length === 3 && parts[2].length === 4) return parseInt(parts[2]);
+          return 0;
+        };
+        
+        const itemYear = getYear(item.date).toString();
+        const yearMatch = selectedYear.length > 0 ? selectedYear.includes(itemYear) : itemYear === latestDataYear;
 
         return item.month === latestDataMonth && clusterMatch && branchMatch && specialityMatch && departmentMatch && ratingMatch && yearMatch;
       });

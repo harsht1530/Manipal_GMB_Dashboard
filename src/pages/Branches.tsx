@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useMongoData, InsightData, DoctorData } from "@/hooks/useMongoData";
+import { useMongoData, InsightData, DoctorData, parseDateString } from "@/hooks/useMongoData";
 import { FilterBar } from "@/components/dashboard/FilterBar";
 import {
   Building2,
@@ -64,7 +64,7 @@ const Branches = () => {
     // Extract unique years
     const uniqueYears = [...new Set(insights.map(i => {
       try {
-        const d = new Date(i.date);
+        const d = parseDateString(i.date);
         return !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
       } catch (e) { return ""; }
     }))].filter(Boolean).sort().reverse();
@@ -78,7 +78,7 @@ const Branches = () => {
     // Filter by year for months list
     const monthData = selectedYear.length > 0
       ? insights.filter(i => {
-        const d = new Date(i.date);
+        const d = parseDateString(i.date);
         const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
         return selectedYear.includes(y);
       })
@@ -93,47 +93,67 @@ const Branches = () => {
     return { clusters, branches, specialities, months, years };
   }, [insights, selectedYear]);
 
-  // Get the absolute latest Date string from the data
-  const latestDataDate = useMemo(() => {
-    if (insights.length === 0) return "";
-    
-    // Sort by Date object to find the absolute latest entry
+  // Get the latest month and year from the Date field
+  const latestDataInfo = useMemo(() => {
+    if (insights.length === 0) return { month: "Jan", year: new Date().getFullYear().toString() };
+    const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+    // Sort by Year (from Date field) and then by Month string to ensure logical chronologic order
     const sortedInsights = [...insights].sort((a, b) => {
-      const dateA = new Date(a.date).getTime();
-      const dateB = new Date(b.date).getTime();
-      if (isNaN(dateA)) return 1;
-      if (isNaN(dateB)) return -1;
-      return dateB - dateA;
+      const getYear = (dateStr: string) => {
+        if (!dateStr) return 0;
+        const d = parseDateString(dateStr);
+        if (!isNaN(d.getFullYear())) return d.getFullYear();
+        const parts = dateStr.split('-');
+        if (parts.length === 3 && parts[2].length === 4) return parseInt(parts[2]);
+        return 0;
+      };
+
+      const yearA = getYear(a.date);
+      const yearB = getYear(b.date);
+      
+      if (yearA !== yearB) return yearB - yearA;
+      return monthOrder.indexOf(b.month) - monthOrder.indexOf(a.month);
     });
 
-    return sortedInsights[0]?.date || "";
+    const latestEntry = sortedInsights[0];
+    const latestDate = parseDateString(latestEntry.date);
+    const fallbackYear = latestEntry.date?.split('-')[2]?.length === 4 ? latestEntry.date?.split('-')[2] : new Date().getFullYear().toString();
+    
+    return {
+      month: latestEntry.month,
+      year: !isNaN(latestDate.getFullYear()) ? latestDate.getFullYear().toString() : fallbackYear
+    };
   }, [insights]);
 
-  // Derive associated month name for the latest date
-  const latestDataMonth = useMemo(() => {
-    const record = insights.find(i => i.date === latestDataDate);
-    return record?.month || "Jan";
-  }, [insights, latestDataDate]);
+  const latestDataMonth = latestDataInfo.month;
 
 
   const branchStats: BranchStats[] = useMemo(() => {
     const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     
-    // Identify the date to use for "current" profile counts
-    // If user has filtered by month/year, we should ideally find the latest date within that selection
-    // But per user request "most recent available month", we'll default to absolute latest if no filter
-    const activeLatestDate = (selectedMonth.length === 0 && selectedYear.length === 0)
-      ? latestDataDate
-      : insights.filter(i => {
+    // Identify the month and year to use for "current" profile counts
+    let activeLatestMonthInfo = latestDataInfo;
+    if (selectedMonth.length > 0 || selectedYear.length > 0) {
+      const filteredForDate = insights.filter(i => {
           const monthMatch = selectedMonth.length === 0 || selectedMonth.includes(i.month);
           let yearMatch = true;
           if (selectedYear.length > 0) {
-            const d = new Date(i.date);
+            const d = parseDateString(i.date);
             const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
             yearMatch = selectedYear.includes(y);
           }
           return monthMatch && yearMatch;
-        }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]?.date || latestDataDate;
+        }).sort((a, b) => parseDateString(b.date).getTime() - parseDateString(a.date).getTime())[0];
+        
+      if (filteredForDate) {
+        const d = parseDateString(filteredForDate.date);
+        activeLatestMonthInfo = {
+            month: filteredForDate.month,
+            year: !isNaN(d.getFullYear()) ? d.getFullYear().toString() : ""
+        };
+      }
+    }
 
     // 1. Filter Source Data for Cumulative Metrics
     const filteredInsights = insights.filter(item => {
@@ -144,7 +164,7 @@ const Branches = () => {
 
       let yearMatch = true;
       if (selectedYear.length > 0) {
-        const d = new Date(item.date);
+        const d = parseDateString(item.date);
         const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
         yearMatch = selectedYear.includes(y);
       }
@@ -152,12 +172,16 @@ const Branches = () => {
       return clusterMatch && branchMatch && specialityMatch && monthMatch && yearMatch;
     });
 
-    // 2. Filter Insights for Profile Count (Snapshot logic using exact Date)
+    // 2. Filter Insights for Profile Count (Snapshot logic using month and year)
     const profileInsights = insights.filter(item => {
       const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(item.cluster);
       const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(item.branch);
       const specialityMatch = selectedSpeciality.length === 0 || selectedSpeciality.includes(item.speciality);
-      const dateMatch = item.date === activeLatestDate;
+      
+      const itemDate = parseDateString(item.date);
+      const itemYearStr = !isNaN(itemDate.getFullYear()) ? itemDate.getFullYear().toString() : "";
+      const dateMatch = item.month === activeLatestMonthInfo.month && itemYearStr === activeLatestMonthInfo.year;
+      
       return clusterMatch && branchMatch && specialityMatch && dateMatch;
     });
 
@@ -255,26 +279,25 @@ const Branches = () => {
       };
     }).sort((a, b) => b.totalSearchImpressions - a.totalSearchImpressions);
 
-  }, [insights, doctors, selectedCluster, selectedBranch, selectedSpeciality, selectedMonth, latestDataDate, selectedYear]);
+  }, [insights, doctors, selectedCluster, selectedBranch, selectedSpeciality, selectedMonth, latestDataInfo, selectedYear]);
 
   const activeLatestMonth = useMemo(() => {
     // Determine which month name to show in the badge
     if (selectedMonth.length === 0 && selectedYear.length === 0) return latestDataMonth;
     
     // Find the month associated with the latest date in the current selection
-    const activeLatestDate = insights.filter(i => {
+    const activeLatestEntry = insights.filter(i => {
       const monthMatch = selectedMonth.length === 0 || selectedMonth.includes(i.month);
       let yearMatch = true;
       if (selectedYear.length > 0) {
-        const d = new Date(i.date);
+        const d = parseDateString(i.date);
         const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
         yearMatch = selectedYear.includes(y);
       }
       return monthMatch && yearMatch;
-    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]?.date;
+    }).sort((a, b) => parseDateString(b.date).getTime() - parseDateString(a.date).getTime())[0];
 
-    const record = insights.find(i => i.date === activeLatestDate);
-    return record?.month || latestDataMonth;
+    return activeLatestEntry?.month || latestDataMonth;
   }, [selectedMonth, selectedYear, latestDataMonth, insights]);
 
   const totalStats = useMemo(() => {
