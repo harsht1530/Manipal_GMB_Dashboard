@@ -14,6 +14,7 @@ const Alert = require('./models/Alert');
 const Posting = require('./models/Posting');
 const Optimization = require('./models/Optimization');
 const GMBPost = require('./models/GMBPost');
+const ApiInsight = require('./models/ApiInsight');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -353,7 +354,7 @@ app.post('/api/search-keywords-impressions', async (req, res) => {
 // 5. Insights Route
 app.get('/api/insights', async (req, res) => {
     try {
-        const insights = await Insight.find({}, {
+        const projection = {
             "Business name": 1,
             "Google Search - Mobile": 1,
             "Google Search - Desktop": 1,
@@ -370,9 +371,17 @@ app.get('/api/insights', async (req, res) => {
             Review: 1,
             Rating: 1,
             Department: 1,
-            Phone: 1
-        });
-        res.json({ success: true, data: insights });
+            Phone: 1,
+            status_type: 1
+        };
+
+        const insights = await Insight.find({}, projection).lean();
+        const apiInsights = await ApiInsight.find({}, projection).lean();
+
+        // Combine both collections' data
+        const combinedInsights = [...insights, ...apiInsights];
+
+        res.json({ success: true, data: combinedInsights });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }

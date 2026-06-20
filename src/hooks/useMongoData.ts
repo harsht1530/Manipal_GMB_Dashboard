@@ -20,6 +20,7 @@ export interface InsightData {
   rating: number;
   department: string;
   phone: string;
+  statusType?: string;
 }
 
 export interface PostingData {
@@ -85,22 +86,23 @@ function transformInsight(doc: any): InsightData {
   return {
     id: doc._id?.$oid || String(Math.random()),
     businessName: doc["Business name"] || "",
-    googleSearchMobile: doc["Google Search - Mobile"] || 0,
-    googleSearchDesktop: doc["Google Search - Desktop"] || 0,
-    googleMapsMobile: doc["Google Maps - Mobile"] || 0,
-    googleMapsDesktop: doc["Google Maps - Desktop"] || 0,
-    directions: doc["Directions"] || 0,
-    websiteClicks: doc["Website clicks"] || 0,
-    calls: doc["Calls"] || 0,
+    googleSearchMobile: Number(doc["Google Search - Mobile"]) || 0,
+    googleSearchDesktop: Number(doc["Google Search - Desktop"]) || 0,
+    googleMapsMobile: Number(doc["Google Maps - Mobile"]) || 0,
+    googleMapsDesktop: Number(doc["Google Maps - Desktop"]) || 0,
+    directions: Number(doc["Directions"]) || 0,
+    websiteClicks: Number(doc["Website clicks"]) || 0,
+    calls: Number(doc["Calls"]) || 0,
     cluster: doc["Cluster"] || "",
     month: doc["Month"] || "",
     branch: doc["Branch"] || "",
     date: doc["Date"]?.$date || doc["Date"] || "",
     speciality: doc["Speciality"] || "",
-    review: doc["Review"] || 0,
-    rating: doc["Rating"] || 0,
+    review: Number(doc["Review"]) || 0,
+    rating: Number(doc["Rating"]) || 0,
     department: doc["Department"] || "",
-    phone: doc["Phone"] || "Not available"
+    phone: doc["Phone"] || "Not available",
+    statusType: doc["status_type"] || undefined
   };
 }
 
