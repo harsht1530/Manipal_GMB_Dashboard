@@ -53,11 +53,30 @@ const TrendIndicator = ({ current, previous, inverseColors = false }: { current:
 };
 
 export const LocationsOverview = ({ data, apiInsights = [], selectedMonths }: LocationsOverviewProps) => {
-  const [viewMode, setViewMode] = useState<"standard" | "realtime">("realtime");
+  const [viewMode, setViewMode] = useState<"standard" | "realtime">("standard");
   const [exportDataCtx, setExportDataCtx] = useState<{
     isOpen: boolean;
     type: "Total Profiles" | "Verified and Active" | "Unverified and others" | null;
   }>({ isOpen: false, type: null });
+
+  const handleExportStandard = () => {
+    const exportData = aggregatedData.map(d => ({
+      "Unit Name": d.unitName || "",
+      "Cluster": d.cluster || "",
+      "Total Profiles": d.totalProfiles || 0,
+      "Verified Profiles": d.verifiedProfiles || 0,
+      "Unverified Profiles": d.unverifiedProfiles || 0,
+      "Need Access": d.needAccess || 0,
+      "Not Interested": d.notInterested || 0,
+      "Out Of Organization": d.outOfOrganization || 0,
+      "Verification Rate (%)": d.totalProfiles > 0 ? `${Math.round((d.verifiedProfiles / d.totalProfiles) * 100)}%` : "0%"
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Standard Verification Status");
+    XLSX.writeFile(workbook, `Standard_Profile_Verification_Status_${latestMonth}.xlsx`);
+  };
 
   const handleExport = () => {
     if (!exportDataCtx.type) return;
@@ -103,7 +122,7 @@ export const LocationsOverview = ({ data, apiInsights = [], selectedMonths }: Lo
   };
 
   const getLatestDataScope = (dataset: any[]) => {
-    if (dataset.length === 0) return { month: "Jan", date: null };
+    if (dataset.length === 0) return { month: "Jan", date: null, prevMonth: null, prevDate: null };
 
     let targetData = dataset;
     if (selectedMonths.length > 0 && !selectedMonths.includes("All")) {
@@ -121,20 +140,39 @@ export const LocationsOverview = ({ data, apiInsights = [], selectedMonths }: Lo
     });
 
     const latestMonth = sortedData[0].month || "Jan";
-    const allSorted = [...dataset].sort((a, b) => {
-      const timeA = a.date ? parseDateString(a.date).getTime() : 0;
-      const timeB = b.date ? parseDateString(b.date).getTime() : 0;
-      if (!isNaN(timeA) && !isNaN(timeB) && timeA !== timeB) return timeB - timeA;
+
+    // Chronologically find the preceding month that exists in the dataset
+    const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const uniqueMonths = Array.from(new Set(dataset.map(d => d.month)))
+      .sort((a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b));
       
-      const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      return monthOrder.indexOf(b.month) - monthOrder.indexOf(a.month);
-    });
-    const previousItem = allSorted.find(d => d.month !== latestMonth);
+    const latestMonthIndex = uniqueMonths.indexOf(latestMonth);
+    let prevMonth = null;
+    if (latestMonth === "Jan") {
+      if (uniqueMonths.includes("Dec")) {
+        prevMonth = "Dec";
+      }
+    } else if (latestMonthIndex > 0) {
+      prevMonth = uniqueMonths[latestMonthIndex - 1];
+    }
+
+    // Find the latest date of that prevMonth if it exists
+    let prevDate = null;
+    if (prevMonth) {
+      const prevMonthItems = dataset.filter(d => d.month === prevMonth)
+        .sort((a, b) => {
+          const timeA = a.date ? parseDateString(a.date).getTime() : 0;
+          const timeB = b.date ? parseDateString(b.date).getTime() : 0;
+          return timeB - timeA;
+        });
+      prevDate = prevMonthItems.length > 0 ? prevMonthItems[0].date : null;
+    }
+
     return { 
       month: latestMonth, 
       date: sortedData[0].date,
-      prevMonth: previousItem ? previousItem.month : null,
-      prevDate: previousItem ? previousItem.date : null
+      prevMonth,
+      prevDate
     };
   };
 
@@ -300,6 +338,7 @@ export const LocationsOverview = ({ data, apiInsights = [], selectedMonths }: Lo
               </Badge>
             </div>
 
+            {/* Hiding API Based / Standard toggle as per user request (Standard view only)
             <div className="flex bg-white p-1 rounded-xl shadow-sm border w-fit overflow-x-auto">
               <button
                 onClick={() => setViewMode('realtime')}
@@ -320,6 +359,7 @@ export const LocationsOverview = ({ data, apiInsights = [], selectedMonths }: Lo
                 Standard
               </button>
             </div>
+            */}
           </div>
 
           {/* Summary Stats */}
