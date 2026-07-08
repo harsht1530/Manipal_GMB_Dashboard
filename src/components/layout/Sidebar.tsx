@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import {
@@ -6,6 +7,8 @@ import {
   Settings,
   LogOut,
   ChevronLeft,
+  ChevronDown,
+  ChevronRight,
   Building2,
   Phone,
   Target,
@@ -15,6 +18,10 @@ import {
   FileText,
   Ticket,
   AlertTriangle,
+  ClipboardList,
+  PlusCircle,
+  ShieldAlert,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SidebarFilters } from "@/components/dashboard/SidebarFilters";
@@ -32,6 +39,18 @@ const navItems = [
   { icon: Target, label: "Monthly Optimisation", path: "/optimizations" },
   { icon: FileText, label: "GBP Postings", path: "/postings" },
   { icon: Ticket, label: "Case Management", path: "/raising-case" },
+  {
+    label: "GMB Ticketing",
+    icon: ClipboardList,
+    path: "/tickets",
+    isParent: true,
+    children: [
+      { icon: LayoutDashboard, label: "Ticket Dashboard", path: "/tickets/dashboard" },
+      { icon: PlusCircle, label: "Raise Ticket", path: "/tickets/raise" },
+      { icon: ShieldAlert, label: "SLA Alerts", path: "/tickets/escalations" },
+      { icon: Clock, label: "SLA Pipeline", path: "/tickets/sla-progress" },
+    ]
+  },
   { icon: AlertTriangle, label: "Critical Issues", path: "/critical-issues" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
@@ -55,8 +74,53 @@ export const Sidebar = ({
 }: SidebarProps) => {
   const location = useLocation();
   const { user, logout } = useAuth();
+  const [ticketsExpanded, setTicketsExpanded] = useState(true);
+  const [isMultiplierUser, setIsMultiplierUser] = useState(false);
 
-  const filteredNavItems = navItems.filter(item => {
+  useEffect(() => {
+    if (!user?.email) return;
+    fetch(`${import.meta.env.VITE_API_BASE_URL || "http://localhost:5000"}/api/multiplier-team`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.data) {
+          const match = data.data.find((m: any) => m.email.toLowerCase() === user.email.toLowerCase());
+          setIsMultiplierUser(!!match);
+        }
+      })
+      .catch(err => console.error("Error in Sidebar matching multiplier team:", err));
+  }, [user]);
+
+  const isAdmin = user?.role === "Admin";
+
+  // Build GMB Ticketing children dynamically based on access
+  const ticketingChildren = [
+    { icon: LayoutDashboard, label: "Ticket Dashboard", path: "/tickets/dashboard" },
+  ];
+
+  if (isAdmin) {
+    ticketingChildren.push({ icon: ClipboardList, label: "Admin Console", path: "/tickets/admin-console" });
+  }
+
+  // Everyone can raise a ticket (SPOCs to Multiplier, or fallback)
+  ticketingChildren.push({ icon: PlusCircle, label: "Raise Ticket", path: "/tickets/raise" });
+
+  if (isAdmin || user?.role === "Cluster") {
+    ticketingChildren.push({ icon: ShieldAlert, label: "SLA Alerts", path: "/tickets/escalations" });
+  }
+
+  ticketingChildren.push({ icon: Clock, label: "SLA Pipeline", path: "/tickets/sla-progress" });
+
+  // Only Multiplier team members can raise a request to Branch users
+  if (isMultiplierUser) {
+    ticketingChildren.push({ icon: PlusCircle, label: "Request to Branch", path: "/tickets/multiplier-raise" });
+  }
+
+  const filteredNavItems = navItems.map(item => {
+    if (item.label === "GMB Ticketing") {
+      return { ...item, children: ticketingChildren };
+    }
+    return item;
+  }).filter(item => {
     if (item.label === "Settings" && !["Admin", "Cluster", "Branch"].includes(user?.role || "")) {
       return false;
     }
@@ -112,9 +176,78 @@ export const Sidebar = ({
       </div>
 
       {/* Navigation */}
+      {/* Navigation */}
       <div className="flex-1 overflow-y-auto py-4 scrollbar-hide">
         <nav className="space-y-1 px-3">
           {filteredNavItems.map((item) => {
+            if (item.isParent) {
+              const hasActiveChild = item.children?.some(child => location.pathname === child.path);
+              
+              if (collapsed) {
+                return (
+                  <NavLink
+                    key={item.path}
+                    to={item.children?.[0].path || item.path}
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 group relative justify-center px-0 h-10 w-10 mx-auto",
+                      hasActiveChild
+                        ? "bg-sidebar-primary/10 text-sidebar-primary shadow-sm"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    )}
+                  >
+                    <item.icon className={cn("h-5 w-5 shrink-0 transition-transform group-hover:scale-110", hasActiveChild && "text-sidebar-primary")} />
+                    <div className="absolute left-full ml-2 px-2 py-1 bg-popover text-popover-foreground text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 border whitespace-nowrap shadow-lg">
+                      {item.label}
+                    </div>
+                  </NavLink>
+                );
+              }
+
+              return (
+                <div key={item.label} className="space-y-1 text-left">
+                  <button
+                    type="button"
+                    onClick={() => setTicketsExpanded(!ticketsExpanded)}
+                    className={cn(
+                      "w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 group relative text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <item.icon className="h-5 w-5 shrink-0 transition-transform group-hover:scale-110" />
+                      <span>{item.label}</span>
+                    </div>
+                    {ticketsExpanded ? (
+                      <ChevronDown className="h-4 w-4 text-sidebar-foreground/50" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 text-sidebar-foreground/50" />
+                    )}
+                  </button>
+                  {ticketsExpanded && (
+                    <div className="ml-4 border-l border-sidebar-border pl-3 space-y-1">
+                      {item.children?.map((child) => {
+                        const isChildActive = location.pathname === child.path;
+                        return (
+                          <NavLink
+                            key={child.path}
+                            to={child.path}
+                            className={cn(
+                              "flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-all duration-200 group relative",
+                              isChildActive
+                                ? "bg-sidebar-primary/10 text-sidebar-primary shadow-sm"
+                                : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                            )}
+                          >
+                            <child.icon className={cn("h-4 w-4 shrink-0 transition-transform group-hover:scale-110", isChildActive && "text-sidebar-primary")} />
+                            <span>{child.label}</span>
+                          </NavLink>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
             const isActive = location.pathname === item.path;
             return (
               <NavLink
@@ -139,23 +272,23 @@ export const Sidebar = ({
             );
           })}
         </nav>
-
-        {/* Filters Section */}
-        {!collapsed && (
-          <div className="mt-6 px-3">
-            <Separator className="bg-sidebar-border" />
-            <div className="pt-4">
-              <SidebarFilters
-                collapsed={collapsed}
-                selectedDepartments={selectedDepartments}
-                onDepartmentsChange={onDepartmentsChange}
-                selectedRatings={selectedRatings}
-                onRatingsChange={onRatingsChange}
-              />
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* Filters Section */}
+      {!collapsed && !location.pathname.startsWith("/tickets") && (
+        <div className="mt-6 px-3">
+          <Separator className="bg-sidebar-border" />
+          <div className="pt-4">
+            <SidebarFilters
+              collapsed={collapsed}
+              selectedDepartments={selectedDepartments}
+              onDepartmentsChange={onDepartmentsChange}
+              selectedRatings={selectedRatings}
+              onRatingsChange={onRatingsChange}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Logout */}
       <div className="p-4 border-t border-sidebar-border bg-sidebar/50">

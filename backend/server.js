@@ -10,6 +10,8 @@ const Insight = require('./models/Insight');
 const Doctor = require('./models/Doctor');
 const Location = require('./models/Location');
 const User = require('./models/User');
+const MultiplierTeam = require('./models/MultiplierTeam');
+const ManipalTicket = require('./models/ManipalTicket');
 const Alert = require('./models/Alert');
 const Posting = require('./models/Posting');
 const Optimization = require('./models/Optimization');
@@ -63,11 +65,47 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
+const storageTicket = multer.diskStorage({
+    destination: function (req, file, cb) {
+        const dir = './uploads/tickets';
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        cb(null, dir);
+    },
+    filename: function (req, file, cb) {
+        cb(null, Date.now() + '-' + file.originalname.replace(/\s+/g, '-'));
+    }
+});
+const uploadTicket = multer({ storage: storageTicket });
+
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://vasudeva:ommN1EMg2KsURyPQ@cluster0.n3ejr.mongodb.net/HarshDB';
 
+const seedMultiplierTeam = async () => {
+    try {
+        const count = await MultiplierTeam.countDocuments();
+        if (count === 0) {
+            const team = [
+                { name: "Aishwarya", email: "aishwarya@multipliersolutions.com", cluster: "South" },
+                { name: "Nikhil", email: "nikhil@multipliersolutions.com", cluster: "West" },
+                { name: "Sai Sree", email: "saisree@multipliersolutions.com", cluster: "Bhubaneswar-Vijayawada" },
+                { name: "Pranjal", email: "pranjal@multipliersolutions.com", cluster: "North West" },
+                { name: "Harsh", email: "harsh@multipliersolutions.com", cluster: "South" }
+            ];
+            await MultiplierTeam.insertMany(team);
+            console.log("Multiplier Team seeded successfully!");
+        }
+    } catch (err) {
+        console.error("Error seeding Multiplier Team:", err);
+    }
+};
+
 mongoose.connect(MONGODB_URI)
-    .then(() => console.log('Connected to MongoDB'))
+    .then(() => {
+        console.log('Connected to MongoDB');
+        seedMultiplierTeam();
+    })
     .catch(err => console.error('MongoDB connection error:', err));
 
 // Mail Transporter
@@ -162,10 +200,18 @@ app.post('/api/login', async (req, res) => {
 
             const sent = await sendEmail(user.orgEmail || user.mail, "Login OTP - GMB Analytics Dashboard", emailHtml);
 
+            // Log OTP to server console so developers can see it in local testing
+            console.log(`\n==========================================\n[AUTH] OTP for ${user.orgEmail || user.mail} is: ${otp}\n==========================================\n`);
+
             if (sent) {
                 res.json({ success: true, message: "OTP sent to your email", email: user.orgEmail || user.mail });
             } else {
-                res.status(500).json({ success: false, error: "Failed to send OTP email" });
+                console.warn(`[AUTH] Failed to send OTP email to ${user.orgEmail || user.mail}. Falling back to console login.`);
+                res.json({ 
+                    success: true, 
+                    message: "OTP generated (Email failed to send. For local development, check the server terminal console for the OTP).", 
+                    email: user.orgEmail || user.mail 
+                });
             }
         } else {
             // Handle special Admin case for convenience
@@ -666,23 +712,66 @@ app.get('/api/critical-gmb-profiles', async (req, res) => {
 
 // GET All Alerts (Hierarchical Filtering)
 app.get('/api/alerts', async (req, res) => {
-    const { email, role, cluster } = req.query;
+    const { email, role, cluster, branch } = req.query;
     try {
         let query = {};
+        
+        // Check if user is in Multiplier Team list
+        const isMultiplier = await MultiplierTeam.findOne({ email });
 
         // Hierarchical Filtering Logic
-        if (email === "harsh@multipliersolutions.com") {
-            // Super Admin: Sees everything
+        if (email === "harsh@multipliersolutions.com" && role === "Admin") {
+            // Super Admin: Sees everything when logged in as Admin
             query = {};
+        } else if (isMultiplier) {
+            // Multiplier: Sees logins of Branch users in their cluster, and GMB ticket alerts for their cluster
+            query = {
+                $or: [
+                    { role: "Branch", cluster: isMultiplier.cluster },
+                    { cluster: isMultiplier.cluster, type: { $regex: /^TICKET_/ } }
+                ]
+            };
         } else if (role === "Admin") {
-            // Admin: Sees only Cluster and Branch logins
-            query = { role: { $in: ["Cluster", "Branch"] } };
+            // Admin: Sees logins and all ticket alerts
+            query = {
+                $or: [
+                    { role: { $in: ["Cluster", "Branch"] } },
+                    { type: { $regex: /^TICKET_/ } }
+                ]
+            };
         } else if (role === "Cluster") {
-            // Cluster: Sees only Branch logins for branches under their cluster
-            query = { role: "Branch", cluster: cluster };
+            // Cluster: Sees logins of Branch users under their cluster, and ticket alerts in their cluster
+            query = {
+                $or: [
+                    { role: "Branch", cluster: cluster },
+                    { cluster: cluster, type: { $regex: /^TICKET_/ } }
+                ]
+            };
+        } else if (role === "Branch") {
+            // Branch user: Sees GMB ticket alerts for their branch
+            query = {
+                location: branch || "",
+                type: { $regex: /^TICKET_/ }
+            };
         } else {
-            // Default/Branch: No one sees their own alerts usually, or restricted view
-            query = { _id: null }; // Return nothing
+            // Default/Fallback: Return nothing
+            query = { _id: null };
+        }
+
+        // Filter: If targetEmail is set on an alert, only show it to the matching user
+        if (email && email !== "harsh@multipliersolutions.com") {
+            query = {
+                $and: [
+                    query,
+                    {
+                        $or: [
+                            { targetEmail: { $exists: false } },
+                            { targetEmail: null },
+                            { targetEmail: email.toLowerCase() }
+                        ]
+                    }
+                ]
+            };
         }
 
         const alerts = await Alert.find(query).sort({ timestamp: -1 }).limit(50);
@@ -1052,6 +1141,746 @@ cron.schedule('* * * * *', async () => {
         }
     } catch (error) {
         console.error("Scheduler Error:", error.message);
+    }
+});
+
+// Ticket and SLA Management Endpoints
+
+// 1. Multiplier Team list
+app.get('/api/multiplier-team', async (req, res) => {
+    try {
+        const team = await MultiplierTeam.find({});
+        res.json({ success: true, data: team });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Get all users in the same cluster as the Multiplier Team member
+app.get('/api/multiplier/users', async (req, res) => {
+    const { email } = req.query;
+    try {
+        const member = await MultiplierTeam.findOne({ email });
+        if (!member) {
+            return res.status(403).json({ success: false, error: "Only Multiplier Team members can access this" });
+        }
+        // Fetch users belonging to this cluster (matching case-sensitive Cluster field)
+        const users = await User.find({ Cluster: member.cluster }, { Name: 1, user: 1, mail: 1, orgEmail: 1, Branch: 1, Cluster: 1 });
+        res.json({ success: true, data: users });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// POST Create ticket from Multiplier team member to Branch user
+app.post('/api/multiplier/tickets', uploadTicket.fields([
+    { name: 'attachments', maxCount: 10 }
+]), async (req, res) => {
+    try {
+        const { category, ticketType, multiplierName, multiplierEmail, targetUserName, targetUserEmail, cluster, branch, description } = req.body;
+        
+        // Generate Sequential Ticket ID
+        const currentYear = new Date().getFullYear();
+        const latestTicket = await ManipalTicket.findOne({ ticketId: new RegExp(`TKT-${currentYear}-`) }).sort({ createdAt: -1 });
+        let nextSeq = 1;
+        if (latestTicket) {
+            const parts = latestTicket.ticketId.split('-');
+            const lastSeq = parseInt(parts[parts.length - 1]);
+            if (!isNaN(lastSeq)) {
+                nextSeq = lastSeq + 1;
+            }
+        }
+        const ticketId = `TKT-${currentYear}-${String(nextSeq).padStart(5, '0')}`;
+        
+        // SLA: 7 days lifecycle
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + 7);
+        
+        let fileAttachments = [];
+        if (req.files && req.files['attachments']) {
+            fileAttachments = req.files['attachments'].map(file => ({
+                filename: file.originalname,
+                path: `/uploads/tickets/${file.filename}`
+            }));
+        }
+        
+        const initialLogs = [
+            {
+                user: multiplierName,
+                email: multiplierEmail,
+                action: "Created",
+                remarks: "Request raised by Multiplier Team Member to Branch SPOC.",
+                newValue: "Open",
+                timestamp: new Date()
+            },
+            {
+                user: "System",
+                email: "system@manipal.com",
+                action: "Ticket Assigned",
+                remarks: `Assigned directly to Branch user: ${targetUserName}.`,
+                newValue: targetUserEmail,
+                timestamp: new Date()
+            }
+        ];
+        
+        const ticket = new ManipalTicket({
+            ticketId,
+            category,
+            ticketType,
+            raisedBy: { name: multiplierName, email: multiplierEmail, role: 'Multiplier' },
+            assignedTo: { name: targetUserName, email: targetUserEmail, role: 'Branch' },
+            cluster,
+            branch,
+            dueDate,
+            description,
+            attachments: fileAttachments,
+            activityLogs: initialLogs,
+            status: 'Open',
+            priority: 'P5'
+        });
+        
+        await ticket.save();
+        
+        // Create Dashboard Notification (Alert) for target user (Branch user)
+        try {
+            const ticketAlert = new Alert({
+                user: multiplierName,
+                role: 'Multiplier',
+                location: branch,
+                cluster: cluster,
+                type: 'TICKET_ASSIGN',
+                message: `Multiplier request ${ticketId} raised for you by ${multiplierName}.`
+            });
+            await ticketAlert.save();
+        } catch (alertErr) {
+            console.error("Failed to create multiplier request alert:", alertErr);
+        }
+        
+        // Send email notification to Branch SPOC
+        const spocMailHtml = getEmailTemplate(`
+            <h2 style="color: #333; text-align: left;">New Action Required: GMB Optimization Request</h2>
+            <p style="font-size: 15px; color: #555; text-align: left;">
+                Hello <strong>${targetUserName}</strong>,<br/><br/>
+                A new GMB optimization request has been raised for your unit (<strong>${branch}</strong>) by Multiplier manager <strong>${multiplierName}</strong>:
+            </p>
+            <table style="width: 100%; border-collapse: collapse; margin: 20px 0; text-align: left; font-size: 14px;">
+                <tr><th style="padding: 8px; border-bottom: 1px solid #ddd; width: 130px;">Request ID:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>${ticketId}</strong></td></tr>
+                <tr><th style="padding: 8px; border-bottom: 1px solid #ddd;">Category:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;">${category}</td></tr>
+                <tr><th style="padding: 8px; border-bottom: 1px solid #ddd;">Type:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;">${ticketType}</td></tr>
+                <tr><th style="padding: 8px; border-bottom: 1px solid #ddd;">Due Date:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;">${dueDate.toDateString()}</td></tr>
+                <tr><th style="padding: 8px; border-bottom: 1px solid #ddd;">Instructions:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;">${description}</td></tr>
+            </table>
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="${req.headers.origin || 'http://localhost:5173'}/#/tickets/details/${ticketId}" class="btn" style="background-color: transparent; color: #48BEB9; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; border: 2px solid #48BEB9; transition: all 0.3s ease;">Open Request Details</a>
+            </div>
+        `);
+        await sendEmail(targetUserEmail, `Action Required: GMB Optimization Request - ${ticketId}`, spocMailHtml);
+        
+        res.json({ success: true, data: ticket });
+    } catch (error) {
+        console.error("Error creating multiplier ticket:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/multiplier-team', async (req, res) => {
+    try {
+        const member = new MultiplierTeam(req.body);
+        await member.save();
+        res.json({ success: true, data: member });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.delete('/api/multiplier-team/:id', async (req, res) => {
+    try {
+        await MultiplierTeam.findByIdAndDelete(req.params.id);
+        res.json({ success: true, message: "Member deleted successfully" });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 2. Fetch Tickets with Access Control
+app.get('/api/tickets', async (req, res) => {
+    const { email, role, cluster, branch } = req.query;
+    try {
+        let filter = {};
+        
+        // Check if user is in Multiplier Team list and logged in with Multiplier role
+        const isMultiplier = (role === "Multiplier") && await MultiplierTeam.findOne({ email });
+        
+        if (role === 'Admin') {
+            filter = {};
+        } else if (isMultiplier) {
+            // Multiplier team members manage a cluster. They should see:
+            // 1. Tickets assigned directly to them (with matching Multiplier role).
+            // 2. Tickets belonging to the cluster they manage.
+            filter = {
+                $or: [
+                    { 
+                        "assignedTo.email": email, 
+                        $or: [
+                            { "assignedTo.role": "Multiplier" },
+                            { "assignedTo.role": { $exists: false } },
+                            { "assignedTo.role": null }
+                        ]
+                    },
+                    { cluster: isMultiplier.cluster }
+                ]
+            };
+        } else if (role === 'Branch' && branch) {
+            filter = { branch: branch };
+        } else if (role === 'Cluster' && cluster) {
+            filter = { cluster: cluster };
+        } else {
+            // Fallback: match raisedBy/assignedTo email + role
+            filter = {
+                $or: [
+                    { 
+                        "raisedBy.email": email, 
+                        $or: [
+                            { "raisedBy.role": role },
+                            { "raisedBy.role": { $exists: false } },
+                            { "raisedBy.role": null }
+                        ]
+                    },
+                    { 
+                        "assignedTo.email": email, 
+                        $or: [
+                            { "assignedTo.role": role },
+                            { "assignedTo.role": { $exists: false } },
+                            { "assignedTo.role": null }
+                        ]
+                    }
+                ]
+            };
+        }
+        
+        const tickets = await ManipalTicket.find(filter).sort({ createdAt: -1 });
+        res.json({ success: true, data: tickets });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 3. Create Ticket (Handles Sheet Template & optional attachments)
+app.post('/api/tickets', uploadTicket.fields([
+    { name: 'excelTemplate', maxCount: 1 },
+    { name: 'attachments', maxCount: 10 }
+]), async (req, res) => {
+    try {
+        const { category, ticketType, raisedByName, raisedByEmail, raisedByRole, cluster, branch, description } = req.body;
+        
+        // Generate Sequential Ticket ID
+        const currentYear = new Date().getFullYear();
+        const latestTicket = await ManipalTicket.findOne({ ticketId: new RegExp(`TKT-${currentYear}-`) }).sort({ createdAt: -1 });
+        let nextSeq = 1;
+        if (latestTicket) {
+            const parts = latestTicket.ticketId.split('-');
+            const lastSeq = parseInt(parts[parts.length - 1]);
+            if (!isNaN(lastSeq)) {
+                nextSeq = lastSeq + 1;
+            }
+        }
+        const ticketId = `TKT-${currentYear}-${String(nextSeq).padStart(5, '0')}`;
+        
+        // Auto-assign Owner based on cluster mapping
+        let assignee = { name: "Harsh", email: "harsh@multipliersolutions.com" }; // default fallback
+        const teamMembers = await MultiplierTeam.find({ cluster: cluster });
+        if (teamMembers && teamMembers.length > 0) {
+            if (teamMembers.length === 1) {
+                assignee = { name: teamMembers[0].name, email: teamMembers[0].email };
+            } else {
+                // Workout-based distribution: Assign to member with fewest active tickets
+                let minCount = Infinity;
+                let selectedMember = teamMembers[0];
+                for (const member of teamMembers) {
+                    const count = await ManipalTicket.countDocuments({ "assignedTo.email": member.email, status: { $ne: 'Closed' } });
+                    if (count < minCount) {
+                        minCount = count;
+                        selectedMember = member;
+                    }
+                }
+                assignee = { name: selectedMember.name, email: selectedMember.email };
+            }
+        }
+        
+        // SLA: 7 days lifecycle
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + 7);
+        
+        // Handle files
+        let excelFile = null;
+        if (req.files && req.files['excelTemplate'] && req.files['excelTemplate'][0]) {
+            const file = req.files['excelTemplate'][0];
+            excelFile = {
+                filename: file.originalname,
+                path: `/uploads/tickets/${file.filename}`
+            };
+        }
+        
+        let fileAttachments = [];
+        if (req.files && req.files['attachments']) {
+            fileAttachments = req.files['attachments'].map(file => ({
+                filename: file.originalname,
+                path: `/uploads/tickets/${file.filename}`
+            }));
+        }
+        
+        // Audit log entries
+        const initialLogs = [
+            {
+                user: raisedByName,
+                email: raisedByEmail,
+                action: "Created",
+                remarks: "Ticket created and template uploaded.",
+                newValue: "Open",
+                timestamp: new Date()
+            },
+            {
+                user: "System",
+                email: "system@manipal.com",
+                action: "Ticket Assigned",
+                remarks: `Automatically assigned based on Cluster mapping to cluster owner: ${assignee.name}.`,
+                newValue: assignee.email,
+                timestamp: new Date()
+            }
+        ];
+        
+        const ticket = new ManipalTicket({
+            ticketId,
+            category,
+            ticketType,
+            raisedBy: { name: raisedByName, email: raisedByEmail, role: raisedByRole || 'Branch' },
+            assignedTo: { name: assignee.name, email: assignee.email, role: 'Multiplier' },
+            cluster,
+            branch,
+            dueDate,
+            description,
+            excelTemplate: excelFile,
+            attachments: fileAttachments,
+            activityLogs: initialLogs,
+            status: 'Open',
+            priority: 'P5'
+        });
+        
+        await ticket.save();
+        
+        // Create Dashboard Notification (Alert)
+        try {
+            const ticketAlert = new Alert({
+                user: raisedByName,
+                role: 'Branch',
+                location: branch,
+                cluster: cluster,
+                type: 'TICKET_ASSIGN',
+                message: `New ticket ${ticketId} raised for ${branch} and assigned to ${assignee.name}.`
+            });
+            await ticketAlert.save();
+        } catch (alertErr) {
+            console.error("Failed to create ticket alert:", alertErr);
+        }
+        
+        // Send email notifications
+        const assigneeMailHtml = getEmailTemplate(`
+            <h2 style="color: #333; text-align: left;">New GMB Ticket Assigned</h2>
+            <p style="font-size: 15px; color: #555; text-align: left;">
+                Hello <strong>${assignee.name}</strong>,<br/><br/>
+                A new GMB operations ticket has been raised and assigned to you:
+            </p>
+            <table style="width: 100%; border-collapse: collapse; margin: 20px 0; text-align: left; font-size: 14px;">
+                <tr><th style="padding: 8px; border-bottom: 1px solid #ddd; width: 130px;">Ticket ID:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>${ticketId}</strong></td></tr>
+                <tr><th style="padding: 8px; border-bottom: 1px solid #ddd;">Category:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;">${category}</td></tr>
+                <tr><th style="padding: 8px; border-bottom: 1px solid #ddd;">Ticket Type:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;">${ticketType}</td></tr>
+                <tr><th style="padding: 8px; border-bottom: 1px solid #ddd;">Branch:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;">${branch} (${cluster})</td></tr>
+                <tr><th style="padding: 8px; border-bottom: 1px solid #ddd;">Priority:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;"><span style="background-color: #f0fdf4; color: #166534; padding: 2px 8px; border-radius: 4px; font-weight: bold;">${ticket.priority}</span></td></tr>
+                <tr><th style="padding: 8px; border-bottom: 1px solid #ddd;">Due Date:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;">${dueDate.toDateString()}</td></tr>
+                <tr><th style="padding: 8px; border-bottom: 1px solid #ddd;">Description:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;">${description}</td></tr>
+            </table>
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="${req.headers.origin || 'http://localhost:5173'}/#/tickets/details/${ticketId}" class="btn" style="background-color: transparent; color: #48BEB9; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; border: 2px solid #48BEB9; transition: all 0.3s ease;">View Ticket Details</a>
+            </div>
+        `);
+        
+        await sendEmail(assignee.email, `New GMB Ticket: ${ticketId} - ${ticketType}`, assigneeMailHtml);
+        
+        const spocMailHtml = getEmailTemplate(`
+            <h2 style="color: #333; text-align: left;">Ticket Raised Successfully</h2>
+            <p style="font-size: 15px; color: #555; text-align: left;">
+                Hello <strong>${raisedByName}</strong>,<br/><br/>
+                Your GMB ticket <strong>${ticketId}</strong> has been raised successfully.
+            </p>
+            <table style="width: 100%; border-collapse: collapse; margin: 20px 0; text-align: left; font-size: 14px;">
+                <tr><th style="padding: 8px; border-bottom: 1px solid #ddd; width: 130px;">Ticket ID:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>${ticketId}</strong></td></tr>
+                <tr><th style="padding: 8px; border-bottom: 1px solid #ddd;">Ticket Type:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;">${ticketType}</td></tr>
+                <tr><th style="padding: 8px; border-bottom: 1px solid #ddd;">Due Date:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;">${dueDate.toDateString()}</td></tr>
+            </table>
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="${req.headers.origin || 'http://localhost:5173'}/#/tickets/details/${ticketId}" class="btn" style="background-color: transparent; color: #48BEB9; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; border: 2px solid #48BEB9; transition: all 0.3s ease;">Track Ticket</a>
+            </div>
+        `);
+        await sendEmail(raisedByEmail, `Ticket Raised: ${ticketId}`, spocMailHtml);
+        
+        res.json({ success: true, data: ticket });
+    } catch (error) {
+        console.error("Error creating ticket:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 4. Fetch Single Ticket details
+app.get('/api/tickets/:ticketId', async (req, res) => {
+    try {
+        const ticket = await ManipalTicket.findOne({ ticketId: req.params.ticketId });
+        if (!ticket) return res.status(404).json({ success: false, error: "Ticket not found" });
+        res.json({ success: true, data: ticket });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 5. Add Activity Log / Comment / Status transition
+app.post('/api/tickets/:ticketId/logs', uploadTicket.array('attachments', 10), async (req, res) => {
+    try {
+        const { user, email, action, prevValue, newValue, remarks, isInternal, sendEmailNotify } = req.body;
+        const ticket = await ManipalTicket.findOne({ ticketId: req.params.ticketId });
+        if (!ticket) return res.status(404).json({ success: false, error: "Ticket not found" });
+        
+        let logAttachments = [];
+        if (req.files && req.files.length > 0) {
+            logAttachments = req.files.map(file => ({
+                filename: file.originalname,
+                path: `/uploads/tickets/${file.filename}`
+            }));
+            // Append to public attachments if not an internal note
+            if (isInternal !== 'true') {
+                ticket.attachments.push(...logAttachments);
+            }
+        }
+        
+        const newLog = {
+            user,
+            email,
+            action,
+            prevValue,
+            newValue,
+            remarks,
+            isInternal: isInternal === 'true',
+            attachments: logAttachments,
+            timestamp: new Date()
+        };
+        
+        ticket.activityLogs.push(newLog);
+        
+        if (action === "Status Changes" && newValue) {
+            ticket.status = newValue;
+        }
+        
+        await ticket.save();
+        
+        // Create Dashboard Notification (Alert)
+        try {
+            const msg = action === "Status Changes"
+                ? `Ticket ${ticket.ticketId} status updated to ${newValue} by ${user}.`
+                : `New comment added to ticket ${ticket.ticketId} by ${user}.`;
+            const logAlert = new Alert({
+                user,
+                role: 'System',
+                location: ticket.branch,
+                cluster: ticket.cluster,
+                type: 'TICKET_STATUS',
+                message: msg
+            });
+            await logAlert.save();
+        } catch (alertErr) {
+            console.error("Failed to create log alert:", alertErr);
+        }
+        
+        // Email trigger
+        if (sendEmailNotify === 'true') {
+            const isClient = email === ticket.raisedBy.email;
+            const targetMail = isClient ? ticket.assignedTo.email : ticket.raisedBy.email;
+            const updateMessage = action === "Status Changes"
+                ? `The status of ticket <strong>${ticket.ticketId}</strong> has been updated to <strong>${newValue}</strong> by ${user}.`
+                : `A new update has been logged on ticket <strong>${ticket.ticketId}</strong> by ${user}:<br/><em>${remarks}</em>`;
+            
+            const mailHtml = getEmailTemplate(`
+                <div style="text-align: left; color: #333;">
+                    <h2>Ticket Update Notification</h2>
+                    <p style="font-size: 15px;">${updateMessage}</p>
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="${req.headers.origin || 'http://localhost:5173'}/#/tickets/details/${ticket.ticketId}" class="btn" style="background-color: transparent; color: #48BEB9; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; border: 2px solid #48BEB9; transition: all 0.3s ease;">View Updates</a>
+                    </div>
+                </div>
+            `);
+            
+            await sendEmail(targetMail, `Update on Ticket: ${ticket.ticketId}`, mailHtml);
+        }
+        
+        res.json({ success: true, data: ticket });
+    } catch (error) {
+        console.error("Error adding log:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 6. Transfer/Reassign Ticket
+app.post('/api/tickets/:ticketId/transfer', async (req, res) => {
+    try {
+        const { ticketId } = req.params;
+        const { transferByName, transferByEmail, newAssigneeEmail, remarks } = req.body;
+        
+        const ticket = await ManipalTicket.findOne({ ticketId });
+        if (!ticket) return res.status(404).json({ success: false, error: "Ticket not found" });
+        
+        const newAssignee = await MultiplierTeam.findOne({ email: newAssigneeEmail });
+        if (!newAssignee) return res.status(400).json({ success: false, error: "New assignee not found in Multiplier Team" });
+        
+        const prevAssignee = ticket.assignedTo;
+        ticket.assignedTo = { name: newAssignee.name, email: newAssignee.email };
+        
+        const log = {
+            user: transferByName,
+            email: transferByEmail,
+            action: "Assignment Changes",
+            prevValue: prevAssignee.email,
+            newValue: newAssignee.email,
+            remarks: remarks || `Ticket transferred from ${prevAssignee.name} to ${newAssignee.name}.`,
+            timestamp: new Date()
+        };
+        
+        ticket.activityLogs.push(log);
+        ticket.updatedAt = new Date();
+        await ticket.save();
+        
+        // Create Dashboard Notification (Alert)
+        try {
+            const transferAlert = new Alert({
+                user: transferByName,
+                role: 'Multiplier',
+                location: ticket.branch,
+                cluster: ticket.cluster,
+                type: 'TICKET_TRANSFER',
+                message: `Ticket ${ticketId} transferred from ${prevAssignee.name} to ${newAssignee.name}.`
+            });
+            await transferAlert.save();
+        } catch (alertErr) {
+            console.error("Failed to create transfer alert:", alertErr);
+        }
+        
+        // Notify both parties
+        const notifyNewHtml = getEmailTemplate(`
+            <h2 style="color: #333; text-align: left;">GMB Ticket Transferred to You</h2>
+            <p style="font-size: 15px; color: #555; text-align: left;">
+                Hello <strong>${newAssignee.name}</strong>,<br/><br/>
+                Ticket <strong>${ticketId}</strong> has been transferred to you by ${transferByName}.
+            </p>
+            <p style="font-size: 14px; color: #555;"><strong>Transfer Note:</strong> ${remarks || "None"}</p>
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="${req.headers.origin || 'http://localhost:5173'}/#/tickets/details/${ticketId}" class="btn" style="background-color: transparent; color: #48BEB9; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; border: 2px solid #48BEB9; transition: all 0.3s ease;">View Ticket</a>
+            </div>
+        `);
+        await sendEmail(newAssignee.email, `Ticket Assigned (Transfer): ${ticketId}`, notifyNewHtml);
+        
+        const notifyOldHtml = getEmailTemplate(`
+            <h2>Ticket Transferred Out</h2>
+            <p>Ticket <strong>${ticketId}</strong> has been reassigned to <strong>${newAssignee.name}</strong> by ${transferByName}.</p>
+        `);
+        await sendEmail(prevAssignee.email, `Ticket Reassigned Out: ${ticketId}`, notifyOldHtml);
+        
+        res.json({ success: true, data: ticket });
+    } catch (error) {
+        console.error("Error transferring ticket:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 6.5 Manual SLA Reminder endpoint
+app.post('/api/tickets/:ticketId/remind', async (req, res) => {
+    try {
+        const { ticketId } = req.params;
+        const { senderName } = req.body;
+        const ticket = await ManipalTicket.findOne({ ticketId });
+        if (!ticket) return res.status(404).json({ success: false, error: "Ticket not found" });
+
+        // Create Dashboard Notification (Alert) for the assignee
+        try {
+            const reminderAlert = new Alert({
+                user: senderName || 'System',
+                role: 'System',
+                location: ticket.branch,
+                cluster: ticket.cluster,
+                type: 'TICKET_SLA',
+                targetEmail: ticket.assignedTo.email,
+                message: `SLA Reminder for ticket ${ticketId}: Please resolve this ticket.`
+            });
+            await reminderAlert.save();
+        } catch (alertErr) {
+            console.error("Failed to create manual SLA reminder alert:", alertErr);
+        }
+
+        // Send Email notification to the assignee
+        const mailHtml = getEmailTemplate(`
+            <h2>Manual SLA Reminder</h2>
+            <p>Hello <strong>${ticket.assignedTo.name}</strong>,</p>
+            <p>A manual SLA reminder has been triggered by <strong>${senderName || 'system'}</strong> for ticket <strong>${ticketId}</strong>.</p>
+            <p>Please review and resolve the request as soon as possible.</p>
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="${req.headers.origin || 'http://localhost:5173'}/#/tickets/details/${ticketId}" class="btn" style="background-color: transparent; color: #48BEB9; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; border: 2px solid #48BEB9; transition: all 0.3s ease;">View Ticket Details</a>
+            </div>
+        `);
+        await sendEmail(ticket.assignedTo.email, `SLA Reminder Alert: ${ticketId}`, mailHtml);
+
+        // Record reminder event in the activity logs
+        ticket.activityLogs.push({
+            user: senderName || "System",
+            email: "system@manipal.com",
+            action: "Comments",
+            remarks: `Manual SLA Reminder triggered. Email and dashboard notification sent to assignee: ${ticket.assignedTo.name}.`,
+            timestamp: new Date()
+        });
+        await ticket.save();
+
+        res.json({ success: true, data: ticket });
+    } catch (error) {
+        console.error("Error triggering manual reminder:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// SLA Check logic
+const runSlaCheck = async () => {
+    const now = new Date();
+    const unresolvedTickets = await ManipalTicket.find({
+        status: { $nin: ['Completed', 'Closed'] }
+    });
+    
+    let updatedCount = 0;
+    for (const ticket of unresolvedTickets) {
+        // Calculate age of the ticket
+        const diffTime = Math.abs(now - ticket.createdAt);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        let priorityChanged = false;
+        let emailSent = false;
+        let escalationLogged = false;
+        let oldPriority = ticket.priority;
+        let newPriority = oldPriority;
+        let remarks = "";
+        let action = "";
+        
+        if (diffDays >= 8 && ticket.status !== 'Escalated') {
+            // Day 8+: Escalation workflow
+            ticket.status = 'Escalated';
+            ticket.priority = 'P1';
+            newPriority = 'P1';
+            action = "Escalations";
+            remarks = `Auto-escalated to Regional Marketing Head after 8 days of SLA breach.`;
+            
+            const regionalHeadEmail = 'regional.marketing.head@manipal.com';
+            const escalHtml = getEmailTemplate(`
+                <h2 style="color: #d32f2f;">SLA Breach Escalation Notice</h2>
+                <p>The GMB operations ticket <strong>${ticket.ticketId}</strong> has been unresolved for 8+ days and is escalated to the Regional Marketing Head.</p>
+                <p><strong>Assignee:</strong> ${ticket.assignedTo.name} (${ticket.assignedTo.email})</p>
+                <p><strong>Branch:</strong> ${ticket.branch}</p>
+            `);
+            await sendEmail(regionalHeadEmail, `SLA BREACH ESCALATION: ${ticket.ticketId}`, escalHtml);
+            await sendEmail('harsh@multipliersolutions.com', `SLA BREACH ESCALATION: ${ticket.ticketId}`, escalHtml);
+            
+            escalationLogged = true;
+        } else if (diffDays === 7 && ticket.priority !== 'P1') {
+            ticket.priority = 'P1';
+            newPriority = 'P1';
+            action = "Priority Changes";
+            remarks = `Auto-increased priority to P1 (Day 7). Final SLA reminder logged.`;
+            
+            priorityChanged = true;
+            emailSent = true;
+        } else if (diffDays === 6 && ticket.priority !== 'P2') {
+            ticket.priority = 'P2';
+            newPriority = 'P2';
+            action = "Priority Changes";
+            remarks = `Auto-increased priority to P2 (Day 6). SLA reminder logged.`;
+            
+            priorityChanged = true;
+            emailSent = true;
+        } else if (diffDays === 5 && ticket.priority !== 'P2') {
+            ticket.priority = 'P2';
+            newPriority = 'P2';
+            action = "Priority Changes";
+            remarks = `Auto-increased priority to P2 (Day 5). SLA reminder logged.`;
+            
+            priorityChanged = true;
+            emailSent = true;
+        } else if (diffDays === 4 && ticket.priority !== 'P3') {
+            ticket.priority = 'P3';
+            newPriority = 'P3';
+            action = "Priority Changes";
+            remarks = `Auto-increased priority to P3 (Day 4).`;
+            priorityChanged = true;
+        } else if (diffDays === 3 && ticket.priority !== 'P4') {
+            ticket.priority = 'P4';
+            newPriority = 'P4';
+            action = "Priority Changes";
+            remarks = `Auto-increased priority to P4 (Day 3).`;
+            priorityChanged = true;
+        }
+        
+        if (priorityChanged || escalationLogged) {
+            ticket.activityLogs.push({
+                user: "System",
+                email: "system@manipal.com",
+                action: action,
+                prevValue: oldPriority,
+                newValue: newPriority,
+                remarks: remarks,
+                timestamp: new Date()
+            });
+            ticket.updatedAt = new Date();
+            await ticket.save();
+
+            // Create Dashboard Notification (Alert)
+            try {
+                const slaAlert = new Alert({
+                    user: 'System',
+                    role: 'System',
+                    location: ticket.branch,
+                    cluster: ticket.cluster,
+                    type: 'TICKET_SLA',
+                    targetEmail: ticket.assignedTo.email,
+                    message: `Ticket ${ticket.ticketId} SLA Update: ${remarks}`
+                });
+                await slaAlert.save();
+            } catch (alertErr) {
+                console.error("Failed to create SLA check alert:", alertErr);
+            }
+
+            updatedCount++;
+        }
+    }
+    return updatedCount;
+};
+
+// 7. Diagnostics endpoint to run SLA progression check instantly
+app.get('/api/tickets/run-sla-check', async (req, res) => {
+    try {
+        const count = await runSlaCheck();
+        res.json({ success: true, message: `SLA check triggered manually. Updated ${count} tickets.` });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Daily Cron Job for SLA Check at 00:00
+cron.schedule('0 0 * * *', async () => {
+    console.log("Running scheduled daily SLA checker...");
+    try {
+        const count = await runSlaCheck();
+        console.log(`Daily SLA check completed. Updated ${count} tickets.`);
+    } catch (error) {
+        console.error("Cron SLA Checker Error:", error);
     }
 });
 

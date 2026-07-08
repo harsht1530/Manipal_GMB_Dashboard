@@ -21,6 +21,15 @@ import Postings from "./pages/Postings";
 import CriticalIssues from "./pages/CriticalIssues";
 import NotFound from "./pages/NotFound";
 
+import { TicketProvider } from "./contexts/TicketContext";
+import TicketDashboard from "./pages/tickets/TicketDashboard";
+import RaiseTicket from "./pages/tickets/RaiseTicket";
+import ReminderEscalation from "./pages/tickets/ReminderEscalation";
+import SlaProgress from "./pages/tickets/SlaProgress";
+import TicketDetails from "./pages/tickets/TicketDetails";
+import AdminTicketConsole from "./pages/tickets/AdminTicketConsole";
+import MultiplierRaiseRequest from "./pages/tickets/MultiplierRaiseRequest";
+
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { Navigate } from "react-router-dom";
 
@@ -68,6 +77,24 @@ const App = () => (
             <Route path="/raising-case" element={<ProtectedRoute><RaisingCase /></ProtectedRoute>} />
             <Route path="/critical-issues" element={<ProtectedRoute><CriticalIssues /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+            
+            {/* GMB Ticket routes wrapped in TicketProvider */}
+            <Route path="/tickets/*" element={
+              <ProtectedRoute>
+                <TicketProvider>
+                  <Routes>
+                    <Route path="dashboard" element={<TicketDashboard />} />
+                    <Route path="admin-console" element={<AdminTicketConsole />} />
+                    <Route path="raise" element={<RaiseTicket />} />
+                    <Route path="multiplier-raise" element={<MultiplierRaiseRequest />} />
+                    <Route path="escalations" element={<ReminderEscalation />} />
+                    <Route path="sla-progress" element={<SlaProgress />} />
+                    <Route path="details/:ticketId" element={<TicketDetails />} />
+                  </Routes>
+                </TicketProvider>
+              </ProtectedRoute>
+            } />
+
             <Route path="*" element={<NotFound />} />
           </Routes>
         </HashRouter>

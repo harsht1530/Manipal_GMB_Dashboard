@@ -28,8 +28,8 @@ export const Header = ({ title, subtitle }: HeaderProps) => {
   const [alerts, setAlerts] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  const canSeeAlerts = user?.role === "Admin" || user?.role === "Cluster" || user?.email === "harsh@multipliersolutions.com";
-  const isAdminOrSuper = user?.role === "Admin" || user?.email === "harsh@multipliersolutions.com";
+  const canSeeAlerts = !!user;
+  const isAdminOrSuper = user?.role === "Admin";
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://smldatamanagement.multiplierai.co";
 
   const fetchAlerts = async () => {
@@ -38,7 +38,8 @@ export const Header = ({ title, subtitle }: HeaderProps) => {
       const params = new URLSearchParams({
         email: user?.email || "",
         role: user?.role || "",
-        cluster: user?.cluster || ""
+        cluster: user?.cluster || "",
+        branch: user?.branch || ""
       });
       const res = await fetch(`${API_BASE_URL}/api/alerts?${params.toString()}`);
       const data = await res.json();
@@ -207,7 +208,7 @@ export const Header = ({ title, subtitle }: HeaderProps) => {
                             </Badge>
                           </div>
                           <p className="text-[11px] text-muted-foreground mt-0.5 italic">
-                            Logged in to the portal
+                            {alert.message || "Logged in to the portal"}
                           </p>
                         </div>
                       </div>

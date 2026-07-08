@@ -21,6 +21,14 @@ const alertSchema = new mongoose.Schema({
         type: String,
         default: 'LOGIN'
     },
+    message: {
+        type: String,
+        required: false
+    },
+    targetEmail: {
+        type: String,
+        required: false
+    },
     timestamp: {
         type: Date,
         default: Date.now

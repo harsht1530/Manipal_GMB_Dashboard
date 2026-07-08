@@ -269,6 +269,37 @@ const Index = () => {
   }, [filteredData]);
 
   // Processed locations data with conditional logic
+  const latestLocationsInfo = useMemo(() => {
+    if (locations.length === 0) {
+      const now = new Date();
+      const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      return {
+        month: monthOrder[now.getMonth() - 1] || "Dec",
+        year: (now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()).toString(),
+        date: null
+      };
+    }
+
+    const sortedLocations = [...locations].sort((a, b) => {
+      const timeA = a.date ? parseDateString(a.date).getTime() : 0;
+      const timeB = b.date ? parseDateString(b.date).getTime() : 0;
+      if (!isNaN(timeA) && !isNaN(timeB) && timeA !== timeB) return timeB - timeA;
+      
+      const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      return monthOrder.indexOf(b.month) - monthOrder.indexOf(a.month);
+    });
+
+    const latest = sortedLocations[0];
+    const latestDate = parseDateString(latest.date);
+    const fallbackYear = latest.date?.split('-')[2]?.length === 4 ? latest.date?.split('-')[2] : new Date().getFullYear().toString();
+    
+    return {
+      month: latest.month || "Jan",
+      year: !isNaN(latestDate.getFullYear()) ? latestDate.getFullYear().toString() : fallbackYear,
+      date: latest.date
+    };
+  }, [locations]);
+
   const processedLocations = useMemo(() => {
     const isSpecialityFiltered = selectedSpeciality.length > 0;
     const isRatingFiltered = selectedRatings.length > 0;
@@ -324,9 +355,10 @@ const Index = () => {
     }
 
     // Default: Return locations filtered by sidebar/header filters
-    // If no month is selected, we default to latestDataMonth and latestDataYear for locations as well
-    const locationsTargetMonth = selectedMonth.length > 0 ? selectedMonth.map(m => m.split(' ')[0]) : [latestDataMonth];
-    const locationsTargetYear = selectedMonth.length > 0 ? selectedMonth.map(m => m.split(' ')[1]) : (selectedYear.length > 0 ? selectedYear : [latestDataYear]);
+    // If no month is selected, we default to latestLocationsInfo for locations specifically
+    const locationsTargetMonth = selectedMonth.length > 0 ? selectedMonth.map(m => m.split(' ')[0]) : [latestLocationsInfo.month];
+    const locationsTargetYear = selectedMonth.length > 0 ? selectedMonth.map(m => m.split(' ')[1]) : (selectedYear.length > 0 ? selectedYear : [latestLocationsInfo.year]);
+    const locationsTargetDate = selectedMonth.length === 0 && selectedYear.length === 0 ? latestLocationsInfo.date : null;
 
     return locations.filter(loc => {
       const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(loc.cluster);
@@ -347,15 +379,77 @@ const Index = () => {
       if (locationsTargetYear.length > 0) {
         yearMatch = locationsTargetYear.includes(locYear);
       }
+      
+      let exactDateMatch = true;
+      if (locationsTargetDate) {
+        exactDateMatch = loc.date === locationsTargetDate;
+      }
 
-      return clusterMatch && branchMatch && exactMonthMatch && departmentMatch && yearMatch;
+      return clusterMatch && branchMatch && exactMonthMatch && departmentMatch && yearMatch && exactDateMatch;
     });
-  }, [insights, locations, selectedCluster, selectedBranch, selectedSpeciality, selectedDepartments, selectedRatings, selectedMonth, latestDataMonth, selectedYear]);
+  }, [insights, locations, selectedCluster, selectedBranch, selectedSpeciality, selectedDepartments, selectedRatings, selectedMonth, latestDataMonth, selectedYear, latestLocationsInfo]);
 
   // Extract apiInsights (items that have a statusType from the new collection)
   const apiInsights = useMemo(() => {
     return filteredData.filter(i => i.statusType !== undefined);
   }, [filteredData]);
+
+  const overviewLocations = useMemo(() => {
+    const isSpecialityFiltered = selectedSpeciality.length > 0;
+    const isRatingFiltered = selectedRatings.length > 0;
+
+    if (isSpecialityFiltered || isRatingFiltered) {
+      // Group by month and branch
+      const filteredInsights = insights.filter(i => {
+        return (selectedCluster.length === 0 || selectedCluster.includes(i.cluster)) &&
+          (selectedBranch.length === 0 || selectedBranch.includes(i.branch)) &&
+          (selectedSpeciality.length === 0 || selectedSpeciality.includes(i.speciality)) &&
+          (selectedDepartments.length === 0 || selectedDepartments.includes(i.department)) &&
+          (selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(i.rating) === r));
+      });
+
+      const monthBranchGroups = filteredInsights.reduce((acc, i) => {
+        const key = `${i.month}-${i.branch}`;
+        if (!acc[key]) acc[key] = { names: new Set<string>(), month: i.month, branch: i.branch, cluster: i.cluster, date: i.date };
+        acc[key].names.add(i.businessName);
+        return acc;
+      }, {} as Record<string, any>);
+
+      return Object.values(monthBranchGroups).map((data: any) => ({
+        id: `dynamic-${data.month}-${data.branch}`,
+        month: data.month,
+        cluster: data.cluster || "",
+        unitName: data.branch,
+        department: "Multiple",
+        totalProfiles: data.names.size,
+        verifiedProfiles: data.names.size,
+        unverifiedProfiles: 0,
+        needAccess: 0,
+        notInterested: 0,
+        outOfOrganization: 0,
+        date: data.date
+      }));
+    }
+
+    return locations.filter(loc => {
+      const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(loc.cluster);
+      const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(loc.unitName);
+      const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(loc.department);
+      return clusterMatch && branchMatch && departmentMatch;
+    });
+  }, [insights, locations, selectedCluster, selectedBranch, selectedSpeciality, selectedDepartments, selectedRatings]);
+
+  const overviewApiInsights = useMemo(() => {
+    return insights.filter(i => {
+      const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(i.cluster);
+      const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(i.branch);
+      const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(i.department);
+      const specialityMatch = selectedSpeciality.length === 0 || selectedSpeciality.includes(i.speciality);
+      const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(i.rating) === r);
+      return clusterMatch && branchMatch && departmentMatch && specialityMatch && ratingMatch && i.statusType !== undefined;
+    });
+  }, [insights, selectedCluster, selectedBranch, selectedDepartments, selectedSpeciality, selectedRatings]);
+
 
   // Dynamic metrics calculation for cumulative and month-over-month comparisons
   const dynamicMetrics = useMemo(() => {
@@ -790,7 +884,7 @@ const Index = () => {
         )}
 
         <div className="mb-6">
-          <LocationsOverview data={processedLocations} apiInsights={apiInsights} selectedMonths={selectedMonth.map(m => m.substring(0, 3))} />
+          <LocationsOverview data={overviewLocations} apiInsights={overviewApiInsights} selectedMonths={selectedMonth.map(m => m.substring(0, 3))} />
         </div>
 
         {/* Metrics Grid - 2 rows of 4 cards */}
