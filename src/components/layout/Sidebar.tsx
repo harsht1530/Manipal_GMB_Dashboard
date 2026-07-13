@@ -39,18 +39,18 @@ const navItems = [
   { icon: Target, label: "Monthly Optimisation", path: "/optimizations" },
   { icon: FileText, label: "GBP Postings", path: "/postings" },
   { icon: Ticket, label: "Case Management", path: "/raising-case" },
-  // {
-  //   label: "GMB Ticketing",
-  //   icon: ClipboardList,
-  //   path: "/tickets",
-  //   isParent: true,
-  //   children: [
-  //     { icon: LayoutDashboard, label: "Ticket Dashboard", path: "/tickets/dashboard" },
-  //     { icon: PlusCircle, label: "Raise Ticket", path: "/tickets/raise" },
-  //     { icon: ShieldAlert, label: "SLA Alerts", path: "/tickets/escalations" },
-  //     { icon: Clock, label: "SLA Pipeline", path: "/tickets/sla-progress" },
-  //   ]
-  // },
+  {
+    label: "GMB Ticketing",
+    icon: ClipboardList,
+    path: "/tickets",
+    isParent: true,
+    children: [
+      { icon: LayoutDashboard, label: "Ticket Dashboard", path: "/tickets/dashboard" },
+      { icon: PlusCircle, label: "Raise Ticket", path: "/tickets/raise" },
+      { icon: ShieldAlert, label: "SLA Alerts", path: "/tickets/escalations" },
+      { icon: Clock, label: "SLA Pipeline", path: "/tickets/sla-progress" },
+    ]
+  },
   { icon: AlertTriangle, label: "Critical Issues", path: "/critical-issues" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
@@ -111,9 +111,9 @@ export const Sidebar = ({
   ticketingChildren.push({ icon: Clock, label: "SLA Pipeline", path: "/tickets/sla-progress" });
 
   // Only Multiplier team members can raise a request to Branch users
-  if (isMultiplierUser) {
-    ticketingChildren.push({ icon: PlusCircle, label: "Request to Branch", path: "/tickets/multiplier-raise" });
-  }
+  // if (isMultiplierUser) {
+  //   ticketingChildren.push({ icon: PlusCircle, label: "Request to Branch", path: "/tickets/multiplier-raise" });
+  // }
 
   const filteredNavItems = navItems.map(item => {
     if (item.label === "GMB Ticketing") {
@@ -180,73 +180,73 @@ export const Sidebar = ({
       <div className="flex-1 overflow-y-auto py-4 scrollbar-hide">
         <nav className="space-y-1 px-3">
           {filteredNavItems.map((item) => {
-            // if (item.isParent) {
-            //   const hasActiveChild = item.children?.some(child => location.pathname === child.path);
+            if (item.isParent) {
+              const hasActiveChild = item.children?.some(child => location.pathname === child.path);
 
-            //   if (collapsed) {
-            //     return (
-            //       <NavLink
-            //         key={item.path}
-            //         to={item.children?.[0].path || item.path}
-            //         className={cn(
-            //           "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 group relative justify-center px-0 h-10 w-10 mx-auto",
-            //           hasActiveChild
-            //             ? "bg-sidebar-primary/10 text-sidebar-primary shadow-sm"
-            //             : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            //         )}
-            //       >
-            //         <item.icon className={cn("h-5 w-5 shrink-0 transition-transform group-hover:scale-110", hasActiveChild && "text-sidebar-primary")} />
-            //         <div className="absolute left-full ml-2 px-2 py-1 bg-popover text-popover-foreground text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 border whitespace-nowrap shadow-lg">
-            //           {item.label}
-            //         </div>
-            //       </NavLink>
-            //     );
-            //   }
+              if (collapsed) {
+                return (
+                  <NavLink
+                    key={item.path}
+                    to={item.children?.[0].path || item.path}
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 group relative justify-center px-0 h-10 w-10 mx-auto",
+                      hasActiveChild
+                        ? "bg-sidebar-primary/10 text-sidebar-primary shadow-sm"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    )}
+                  >
+                    <item.icon className={cn("h-5 w-5 shrink-0 transition-transform group-hover:scale-110", hasActiveChild && "text-sidebar-primary")} />
+                    <div className="absolute left-full ml-2 px-2 py-1 bg-popover text-popover-foreground text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 border whitespace-nowrap shadow-lg">
+                      {item.label}
+                    </div>
+                  </NavLink>
+                );
+              }
 
-            //   return (
-            //     <div key={item.label} className="space-y-1 text-left">
-            //       <button
-            //         type="button"
-            //         onClick={() => setTicketsExpanded(!ticketsExpanded)}
-            //         className={cn(
-            //           "w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 group relative text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            //         )}
-            //       >
-            //         <div className="flex items-center gap-3">
-            //           <item.icon className="h-5 w-5 shrink-0 transition-transform group-hover:scale-110" />
-            //           <span>{item.label}</span>
-            //         </div>
-            //         {ticketsExpanded ? (
-            //           <ChevronDown className="h-4 w-4 text-sidebar-foreground/50" />
-            //         ) : (
-            //           <ChevronRight className="h-4 w-4 text-sidebar-foreground/50" />
-            //         )}
-            //       </button>
-            //       {ticketsExpanded && (
-            //         <div className="ml-4 border-l border-sidebar-border pl-3 space-y-1">
-            //           {item.children?.map((child) => {
-            //             const isChildActive = location.pathname === child.path;
-            //             return (
-            //               <NavLink
-            //                 key={child.path}
-            //                 to={child.path}
-            //                 className={cn(
-            //                   "flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-all duration-200 group relative",
-            //                   isChildActive
-            //                     ? "bg-sidebar-primary/10 text-sidebar-primary shadow-sm"
-            //                     : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            //                 )}
-            //               >
-            //                 <child.icon className={cn("h-4 w-4 shrink-0 transition-transform group-hover:scale-110", isChildActive && "text-sidebar-primary")} />
-            //                 <span>{child.label}</span>
-            //               </NavLink>
-            //             );
-            //           })}
-            //         </div>
-            //       )}
-            //     </div>
-            //   );
-            // }
+              return (
+                <div key={item.label} className="space-y-1 text-left">
+                  <button
+                    type="button"
+                    onClick={() => setTicketsExpanded(!ticketsExpanded)}
+                    className={cn(
+                      "w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 group relative text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <item.icon className="h-5 w-5 shrink-0 transition-transform group-hover:scale-110" />
+                      <span>{item.label}</span>
+                    </div>
+                    {ticketsExpanded ? (
+                      <ChevronDown className="h-4 w-4 text-sidebar-foreground/50" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 text-sidebar-foreground/50" />
+                    )}
+                  </button>
+                  {ticketsExpanded && (
+                    <div className="ml-4 border-l border-sidebar-border pl-3 space-y-1">
+                      {item.children?.map((child) => {
+                        const isChildActive = location.pathname === child.path;
+                        return (
+                          <NavLink
+                            key={child.path}
+                            to={child.path}
+                            className={cn(
+                              "flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-all duration-200 group relative",
+                              isChildActive
+                                ? "bg-sidebar-primary/10 text-sidebar-primary shadow-sm"
+                                : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                            )}
+                          >
+                            <child.icon className={cn("h-4 w-4 shrink-0 transition-transform group-hover:scale-110", isChildActive && "text-sidebar-primary")} />
+                            <span>{child.label}</span>
+                          </NavLink>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
 
             const isActive = location.pathname === item.path;
             return (

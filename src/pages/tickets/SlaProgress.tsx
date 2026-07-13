@@ -50,10 +50,8 @@ export default function SlaProgress() {
     return tickets.filter(t => {
       if (isAdmin) return true;
       const isRaisedByUser = t.raisedBy.email.toLowerCase() === user.email.toLowerCase() &&
-        (t.raisedBy.role ? t.raisedBy.role === user.role : true) &&
         (user.role === "Branch" ? t.branch === user.branch : true);
-      const isAssignedToUser = t.assignedTo.email.toLowerCase() === user.email.toLowerCase() &&
-        (t.assignedTo.role ? t.assignedTo.role === user.role : true);
+      const isAssignedToUser = t.assignedTo.email.toLowerCase() === user.email.toLowerCase();
       return isRaisedByUser || isAssignedToUser;
     });
   }, [tickets, user]);

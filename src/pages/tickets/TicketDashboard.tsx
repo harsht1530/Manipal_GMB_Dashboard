@@ -40,18 +40,29 @@ export default function TicketDashboard() {
   const [branchFilter, setBranchFilter] = useState("all");
   const [activeTab, setActiveTab] = useState<"my-raised" | "assigned-to-me">("my-raised");
 
+  // Filter tickets by active tab (access level/email/branch constraints)
+  const tabTickets = useMemo(() => {
+    return tickets.filter(t => {
+      const matchesTab = activeTab === "my-raised"
+        ? (t.raisedBy.email.toLowerCase() === user?.email.toLowerCase() &&
+           (user?.role === "Branch" ? t.branch === user?.branch : true))
+        : (t.assignedTo.email.toLowerCase() === user?.email.toLowerCase());
+      return matchesTab;
+    });
+  }, [tickets, activeTab, user]);
+
   // Calculate KPIs
   const kpis = useMemo(() => {
-    const total = tickets.length;
-    const open = tickets.filter(t => t.status === "Open").length;
-    const inProgress = tickets.filter(t => t.status === "In Progress").length;
-    const waiting = tickets.filter(t => t.status === "Waiting for Client" || t.status === "Waiting for Google").length;
-    const completed = tickets.filter(t => t.status === "Completed" || t.status === "Closed").length;
-    const escalated = tickets.filter(t => t.status === "Escalated").length;
-    const highPriority = tickets.filter(t => t.priority === "P1" || t.priority === "P2").length;
+    const total = tabTickets.length;
+    const open = tabTickets.filter(t => t.status === "Open").length;
+    const inProgress = tabTickets.filter(t => t.status === "In Progress").length;
+    const waiting = tabTickets.filter(t => t.status === "Waiting for Client" || t.status === "Waiting for Google").length;
+    const completed = tabTickets.filter(t => t.status === "Completed" || t.status === "Closed").length;
+    const escalated = tabTickets.filter(t => t.status === "Escalated").length;
+    const highPriority = tabTickets.filter(t => t.priority === "P1" || t.priority === "P2").length;
     
     // Average resolution time for completed/closed tickets
-    const closedTickets = tickets.filter(t => t.status === "Completed" || t.status === "Closed");
+    const closedTickets = tabTickets.filter(t => t.status === "Completed" || t.status === "Closed");
     let avgTimeStr = "2h 45m";
     if (closedTickets.length > 0) {
       const totalTimeMs = closedTickets.reduce((acc, t) => {
@@ -69,19 +80,19 @@ export default function TicketDashboard() {
     }
 
     return { total, open, inProgress, waiting, completed, escalated, highPriority, avgTimeStr };
-  }, [tickets]);
+  }, [tabTickets]);
 
   // Derived filter options
   const filterOptions = useMemo(() => {
-    const categories = Array.from(new Set(tickets.map(t => t.category))).filter(Boolean);
-    const clusters = Array.from(new Set(tickets.map(t => t.cluster))).filter(Boolean);
-    const branches = Array.from(new Set(tickets.map(t => t.branch))).filter(Boolean);
+    const categories = Array.from(new Set(tabTickets.map(t => t.category))).filter(Boolean);
+    const clusters = Array.from(new Set(tabTickets.map(t => t.cluster))).filter(Boolean);
+    const branches = Array.from(new Set(tabTickets.map(t => t.branch))).filter(Boolean);
     return { categories, clusters, branches };
-  }, [tickets]);
+  }, [tabTickets]);
 
   // Filter & Search Tickets
   const filteredTickets = useMemo(() => {
-    return tickets.filter(t => {
+    return tabTickets.filter(t => {
       // 1. Search term (ID, description, branch, category, names)
       const matchesSearch = 
         t.ticketId.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -90,42 +101,34 @@ export default function TicketDashboard() {
         t.raisedBy.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         t.assignedTo.name.toLowerCase().includes(searchTerm.toLowerCase());
 
-      // 2. Tab Filter
-      const matchesTab = activeTab === "my-raised"
-        ? (t.raisedBy.email.toLowerCase() === user?.email.toLowerCase() &&
-           (t.raisedBy.role ? t.raisedBy.role === user?.role : true) &&
-           (user?.role === "Branch" ? t.branch === user?.branch : true))
-        : (t.assignedTo.email.toLowerCase() === user?.email.toLowerCase() &&
-           (t.assignedTo.role ? t.assignedTo.role === user?.role : true));
-
-      // 3. Category Filter
+      // 2. Category Filter
       const matchesCategory = categoryFilter === "all" || t.category === categoryFilter;
 
-      // 4. Status Filter
+      // 3. Status Filter
       const matchesStatus = statusFilter === "all" || t.status === statusFilter;
 
-      // 5. Priority Filter
+      // 4. Priority Filter
       const matchesPriority = priorityFilter === "all" || t.priority === priorityFilter;
 
-      // 6. Cluster Filter
+      // 5. Cluster Filter
       const matchesCluster = clusterFilter === "all" || t.cluster === clusterFilter;
 
-      // 7. Branch Filter
+      // 6. Branch Filter
       const matchesBranch = branchFilter === "all" || t.branch === branchFilter;
 
-      return matchesSearch && matchesTab && matchesCategory && matchesStatus && matchesPriority && matchesCluster && matchesBranch;
+      return matchesSearch && matchesCategory && matchesStatus && matchesPriority && matchesCluster && matchesBranch;
     });
-  }, [tickets, searchTerm, categoryFilter, statusFilter, priorityFilter, clusterFilter, branchFilter, activeTab, user]);
+  }, [tabTickets, searchTerm, categoryFilter, statusFilter, priorityFilter, clusterFilter, branchFilter]);
 
   // Quick Summary Box calculation
   const quickSummary = useMemo(() => {
-    const open = tickets.filter(t => t.status === "Open").length;
-    const pending = tickets.filter(t => t.status === "In Progress" || t.status.startsWith("Waiting")).length;
-    const escalated = tickets.filter(t => t.status === "Escalated").length;
+    const open = tabTickets.filter(t => t.status === "Open").length;
+    const pending = tabTickets.filter(t => t.status === "In Progress" || t.status.startsWith("Waiting")).length;
+    const escalated = tabTickets.filter(t => t.status === "Escalated").length;
     
     // Today's due: due date matches today
     const today = new Date().toDateString();
-    const todayDue = tickets.filter(t => {
+    const todayDue = tabTickets.filter(t => {
       if (t.status === "Completed" || t.status === "Closed") return false;
       return new Date(t.dueDate).toDateString() === today;
     }).length;
@@ -135,14 +138,14 @@ export default function TicketDashboard() {
     startOfWeek.setHours(0, 0, 0, 0);
     const endOfWeek = new Date();
     endOfWeek.setDate(endOfWeek.getDate() + 7);
-    const thisWeekDue = tickets.filter(t => {
+    const thisWeekDue = tabTickets.filter(t => {
       if (t.status === "Completed" || t.status === "Closed") return false;
       const dueTime = new Date(t.dueDate).getTime();
       return dueTime >= startOfWeek.getTime() && dueTime <= endOfWeek.getTime();
     }).length;
 
     return { open, pending, escalated, todayDue, thisWeekDue };
-  }, [tickets]);
+  }, [tabTickets]);
 
   // Recent Activity Logs (latest 5 logs across all user's tickets)
   const recentLogs = useMemo(() => {

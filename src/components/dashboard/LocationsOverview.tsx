@@ -21,6 +21,7 @@ interface LocationsOverviewProps {
   data: LocationData[];
   apiInsights?: InsightData[];
   selectedMonths: string[];
+  selectedYear: string[];
 }
 
 const TrendIndicator = ({ current, previous, inverseColors = false }: { current: number; previous: number, inverseColors?: boolean }) => {
@@ -52,12 +53,35 @@ const TrendIndicator = ({ current, previous, inverseColors = false }: { current:
   );
 };
 
-export const LocationsOverview = ({ data, apiInsights = [], selectedMonths }: LocationsOverviewProps) => {
+export const LocationsOverview = ({ data, apiInsights = [], selectedMonths, selectedYear }: LocationsOverviewProps) => {
   const [viewMode, setViewMode] = useState<"standard" | "realtime">("standard");
   const [exportDataCtx, setExportDataCtx] = useState<{
     isOpen: boolean;
     type: "Total Profiles" | "Verified and Active" | "Unverified and others" | null;
   }>({ isOpen: false, type: null });
+
+  const getYearFromDoc = (doc: any) => {
+    if (!doc.date) return null;
+    const d = parseDateString(doc.date);
+    if (!isNaN(d.getFullYear())) return d.getFullYear().toString();
+    const parts = doc.date.split('-');
+    if (parts.length === 3) {
+      if (parts[2].length === 4) return parts[2];
+      if (parts[0].length === 4) return parts[0];
+    }
+    return null;
+  };
+
+  const getLatestYearOfDataset = (ds: any[]) => {
+    if (ds.length === 0) return new Date().getFullYear().toString();
+    const sorted = [...ds].sort((a, b) => {
+      const timeA = a.date ? parseDateString(a.date).getTime() : 0;
+      const timeB = b.date ? parseDateString(b.date).getTime() : 0;
+      return timeB - timeA;
+    });
+    const y = getYearFromDoc(sorted[0]);
+    return y || new Date().getFullYear().toString();
+  };
 
   const handleExportStandard = () => {
     const exportData = aggregatedData.map(d => ({
@@ -124,10 +148,28 @@ export const LocationsOverview = ({ data, apiInsights = [], selectedMonths }: Lo
   const getLatestDataScope = (dataset: any[]) => {
     if (dataset.length === 0) return { month: "Jan", date: null, prevMonth: null, prevDate: null };
 
-    let targetData = dataset;
+    // Resolve targetYear (e.g. from ["Jan 2025"] or selectedYear ["2025"])
+    const targetYear = selectedMonths.length > 0 && !selectedMonths.includes("All") && selectedMonths[0].split(' ').length === 2
+      ? selectedMonths[0].split(' ')[1]
+      : (selectedYear.length > 0 ? selectedYear[0] : getLatestYearOfDataset(dataset));
+
+    // Filter dataset by targetYear and targetYear - 1 to isolate calculation
+    const yearFilteredDataset = dataset.filter(d => {
+      const y = getYearFromDoc(d);
+      if (!y) return true;
+      return y === targetYear || y === String(parseInt(targetYear) - 1);
+    });
+
+    let targetData = yearFilteredDataset;
+
+    // Filter by selectedMonths (which has "Month Year" format, e.g. "Jan 2025")
     if (selectedMonths.length > 0 && !selectedMonths.includes("All")) {
-      targetData = dataset.filter(d => selectedMonths.includes(d.month));
-      if (targetData.length === 0) targetData = dataset; // fallback
+      targetData = yearFilteredDataset.filter(d => {
+        const docYear = getYearFromDoc(d);
+        const docMonthYear = docYear ? `${d.month} ${docYear}` : d.month;
+        return selectedMonths.includes(docMonthYear);
+      });
+      if (targetData.length === 0) targetData = yearFilteredDataset; // fallback
     }
 
     const sortedData = [...targetData].sort((a, b) => {
@@ -139,11 +181,15 @@ export const LocationsOverview = ({ data, apiInsights = [], selectedMonths }: Lo
       return monthOrder.indexOf(b.month) - monthOrder.indexOf(a.month);
     });
 
+    if (sortedData.length === 0) {
+      return { month: "Jan", date: null, prevMonth: null, prevDate: null };
+    }
+
     const latestMonth = sortedData[0].month || "Jan";
 
     // Chronologically find the preceding month that exists in the dataset
     const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const uniqueMonths = Array.from(new Set(dataset.map(d => d.month)))
+    const uniqueMonths = Array.from(new Set(yearFilteredDataset.map(d => d.month)))
       .sort((a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b));
       
     const latestMonthIndex = uniqueMonths.indexOf(latestMonth);
@@ -156,15 +202,20 @@ export const LocationsOverview = ({ data, apiInsights = [], selectedMonths }: Lo
       prevMonth = uniqueMonths[latestMonthIndex - 1];
     }
 
-    // Find the latest date of that prevMonth if it exists
+    // Find the latest date of that prevMonth if it exists and is strictly before targetData date
     let prevDate = null;
     if (prevMonth) {
-      const prevMonthItems = dataset.filter(d => d.month === prevMonth)
-        .sort((a, b) => {
-          const timeA = a.date ? parseDateString(a.date).getTime() : 0;
-          const timeB = b.date ? parseDateString(b.date).getTime() : 0;
-          return timeB - timeA;
-        });
+      const latestDateTime = sortedData[0].date ? parseDateString(sortedData[0].date).getTime() : Infinity;
+      const prevMonthItems = yearFilteredDataset.filter(d => {
+        if (d.month !== prevMonth) return false;
+        const t = d.date ? parseDateString(d.date).getTime() : 0;
+        return t < latestDateTime;
+      })
+      .sort((a, b) => {
+        const timeA = a.date ? parseDateString(a.date).getTime() : 0;
+        const timeB = b.date ? parseDateString(b.date).getTime() : 0;
+        return timeB - timeA;
+      });
       prevDate = prevMonthItems.length > 0 ? prevMonthItems[0].date : null;
     }
 
@@ -178,8 +229,23 @@ export const LocationsOverview = ({ data, apiInsights = [], selectedMonths }: Lo
 
   const standardScope = getLatestDataScope(data);
   const latestMonth = standardScope.month;
-  const filteredData = data.filter(d => d.month === standardScope.month && (!standardScope.date || d.date === standardScope.date));
-  const prevFilteredData = data.filter(d => d.month === standardScope.prevMonth && (!standardScope.prevDate || d.date === standardScope.prevDate));
+
+  // Filter with year checks
+  const filteredData = data.filter(d => {
+    const docYear = getYearFromDoc(d);
+    const scopeYear = standardScope.date ? getYearFromDoc({ date: standardScope.date }) : null;
+    return d.month === standardScope.month && 
+      (!standardScope.date || d.date === standardScope.date) &&
+      (!scopeYear || docYear === scopeYear);
+  });
+
+  const prevFilteredData = data.filter(d => {
+    const docYear = getYearFromDoc(d);
+    const prevScopeYear = standardScope.prevDate ? getYearFromDoc({ date: standardScope.prevDate }) : null;
+    return d.month === standardScope.prevMonth && 
+      (!standardScope.prevDate || d.date === standardScope.prevDate) &&
+      (!prevScopeYear || docYear === prevScopeYear);
+  });
 
 
   // Standard aggregation
@@ -334,7 +400,9 @@ export const LocationsOverview = ({ data, apiInsights = [], selectedMonths }: Lo
                 </Badge>
               )}
               <Badge variant="outline" className="text-xs ml-2 hidden md:inline-flex">
-                Showing: {viewMode === "realtime" ? realtimeLatestMonth : latestMonth}
+                Showing: {viewMode === "realtime" 
+                  ? `${realtimeLatestMonth} ${realtimeScope.date ? getYearFromDoc({ date: realtimeScope.date }) : ""}` 
+                  : `${latestMonth} ${standardScope.date ? getYearFromDoc({ date: standardScope.date }) : ""}`}
               </Badge>
             </div>
 

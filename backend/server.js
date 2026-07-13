@@ -716,36 +716,29 @@ app.get('/api/alerts', async (req, res) => {
     try {
         let query = {};
         
-        // Check if user is in Multiplier Team list
-        const isMultiplier = await MultiplierTeam.findOne({ email });
+        // Check if user is in Multiplier Team list (case-insensitive)
+        const isMultiplier = email ? await MultiplierTeam.findOne({ email: { $regex: new RegExp(`^${email}$`, 'i') } }) : null;
 
         // Hierarchical Filtering Logic
         if (email === "harsh@multipliersolutions.com" && role === "Admin") {
             // Super Admin: Sees everything when logged in as Admin
             query = {};
         } else if (isMultiplier) {
-            // Multiplier: Sees logins of Branch users in their cluster, and GMB ticket alerts for their cluster
+            // Multiplier: Sees GMB ticket alerts for their cluster
             query = {
-                $or: [
-                    { role: "Branch", cluster: isMultiplier.cluster },
-                    { cluster: isMultiplier.cluster, type: { $regex: /^TICKET_/ } }
-                ]
+                cluster: isMultiplier.cluster,
+                type: { $regex: /^TICKET_/ }
             };
         } else if (role === "Admin") {
-            // Admin: Sees logins and all ticket alerts
+            // Admin: Sees all ticket alerts
             query = {
-                $or: [
-                    { role: { $in: ["Cluster", "Branch"] } },
-                    { type: { $regex: /^TICKET_/ } }
-                ]
+                type: { $regex: /^TICKET_/ }
             };
         } else if (role === "Cluster") {
-            // Cluster: Sees logins of Branch users under their cluster, and ticket alerts in their cluster
+            // Cluster: Sees GMB ticket alerts in their cluster
             query = {
-                $or: [
-                    { role: "Branch", cluster: cluster },
-                    { cluster: cluster, type: { $regex: /^TICKET_/ } }
-                ]
+                cluster: cluster,
+                type: { $regex: /^TICKET_/ }
             };
         } else if (role === "Branch") {
             // Branch user: Sees GMB ticket alerts for their branch
@@ -1308,26 +1301,22 @@ app.get('/api/tickets', async (req, res) => {
     try {
         let filter = {};
         
-        // Check if user is in Multiplier Team list and logged in with Multiplier role
-        const isMultiplier = (role === "Multiplier") && await MultiplierTeam.findOne({ email });
+        // Check if user is in Multiplier Team list (case-insensitive) or has Multiplier role
+        const teamMember = email ? await MultiplierTeam.findOne({ email: { $regex: new RegExp(`^${email}$`, 'i') } }) : null;
+        const isMultiplier = (role === "Multiplier" || !!teamMember);
         
         if (role === 'Admin') {
             filter = {};
         } else if (isMultiplier) {
             // Multiplier team members manage a cluster. They should see:
-            // 1. Tickets assigned directly to them (with matching Multiplier role).
+            // 1. Tickets assigned directly to them (case-insensitively).
             // 2. Tickets belonging to the cluster they manage.
+            const targetCluster = teamMember ? teamMember.cluster : cluster;
+            const emailFilter = email ? { $regex: new RegExp(`^${email}$`, 'i') } : "";
             filter = {
                 $or: [
-                    { 
-                        "assignedTo.email": email, 
-                        $or: [
-                            { "assignedTo.role": "Multiplier" },
-                            { "assignedTo.role": { $exists: false } },
-                            { "assignedTo.role": null }
-                        ]
-                    },
-                    { cluster: isMultiplier.cluster }
+                    { "assignedTo.email": emailFilter },
+                    { cluster: targetCluster }
                 ]
             };
         } else if (role === 'Branch' && branch) {
@@ -1335,25 +1324,12 @@ app.get('/api/tickets', async (req, res) => {
         } else if (role === 'Cluster' && cluster) {
             filter = { cluster: cluster };
         } else {
-            // Fallback: match raisedBy/assignedTo email + role
+            // Fallback: match raisedBy/assignedTo email case-insensitively
+            const emailFilter = email ? { $regex: new RegExp(`^${email}$`, 'i') } : "";
             filter = {
                 $or: [
-                    { 
-                        "raisedBy.email": email, 
-                        $or: [
-                            { "raisedBy.role": role },
-                            { "raisedBy.role": { $exists: false } },
-                            { "raisedBy.role": null }
-                        ]
-                    },
-                    { 
-                        "assignedTo.email": email, 
-                        $or: [
-                            { "assignedTo.role": role },
-                            { "assignedTo.role": { $exists: false } },
-                            { "assignedTo.role": null }
-                        ]
-                    }
+                    { "raisedBy.email": emailFilter },
+                    { "assignedTo.email": emailFilter }
                 ]
             };
         }
@@ -1371,7 +1347,7 @@ app.post('/api/tickets', uploadTicket.fields([
     { name: 'attachments', maxCount: 10 }
 ]), async (req, res) => {
     try {
-        const { category, ticketType, raisedByName, raisedByEmail, raisedByRole, cluster, branch, description } = req.body;
+        const { category, ticketType, raisedByName, raisedByEmail, raisedByRole, cluster, branch, description, assignedToName, assignedToEmail } = req.body;
         
         // Generate Sequential Ticket ID
         const currentYear = new Date().getFullYear();
@@ -1386,25 +1362,39 @@ app.post('/api/tickets', uploadTicket.fields([
         }
         const ticketId = `TKT-${currentYear}-${String(nextSeq).padStart(5, '0')}`;
         
-        // Auto-assign Owner based on cluster mapping
+        // Check if raiser is a Multiplier team member (case-insensitive email match)
+        const isRaiserMultiplier = await MultiplierTeam.findOne({ email: { $regex: new RegExp(`^${raisedByEmail}$`, 'i') } });
+
+        // Auto-assign Owner
         let assignee = { name: "Harsh", email: "harsh@multipliersolutions.com" }; // default fallback
-        const teamMembers = await MultiplierTeam.find({ cluster: cluster });
-        if (teamMembers && teamMembers.length > 0) {
-            if (teamMembers.length === 1) {
-                assignee = { name: teamMembers[0].name, email: teamMembers[0].email };
-            } else {
-                // Workout-based distribution: Assign to member with fewest active tickets
-                let minCount = Infinity;
-                let selectedMember = teamMembers[0];
-                for (const member of teamMembers) {
-                    const count = await ManipalTicket.countDocuments({ "assignedTo.email": member.email, status: { $ne: 'Closed' } });
-                    if (count < minCount) {
-                        minCount = count;
-                        selectedMember = member;
+        let assignedRole = 'Multiplier';
+        let assignRemarks = '';
+
+        if (isRaiserMultiplier && assignedToEmail && assignedToName) {
+            assignee = { name: assignedToName, email: assignedToEmail };
+            assignedRole = 'Branch';
+            assignRemarks = `Assigned directly to Branch user: ${assignee.name}.`;
+        } else {
+            // Auto-assign Owner based on cluster mapping
+            const teamMembers = await MultiplierTeam.find({ cluster: cluster });
+            if (teamMembers && teamMembers.length > 0) {
+                if (teamMembers.length === 1) {
+                    assignee = { name: teamMembers[0].name, email: teamMembers[0].email };
+                } else {
+                    // Workout-based distribution: Assign to member with fewest active tickets
+                    let minCount = Infinity;
+                    let selectedMember = teamMembers[0];
+                    for (const member of teamMembers) {
+                        const count = await ManipalTicket.countDocuments({ "assignedTo.email": member.email, status: { $ne: 'Closed' } });
+                        if (count < minCount) {
+                            minCount = count;
+                            selectedMember = member;
+                        }
                     }
+                    assignee = { name: selectedMember.name, email: selectedMember.email };
                 }
-                assignee = { name: selectedMember.name, email: selectedMember.email };
             }
+            assignRemarks = `Automatically assigned based on Cluster mapping to cluster owner: ${assignee.name}.`;
         }
         
         // SLA: 7 days lifecycle
@@ -1443,7 +1433,7 @@ app.post('/api/tickets', uploadTicket.fields([
                 user: "System",
                 email: "system@manipal.com",
                 action: "Ticket Assigned",
-                remarks: `Automatically assigned based on Cluster mapping to cluster owner: ${assignee.name}.`,
+                remarks: assignRemarks,
                 newValue: assignee.email,
                 timestamp: new Date()
             }
@@ -1453,8 +1443,8 @@ app.post('/api/tickets', uploadTicket.fields([
             ticketId,
             category,
             ticketType,
-            raisedBy: { name: raisedByName, email: raisedByEmail, role: raisedByRole || 'Branch' },
-            assignedTo: { name: assignee.name, email: assignee.email, role: 'Multiplier' },
+            raisedBy: { name: raisedByName, email: raisedByEmail, role: raisedByRole || (isRaiserMultiplier ? 'Multiplier' : 'Branch') },
+            assignedTo: { name: assignee.name, email: assignee.email, role: assignedRole },
             cluster,
             branch,
             dueDate,

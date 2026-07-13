@@ -54,7 +54,7 @@ const CATEGORY_MAP: Record<string, string[]> = {
 
 export default function RaiseTicket() {
   const { user } = useAuth();
-  const { createTicket, team } = useTickets();
+  const { createTicket, team, isMultiplier, currentMultiplierTeamMember } = useTickets();
   const { insights } = useMongoData();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -64,10 +64,67 @@ export default function RaiseTicket() {
   // Form values
   const [category, setCategory] = useState("");
   const [ticketType, setTicketType] = useState("");
-  const [branch, setBranch] = useState("");
+  const [branch, setBranch] = useState(user?.role === "Branch" && user?.branch ? user.branch : "");
   const [description, setDescription] = useState("");
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [attachments, setAttachments] = useState<File[]>([]);
+
+  // Multiplier specific state for target assignee
+  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [assignedUserEmail, setAssignedUserEmail] = useState("");
+  const [assignedUserName, setAssignedUserName] = useState("");
+
+  // Fetch users if multiplier
+  useEffect(() => {
+    if (isMultiplier) {
+      fetch(`${import.meta.env.VITE_API_BASE_URL || "http://localhost:5000"}/api/users`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.data) {
+            setAllUsers(data.data);
+          }
+        })
+        .catch(err => console.error("Error fetching users for branch mapping:", err));
+    }
+  }, [isMultiplier]);
+
+  // Derive all users in the same cluster as the multiplier
+  const clusterUsers = useMemo(() => {
+    if (!currentMultiplierTeamMember?.cluster) return [];
+    return allUsers.filter(u => {
+      return u.Cluster && u.Cluster.toLowerCase() === currentMultiplierTeamMember.cluster.toLowerCase();
+    });
+  }, [allUsers, currentMultiplierTeamMember]);
+
+  // Synchronize branch with selected user's Branch/Cluster
+  useEffect(() => {
+    if (isMultiplier && assignedUserEmail) {
+      const selectedUserObj = clusterUsers.find(u => (u.orgEmail || u.mail) === assignedUserEmail);
+      if (selectedUserObj) {
+        setBranch(selectedUserObj.Branch || selectedUserObj.Cluster || "All");
+      }
+    }
+  }, [assignedUserEmail, clusterUsers, isMultiplier]);
+
+  // Auto-select assignee if there is only 1 user for the cluster
+  useEffect(() => {
+    if (isMultiplier) {
+      if (clusterUsers.length === 1) {
+        const u = clusterUsers[0];
+        setAssignedUserEmail(u.orgEmail || u.mail || "");
+        setAssignedUserName(u.Name || u.user || "");
+      } else if (clusterUsers.length === 0) {
+        setAssignedUserEmail("");
+        setAssignedUserName("");
+      } else {
+        const stillExists = clusterUsers.some(u => (u.orgEmail || u.mail) === assignedUserEmail);
+        if (!stillExists) {
+          setAssignedUserEmail("");
+          setAssignedUserName("");
+        }
+      }
+    }
+  }, [clusterUsers, isMultiplier, assignedUserEmail]);
 
   // Reset ticket type on category change
   useEffect(() => {
@@ -76,9 +133,6 @@ export default function RaiseTicket() {
 
   // Derive clusters & branches from insights data
   const { branches, clustersMap } = useMemo(() => {
-    const activeBranches = Array.from(new Set((insights || []).map((i: any) => i.branch))).filter(Boolean).sort() as string[];
-    
-    // Map each branch to its cluster
     const map: Record<string, string> = {};
     (insights || []).forEach((i: any) => {
       if (i.branch && i.cluster) {
@@ -86,14 +140,45 @@ export default function RaiseTicket() {
       }
     });
 
+    let activeBranches = Array.from(new Set((insights || []).map((i: any) => i.branch))).filter(Boolean).sort() as string[];
+
+    // Explicitly filter branches based on user role to guarantee correctness
+    if (isMultiplier && currentMultiplierTeamMember?.cluster) {
+      activeBranches = activeBranches.filter(br => {
+        const brCluster = map[br];
+        return brCluster && brCluster.toLowerCase() === currentMultiplierTeamMember.cluster.toLowerCase();
+      });
+    } else if (user) {
+      if (user.role === "Branch" && user.branch) {
+        activeBranches = activeBranches.filter(br => br.toLowerCase() === user.branch!.toLowerCase());
+        if (activeBranches.length === 0) {
+          activeBranches = [user.branch];
+        }
+      } else if (user.role === "Cluster" && user.cluster) {
+        activeBranches = activeBranches.filter(br => {
+          const brCluster = map[br];
+          return brCluster && brCluster.toLowerCase() === user.cluster!.toLowerCase();
+        });
+      }
+    }
+
     return { branches: activeBranches, clustersMap: map };
-  }, [insights]);
+  }, [insights, user, isMultiplier, currentMultiplierTeamMember]);
 
   // Derive cluster & auto-assigned person for the selected branch
   const derivedCluster = useMemo(() => {
     if (!branch) return "";
-    return clustersMap[branch] || "";
-  }, [branch, clustersMap]);
+    let cl = clustersMap[branch] || "";
+    // If clustersMap has not loaded yet, fallback to user's cluster for branch users or currentMultiplierTeamMember's cluster for multipliers
+    if (!cl) {
+      if (isMultiplier && currentMultiplierTeamMember?.cluster) {
+        cl = currentMultiplierTeamMember.cluster;
+      } else if (user && user.role === "Branch" && branch.toLowerCase() === user.branch?.toLowerCase()) {
+        cl = user.cluster || "";
+      }
+    }
+    return cl;
+  }, [branch, clustersMap, user, isMultiplier, currentMultiplierTeamMember]);
 
   const assignedPerson = useMemo(() => {
     if (!derivedCluster) return null;
@@ -209,6 +294,15 @@ export default function RaiseTicket() {
       return;
     }
 
+    if (isMultiplier && !assignedUserEmail) {
+      toast({
+        title: "Validation Error",
+        description: "Please select an assignee from the branch.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setLoading(true);
 
     const formData = new FormData();
@@ -220,6 +314,11 @@ export default function RaiseTicket() {
     formData.append("cluster", derivedCluster);
     formData.append("branch", branch);
     formData.append("description", description);
+    
+    if (isMultiplier) {
+      formData.append("assignedToName", assignedUserName);
+      formData.append("assignedToEmail", assignedUserEmail);
+    }
     
     // Attach files
     formData.append("excelTemplate", excelFile);
@@ -289,19 +388,48 @@ export default function RaiseTicket() {
                 </div>
 
                 {/* 3. Branch Selection */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="branch" className="font-semibold text-sm">Branch / Unit <span className="text-destructive">*</span></Label>
-                  <Select value={branch} onValueChange={setBranch}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select Branch" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {branches.map(br => (
-                        <SelectItem key={br} value={br}>{br}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                {!isMultiplier && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="branch" className="font-semibold text-sm">Branch / Unit <span className="text-destructive">*</span></Label>
+                    <Select value={branch} onValueChange={setBranch} disabled={user?.role === "Branch"}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select Branch" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {branches.map(br => (
+                          <SelectItem key={br} value={br}>{br}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {/* 3.1. Assignee Selection for Multipliers */}
+                {isMultiplier && (
+                  <div className="space-y-1.5 text-left">
+                    <Label htmlFor="assignee" className="font-semibold text-sm">Assign to (User in Cluster) <span className="text-destructive">*</span></Label>
+                    <Select 
+                      value={assignedUserEmail} 
+                      onValueChange={(val) => {
+                        const u = clusterUsers.find(user => (user.orgEmail || user.mail) === val);
+                        setAssignedUserEmail(val);
+                        setAssignedUserName(u ? (u.Name || u.user) : "");
+                      }}
+                      disabled={clusterUsers.length === 0}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder={clusterUsers.length === 0 ? "No users in your cluster" : "Select User"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {clusterUsers.map(u => (
+                          <SelectItem key={u.orgEmail || u.mail} value={u.orgEmail || u.mail}>
+                            {u.Name || u.user} ({u.orgEmail || u.mail}) {u.Branch ? `- ${u.Branch}` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 {/* 4. Downloader Template */}
                 {category && ticketType && (
@@ -390,9 +518,13 @@ export default function RaiseTicket() {
                   <Sparkles className="h-5 w-5 text-primary shrink-0 mt-0.5" />
                   <div>
                     <span className="text-xs text-muted-foreground font-medium block">Assigned Owner:</span>
-                    <span className="text-sm font-bold text-foreground">{assignedPerson?.name || "None"}</span>
-                    {assignedPerson && (
-                      <span className="text-[10px] text-muted-foreground block">{assignedPerson.email}</span>
+                    <span className="text-sm font-bold text-foreground">
+                      {isMultiplier ? (assignedUserName || "None Selected") : (assignedPerson?.name || "None")}
+                    </span>
+                    {isMultiplier ? (
+                      assignedUserEmail && <span className="text-[10px] text-muted-foreground block">{assignedUserEmail}</span>
+                    ) : (
+                      assignedPerson && <span className="text-[10px] text-muted-foreground block">{assignedPerson.email}</span>
                     )}
                   </div>
                 </div>
