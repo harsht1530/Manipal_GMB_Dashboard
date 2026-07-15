@@ -84,6 +84,14 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://vasudeva:ommN1EMg2
 
 const seedMultiplierTeam = async () => {
     try {
+        // Drop unique index on email to allow multi-cluster team configurations
+        try {
+            await mongoose.connection.db.collection('multiplierteam').dropIndex('email_1');
+            console.log("Unique email index dropped on multiplierteam collection.");
+        } catch (e) {
+            // Index doesn't exist, ignore
+        }
+
         const count = await MultiplierTeam.countDocuments();
         if (count === 0) {
             const team = [
@@ -471,6 +479,27 @@ app.get('/api/locations', async (req, res) => {
     }
 });
 
+// GET Distinct Branches and their Clusters for dropdown meta
+app.get('/api/branches-meta', async (req, res) => {
+    try {
+        const locations = await Location.find({}, { "Unit Name": 1, Cluster: 1, _id: 0 });
+        const branchesMap = {};
+        locations.forEach(loc => {
+            const branchName = loc["Unit Name"];
+            if (branchName && loc.Cluster) {
+                branchesMap[branchName] = loc.Cluster;
+            }
+        });
+        const data = Object.entries(branchesMap).map(([branch, cluster]) => ({
+            branch,
+            cluster
+        }));
+        res.json({ success: true, data });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // 7.0 Postings Route
 app.get('/api/postings', async (req, res) => {
     try {
@@ -717,16 +746,22 @@ app.get('/api/alerts', async (req, res) => {
         let query = {};
         
         // Check if user is in Multiplier Team list (case-insensitive)
-        const isMultiplier = email ? await MultiplierTeam.findOne({ email: { $regex: new RegExp(`^${email}$`, 'i') } }) : null;
+        const teamMembers = email ? await MultiplierTeam.find({ email: { $regex: new RegExp(`^${email}$`, 'i') } }) : [];
+        const isMultiplier = teamMembers.length > 0;
 
         // Hierarchical Filtering Logic
         if (email === "harsh@multipliersolutions.com" && role === "Admin") {
             // Super Admin: Sees everything when logged in as Admin
             query = {};
         } else if (isMultiplier) {
-            // Multiplier: Sees GMB ticket alerts for their cluster
+            // Multiplier: Sees GMB ticket alerts for their clusters
+            const allowedClusters = teamMembers.map(m => m.cluster).filter(Boolean);
+            if (cluster) {
+                allowedClusters.push(cluster);
+            }
+            const uniqueClusters = Array.from(new Set(allowedClusters));
             query = {
-                cluster: isMultiplier.cluster,
+                cluster: { $in: uniqueClusters },
                 type: { $regex: /^TICKET_/ }
             };
         } else if (role === "Admin") {
@@ -1302,21 +1337,25 @@ app.get('/api/tickets', async (req, res) => {
         let filter = {};
         
         // Check if user is in Multiplier Team list (case-insensitive) or has Multiplier role
-        const teamMember = email ? await MultiplierTeam.findOne({ email: { $regex: new RegExp(`^${email}$`, 'i') } }) : null;
-        const isMultiplier = (role === "Multiplier" || !!teamMember);
+        const teamMembers = email ? await MultiplierTeam.find({ email: { $regex: new RegExp(`^${email}$`, 'i') } }) : [];
+        const isMultiplier = (role === "Multiplier" || teamMembers.length > 0);
         
         if (role === 'Admin') {
             filter = {};
         } else if (isMultiplier) {
-            // Multiplier team members manage a cluster. They should see:
+            // Multiplier team members manage multiple clusters. They should see:
             // 1. Tickets assigned directly to them (case-insensitively).
-            // 2. Tickets belonging to the cluster they manage.
-            const targetCluster = teamMember ? teamMember.cluster : cluster;
+            // 2. Tickets belonging to any cluster they manage.
+            const allowedClusters = teamMembers.map(m => m.cluster).filter(Boolean);
+            if (cluster) {
+                allowedClusters.push(cluster);
+            }
+            const uniqueClusters = Array.from(new Set(allowedClusters));
             const emailFilter = email ? { $regex: new RegExp(`^${email}$`, 'i') } : "";
             filter = {
                 $or: [
                     { "assignedTo.email": emailFilter },
-                    { cluster: targetCluster }
+                    { cluster: { $in: uniqueClusters } }
                 ]
             };
         } else if (role === 'Branch' && branch) {

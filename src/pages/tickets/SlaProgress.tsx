@@ -39,6 +39,10 @@ export default function SlaProgress() {
   const { tickets, refreshTickets } = useTickets();
   const { user } = useAuth();
   const { toast } = useToast();
+
+  useEffect(() => {
+    refreshTickets();
+  }, [refreshTickets]);
   const [searchParams] = useSearchParams();
   const [selectedTicketId, setSelectedTicketId] = useState<string>("");
   const [sendingReminder, setSendingReminder] = useState<number | null>(null);

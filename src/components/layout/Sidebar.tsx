@@ -83,7 +83,7 @@ export const Sidebar = ({
       .then(res => res.json())
       .then(data => {
         if (data.success && data.data) {
-          const match = data.data.find((m: any) => m.email.toLowerCase() === user.email.toLowerCase());
+          const match = data.data.find((m: any) => m && m.email && m.email.toLowerCase() === user.email.toLowerCase());
           setIsMultiplierUser(!!match);
         }
       })

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useTickets, Ticket } from "@/contexts/TicketContext";
@@ -30,6 +30,10 @@ import { cn } from "@/lib/utils";
 export default function TicketDashboard() {
   const { tickets, loading, refreshTickets } = useTickets();
   const { user } = useAuth();
+
+  useEffect(() => {
+    refreshTickets();
+  }, [refreshTickets]);
   
   // Search & Filter State
   const [searchTerm, setSearchTerm] = useState("");

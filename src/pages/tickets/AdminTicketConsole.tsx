@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useTickets, Ticket } from "@/contexts/TicketContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -37,6 +37,10 @@ export default function AdminTicketConsole() {
   const { tickets, loading, addTicketLog, refreshTickets } = useTickets();
   const { user } = useAuth();
   const { toast } = useToast();
+
+  useEffect(() => {
+    refreshTickets();
+  }, [refreshTickets]);
   
   // Search & Filter state
   const [search, setSearch] = useState("");

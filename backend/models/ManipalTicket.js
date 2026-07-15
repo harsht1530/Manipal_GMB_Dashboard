@@ -98,4 +98,10 @@ const ManipalTicketSchema = new mongoose.Schema({
     }
 }, { collection: 'manipaltickets' });
 
+ManipalTicketSchema.index({ "assignedTo.email": 1 });
+ManipalTicketSchema.index({ "raisedBy.email": 1 });
+ManipalTicketSchema.index({ cluster: 1 });
+ManipalTicketSchema.index({ branch: 1 });
+ManipalTicketSchema.index({ createdAt: -1 });
+
 module.exports = mongoose.model('ManipalTicket', ManipalTicketSchema);

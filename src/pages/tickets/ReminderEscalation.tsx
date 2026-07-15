@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useTickets, Ticket } from "@/contexts/TicketContext";
@@ -19,10 +19,14 @@ import {
 import { cn } from "@/lib/utils";
 
 export default function ReminderEscalation() {
-  const { tickets, addTicketLog, loading } = useTickets();
+  const { tickets, addTicketLog, loading, refreshTickets } = useTickets();
   const { user } = useAuth();
   const { toast } = useToast();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  useEffect(() => {
+    refreshTickets();
+  }, [refreshTickets]);
 
   // Group tickets by SLA stages
   const slaGroups = useMemo(() => {

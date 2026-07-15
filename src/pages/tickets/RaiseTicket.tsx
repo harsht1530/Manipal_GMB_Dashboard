@@ -3,7 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useTickets } from "@/contexts/TicketContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { useMongoData } from "@/hooks/useMongoData";
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -23,43 +23,233 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
-const CATEGORY_MAP: Record<string, string[]> = {
+const CLIENT_CATEGORY_MAP: Record<string, string[]> = {
   "Profile Creation": [
-    "Create New Google Business Profile",
-    "Claim Existing Google Business Profile"
+    "Create new Google Business Profile"
   ],
   "Profile Verification": [
-    "Request Verification Code",
-    "Verify Profile with Code",
-    "Video Verification Issue"
+    "Through Phone Number or Email"
   ],
-  "Profile Update": [
-    "Update Business Name / Info",
-    "Update Address / Coordinates",
-    "Update Phone Number / Working Hours"
+  "Ownership & Access": [
+    "Add/Remove Manager"
   ],
-  "Review Management": [
-    "Report Inappropriate Review",
-    "Request Review Response Support"
+  "Profile Updates": [
+    "Update business name",
+    "Update address",
+    "Update phone number",
+    "Update website",
+    "Update Business Hours",
+    "Update Business Description",
+    "Add/Update departments",
+    "Doctor Transfer",
+    "Map Pin Correction",
+    "Keyword Optimization"
   ],
-  "Access Management": [
-    "Invite User Access",
-    "Remove User Access",
-    "Claim Primary Ownership"
+  "Profile Removal": [
+    "Remove doctor profile"
   ],
-  "Profile Suspension": [
-    "Request Reinstatement for Suspended Profile"
-  ]
+  "Content": [
+    "Update Products & Services",
+    "Upload photos / Videos",
+    "Publish posts (Events / Offers/ Related to speciality)",
+    "Update Cover & Logo",
+    "Irrelevant Content & Photos"
+  ],
+  "Reviews": [
+    "Missing reviews",
+    "Rating Drop Investigation",
+    "Fake Review Escalation"
+  ],
+  "Suspensions": [
+    "Suspended profile to be Reinstatement"
+  ],
+  "Duplicates": [
+    "Remove duplicate profile"
+  ],
+  "Merging": [
+    "Merge duplicate listings"
+  ],
+  "Closure": [
+    "Close/Mark permanently closed"
+  ],
+  "Performance Reporting & Optimization": [
+    "Competitor Analysis",
+    "Performance reports",
+    "Weekly Optimization Report"
+  ],
+  "Others": []
+};
+
+const MULTIPLIER_CATEGORY_MAP: Record<string, string[]> = {
+  "Profile Verification": [
+    "Verify GBP through Video & Phone number"
+  ],
+  "Ownership & Access": [
+    "Request ownership for existing profiles"
+  ],
+  "Suspensions": [
+    "Ask supporting documents to verify the profiles"
+  ],
+  "Others": []
+};
+
+const getTemplateColumns = (category: string, ticketType: string, isMultiplier: boolean): string[] => {
+  if (isMultiplier) {
+    if (category === "Profile Verification") {
+      if (ticketType === "Verify GBP through Video & Phone number") {
+        return ["Phone Number", "OTP", "Video Verification Support Details"];
+      }
+    }
+    if (category === "Ownership & Access") {
+      if (ticketType === "Request ownership for existing profiles") {
+        return ["Profiles to Request Access (Links/Names)"];
+      }
+    }
+    if (category === "Suspensions") {
+      if (ticketType === "Ask supporting documents to verify the profiles") {
+        return ["Profile Link", "Business License", "Doctor Registration Certificate", "Name Board Photo", "Storefront Photos", "Website", "Explanation"];
+      }
+    }
+  } else {
+    if (category === "Profile Creation") {
+      if (ticketType === "Create new Google Business Profile") {
+        return ["Doctor/Hospital Name", "Category", "Address", "Phone Number", "Website URL", "Business Hours", "Email ID", "Latitude & Longitude", "Appointment URL", "Description", "Photos", "Logo", "Cover Image"];
+      }
+    }
+    if (category === "Profile Verification") {
+      if (ticketType === "Through Phone Number or Email") {
+        return ["Phone number"];
+      }
+    }
+    if (category === "Ownership & Access") {
+      if (ticketType === "Add/Remove Manager") {
+        return ["Gmail ID to be added/removed", "Profile Link", "Approval from authorized SPOC"];
+      }
+    }
+    if (category === "Profile Updates") {
+      if (ticketType === "Update business name") {
+        return ["Correct Business Name", "Supporting proof (Doctor License/Visiting Card/Name Board)"];
+      }
+      if (ticketType === "Update address") {
+        return ["Complete New Address", "PIN Code", "Location Photos"];
+      }
+      if (ticketType === "Update phone number") {
+        return ["Correct Phone Number"];
+      }
+      if (ticketType === "Update website") {
+        return ["Correct Website URL"];
+      }
+      if (ticketType === "Update Business Hours") {
+        return ["Updated Working Hours", "Weekly Off Details"];
+      }
+      if (ticketType === "Update Business Description") {
+        return ["Approved Business Description or required keywords"];
+      }
+      if (ticketType === "Add/Update departments") {
+        return ["Department Name", "Category", "Contact Number (if separate)", "Description"];
+      }
+      if (ticketType === "Doctor Transfer") {
+        return ["Existing Profile Link", "New Hospital/Clinic Details", "Effective Date"];
+      }
+      if (ticketType === "Map Pin Correction") {
+        return ["Correct Google Maps Location or Latitude & Longitude", "Front Entrance Photo"];
+      }
+      if (ticketType === "Keyword Optimization") {
+        return ["Target Keywords", "Target Location", "Priority Services/Specialties"];
+      }
+    }
+    if (category === "Profile Removal") {
+      if (ticketType === "Remove doctor profile") {
+        return ["Profile Link", "Reason for Removal"];
+      }
+    }
+    if (category === "Content") {
+      if (ticketType === "Update Products & Services") {
+        return ["List of Services/Products", "Descriptions", "Pricing (if applicable)"];
+      }
+      if (ticketType === "Upload photos / Videos") {
+        return ["High-quality Photos/Videos"];
+      }
+      if (ticketType === "Publish posts (Events / Offers/ Related to speciality)") {
+        return ["Content", "Image", "CTA Link", "Offer/Event Details", "Publish Date"];
+      }
+      if (ticketType === "Update Cover & Logo") {
+        return ["High-resolution Logo and Cover Image"];
+      }
+      if (ticketType === "Irrelevant Content & Photos") {
+        return ["Business name", "Screenshot of irrelevant content or photo to be removed"];
+      }
+    }
+    if (category === "Reviews") {
+      if (ticketType === "Missing reviews") {
+        return ["Profile Link", "Missing Review Screenshot", "Reviewer Name", "Approximate Review Date"];
+      }
+      if (ticketType === "Rating Drop Investigation") {
+        return ["Profile Link", "Timeline when rating dropped", "Supporting Screenshots"];
+      }
+      if (ticketType === "Fake Review Escalation") {
+        return ["Review Screenshot", "Review Link", "Reason for reporting", "Supporting Evidence"];
+      }
+    }
+    if (category === "Suspensions") {
+      if (ticketType === "Suspended profile to be Reinstatement") {
+        return ["Profile Link", "Business License", "Doctor Registration Certificate", "Name Board Photo", "Storefront Photos", "Website", "Explanation"];
+      }
+    }
+    if (category === "Duplicates") {
+      if (ticketType === "Remove duplicate profile") {
+        return ["Original Profile Link", "Duplicate Profile Link", "Confirmation of correct listing"];
+      }
+    }
+    if (category === "Merging") {
+      if (ticketType === "Merge duplicate listings") {
+        return ["Both Profile Links", "Confirmation of primary profile", "Supporting details"];
+      }
+    }
+    if (category === "Closure") {
+      if (ticketType === "Close/Mark permanently closed") {
+        return ["Profile Link", "Closure Confirmation", "Closure Date"];
+      }
+    }
+    if (category === "Performance Reporting & Optimization") {
+      if (ticketType === "Competitor Analysis") {
+        return ["Competitor Profile Links or Names", "Target Keywords", "Target Location"];
+      }
+      if (ticketType === "Performance reports") {
+        return ["Reporting Period (Weekly/Monthly)", "Specific KPIs"];
+      }
+      if (ticketType === "Weekly Optimization Report") {
+        return ["Reporting Period", "Cluster/Unit Details"];
+      }
+    }
+  }
+  return ["GMB Listing Link", "Required Action Details", "Contact Person Name", "Contact Email / Phone", "Remarks"];
 };
 
 export default function RaiseTicket() {
   const { user } = useAuth();
   const { createTicket, team, isMultiplier, currentMultiplierTeamMember } = useTickets();
-  const { insights } = useMongoData();
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  const categoryMap = useMemo(() => {
+    return isMultiplier ? MULTIPLIER_CATEGORY_MAP : CLIENT_CATEGORY_MAP;
+  }, [isMultiplier]);
+
   const [loading, setLoading] = useState(false);
+  const [branchesMeta, setBranchesMeta] = useState<{ branch: string; cluster: string }[]>([]);
+
+  // Fetch lightweight branches/clusters mapping
+  useEffect(() => {
+    fetch(`${import.meta.env.VITE_API_BASE_URL || "http://localhost:5000"}/api/branches-meta`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.data) {
+          setBranchesMeta(data.data);
+        }
+      })
+      .catch(err => console.error("Error fetching branches metadata:", err));
+  }, []);
   
   // Form values
   const [category, setCategory] = useState("");
@@ -90,9 +280,13 @@ export default function RaiseTicket() {
 
   // Derive all users in the same cluster as the multiplier
   const clusterUsers = useMemo(() => {
-    if (!currentMultiplierTeamMember?.cluster) return [];
+    if (!currentMultiplierTeamMember) return [];
+    const allowedClusters = currentMultiplierTeamMember.clusters || 
+      (currentMultiplierTeamMember.cluster ? [currentMultiplierTeamMember.cluster] : []);
+    if (allowedClusters.length === 0) return [];
+
     return allUsers.filter(u => {
-      return u.Cluster && u.Cluster.toLowerCase() === currentMultiplierTeamMember.cluster.toLowerCase();
+      return u.Cluster && allowedClusters.some(ac => ac && ac.toLowerCase() === u.Cluster.toLowerCase());
     });
   }, [allUsers, currentMultiplierTeamMember]);
 
@@ -131,22 +325,24 @@ export default function RaiseTicket() {
     setTicketType("");
   }, [category]);
 
-  // Derive clusters & branches from insights data
+  // Derive clusters & branches from branchesMeta data
   const { branches, clustersMap } = useMemo(() => {
     const map: Record<string, string> = {};
-    (insights || []).forEach((i: any) => {
-      if (i.branch && i.cluster) {
-        map[i.branch] = i.cluster;
+    branchesMeta.forEach((b: any) => {
+      if (b.branch && b.cluster) {
+        map[b.branch] = b.cluster;
       }
     });
 
-    let activeBranches = Array.from(new Set((insights || []).map((i: any) => i.branch))).filter(Boolean).sort() as string[];
+    let activeBranches = branchesMeta.map((b: any) => b.branch).filter(Boolean).sort();
 
     // Explicitly filter branches based on user role to guarantee correctness
-    if (isMultiplier && currentMultiplierTeamMember?.cluster) {
+    if (isMultiplier && currentMultiplierTeamMember) {
+      const allowedClusters = currentMultiplierTeamMember.clusters || 
+        (currentMultiplierTeamMember.cluster ? [currentMultiplierTeamMember.cluster] : []);
       activeBranches = activeBranches.filter(br => {
         const brCluster = map[br];
-        return brCluster && brCluster.toLowerCase() === currentMultiplierTeamMember.cluster.toLowerCase();
+        return brCluster && allowedClusters.some(ac => ac && ac.toLowerCase() === brCluster.toLowerCase());
       });
     } else if (user) {
       if (user.role === "Branch" && user.branch) {
@@ -163,7 +359,7 @@ export default function RaiseTicket() {
     }
 
     return { branches: activeBranches, clustersMap: map };
-  }, [insights, user, isMultiplier, currentMultiplierTeamMember]);
+  }, [branchesMeta, user, isMultiplier, currentMultiplierTeamMember]);
 
   // Derive cluster & auto-assigned person for the selected branch
   const derivedCluster = useMemo(() => {
@@ -171,8 +367,10 @@ export default function RaiseTicket() {
     let cl = clustersMap[branch] || "";
     // If clustersMap has not loaded yet, fallback to user's cluster for branch users or currentMultiplierTeamMember's cluster for multipliers
     if (!cl) {
-      if (isMultiplier && currentMultiplierTeamMember?.cluster) {
-        cl = currentMultiplierTeamMember.cluster;
+      if (isMultiplier && currentMultiplierTeamMember) {
+        const allowedClusters = currentMultiplierTeamMember.clusters || 
+          (currentMultiplierTeamMember.cluster ? [currentMultiplierTeamMember.cluster] : []);
+        cl = allowedClusters[0] || "";
       } else if (user && user.role === "Branch" && branch.toLowerCase() === user.branch?.toLowerCase()) {
         cl = user.cluster || "";
       }
@@ -183,8 +381,8 @@ export default function RaiseTicket() {
   const assignedPerson = useMemo(() => {
     if (!derivedCluster) return null;
     
-    // Look up Multiplier Team list
-    const matches = team.filter(m => m.cluster.toLowerCase() === derivedCluster.toLowerCase());
+    // Look up Multiplier Team list (safely checking properties)
+    const matches = team.filter(m => m && m.cluster && m.cluster.toLowerCase() === derivedCluster.toLowerCase());
     if (matches.length > 0) {
       // Return first match or list them
       return {
@@ -206,39 +404,9 @@ export default function RaiseTicket() {
       return;
     }
 
-    let columns: string[] = [];
-    let sampleData: Record<string, string>[] = [];
+    const columns = getTemplateColumns(category, ticketType, isMultiplier);
 
-    if (category === "Profile Creation") {
-      columns = ["Doctor/Business Name", "Speciality/Department", "Address", "Contact Phone", "Website URL"];
-      sampleData = [{
-        "Doctor/Business Name": "Dr. Ramesh Kumar (Cardiologist)",
-        "Speciality/Department": "Cardiology",
-        "Address": "Manipal Hospital, Old Airport Road, Bengaluru",
-        "Contact Phone": "+91 98765 43210",
-        "Website URL": "https://www.manipalhospitals.com"
-      }];
-    } else if (category === "Profile Update") {
-      columns = ["GBP Listing Name", "Field to Update (e.g. Phone, Hours)", "Current Value", "New Proposed Value", "Reason / Justification"];
-      sampleData = [{
-        "GBP Listing Name": "Manipal Hospital Dwarka",
-        "Field to Update (e.g. Phone, Hours)": "Phone Number",
-        "Current Value": "+91 11 4967 4967",
-        "New Proposed Value": "+91 11 4967 5000",
-        "Reason / Justification": "Corporate helpline number updated"
-      }];
-    } else {
-      columns = ["GMB Listing Link", "Required Action Details", "Contact Person Name", "Contact Email / Phone", "Remarks"];
-      sampleData = [{
-        "GMB Listing Link": "https://g.co/kgs/xyz123",
-        "Required Action Details": "Request verification pin trigger",
-        "Contact Person Name": "Amit Sharma",
-        "Contact Email / Phone": "amit.sharma@manipal.com",
-        "Remarks": "Verification code not received on SMS, request post verification"
-      }];
-    }
-
-    const worksheet = XLSX.utils.json_to_sheet(sampleData, { header: columns });
+    const worksheet = XLSX.utils.json_to_sheet([], { header: columns });
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Template");
     
@@ -285,7 +453,7 @@ export default function RaiseTicket() {
       return;
     }
 
-    if (!excelFile) {
+    if (category !== "Others" && !excelFile) {
       toast({
         title: "Mandatory Template Required",
         description: "Please fill and upload the Excel template sheet.",
@@ -321,7 +489,9 @@ export default function RaiseTicket() {
     }
     
     // Attach files
-    formData.append("excelTemplate", excelFile);
+    if (excelFile) {
+      formData.append("excelTemplate", excelFile);
+    }
     
     attachments.forEach(file => {
       formData.append("attachments", file);
@@ -365,7 +535,7 @@ export default function RaiseTicket() {
                       <SelectValue placeholder="Select Category" />
                     </SelectTrigger>
                     <SelectContent>
-                      {Object.keys(CATEGORY_MAP).map(cat => (
+                      {Object.keys(categoryMap).map(cat => (
                         <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                       ))}
                     </SelectContent>
@@ -375,16 +545,26 @@ export default function RaiseTicket() {
                 {/* 2. Ticket Type */}
                 <div className="space-y-1.5">
                   <Label htmlFor="ticketType" className="font-semibold text-sm">Ticket Type <span className="text-destructive">*</span></Label>
-                  <Select value={ticketType} onValueChange={setTicketType} disabled={!category}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder={category ? "Select Ticket Type" : "Please select Category first"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {category && CATEGORY_MAP[category].map(type => (
-                        <SelectItem key={type} value={type}>{type}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {category === "Others" ? (
+                    <Input
+                      id="ticketType"
+                      value={ticketType}
+                      onChange={(e) => setTicketType(e.target.value)}
+                      placeholder="Enter Ticket Type"
+                      className="w-full"
+                    />
+                  ) : (
+                    <Select value={ticketType} onValueChange={setTicketType} disabled={!category}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder={category ? "Select Ticket Type" : "Please select Category first"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {category && categoryMap[category] && categoryMap[category].map(type => (
+                          <SelectItem key={type} value={type}>{type}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
 
                 {/* 3. Branch Selection */}
@@ -432,7 +612,7 @@ export default function RaiseTicket() {
                 )}
 
                 {/* 4. Downloader Template */}
-                {category && ticketType && (
+                {category && ticketType && category !== "Others" && (
                   <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <FileSpreadsheet className="h-8 w-8 text-primary shrink-0" />
@@ -449,7 +629,7 @@ export default function RaiseTicket() {
 
                 {/* 5. Upload Excel */}
                 <div className="space-y-1.5">
-                  <Label htmlFor="excelFile" className="font-semibold text-sm">Upload Completed Excel Sheet <span className="text-destructive">*</span></Label>
+                  <Label htmlFor="excelFile" className="font-semibold text-sm">Upload Completed Excel Sheet {category !== "Others" && <span className="text-destructive">*</span>}</Label>
                   <div className="flex items-center gap-2">
                     <Input 
                       id="excelFile" 
@@ -550,7 +730,7 @@ export default function RaiseTicket() {
                 </div>
                 <div className="flex gap-2">
                   <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                  <p>Tickets breaching SLA (Day 8+) are automatically escalated to the <strong>Regional Marketing Head</strong>.</p>
+                  <p>Tickets breaching SLA (Day 8+) are automatically escalated to <strong>Manipal Corporate Team</strong>.</p>
                 </div>
               </CardContent>
             </Card>

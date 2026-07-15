@@ -45,6 +45,7 @@ export interface TeamMember {
     name: string;
     email: string;
     cluster: string;
+    clusters?: string[];
 }
 
 interface TicketContextType {
@@ -85,40 +86,29 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                 teamList = teamData.data;
             }
 
-            // Check if logged-in user email is in Multiplier Team list
-            const matchedMember = teamList.find(m => m.email.toLowerCase() === user.email.toLowerCase());
-            if (matchedMember) {
+            // Check if logged-in user email is in Multiplier Team list (multi-cluster support)
+            const matchedMembers = teamList.filter(m => m && m.email && m.email.toLowerCase() === user.email.toLowerCase());
+            if (matchedMembers.length > 0) {
                 setIsMultiplier(true);
-                setCurrentMultiplierTeamMember(matchedMember);
+                const firstMatch = matchedMembers[0];
+                const allClusters = matchedMembers.map(m => m.cluster).filter(Boolean);
+                setCurrentMultiplierTeamMember({
+                    _id: firstMatch._id,
+                    name: firstMatch.name,
+                    email: firstMatch.email,
+                    cluster: firstMatch.cluster || "",
+                    clusters: allClusters
+                });
             } else {
                 setIsMultiplier(false);
                 setCurrentMultiplierTeamMember(null);
             }
-
-            // 2. Fetch tickets with parameters
-            const queryParams = new URLSearchParams({
-                email: user.email,
-                role: user.role,
-                cluster: user.cluster || "",
-                branch: user.branch || ""
-            });
-
-            const ticketsRes = await fetch(`${API_BASE_URL}/tickets?${queryParams.toString()}`);
-            const ticketsData = await ticketsRes.json();
-            if (ticketsData.success && ticketsData.data) {
-                setTickets(ticketsData.data);
-            }
         } catch (error) {
             console.error("Failed to load Ticket Management data:", error);
-            toast({
-                title: "Loading Error",
-                description: "Failed to load GMB tickets data from server.",
-                variant: "destructive"
-            });
         } finally {
             setLoading(false);
         }
-    }, [user, isAuthenticated, toast]);
+    }, [user, isAuthenticated]);
 
     useEffect(() => {
         loadData();
@@ -216,9 +206,33 @@ export const TicketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
     };
 
-    const refreshTickets = async () => {
-        await loadData();
-    };
+    const refreshTickets = useCallback(async () => {
+        if (!isAuthenticated || !user) return;
+        setLoading(true);
+        try {
+            const queryParams = new URLSearchParams({
+                email: user.email,
+                role: user.role,
+                cluster: user.cluster || "",
+                branch: user.branch || ""
+            });
+
+            const ticketsRes = await fetch(`${API_BASE_URL}/tickets?${queryParams.toString()}`);
+            const ticketsData = await ticketsRes.json();
+            if (ticketsData.success && ticketsData.data) {
+                setTickets(ticketsData.data);
+            }
+        } catch (error) {
+            console.error("Failed to load GMB tickets:", error);
+            toast({
+                title: "Loading Error",
+                description: "Failed to load GMB tickets data from server.",
+                variant: "destructive"
+            });
+        } finally {
+            setLoading(false);
+        }
+    }, [user, isAuthenticated, toast]);
 
     return (
         <TicketContext.Provider value={{

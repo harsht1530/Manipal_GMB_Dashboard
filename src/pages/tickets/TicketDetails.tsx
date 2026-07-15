@@ -39,7 +39,11 @@ export default function TicketDetails() {
   const { toast } = useToast();
   const { user } = useAuth();
   
-  const { tickets, team, isMultiplier, addTicketLog, transferTicket } = useTickets();
+  const { tickets, team, isMultiplier, addTicketLog, transferTicket, refreshTickets } = useTickets();
+
+  useEffect(() => {
+    refreshTickets();
+  }, [refreshTickets]);
 
   // Find active ticket
   const ticket = useMemo(() => {
