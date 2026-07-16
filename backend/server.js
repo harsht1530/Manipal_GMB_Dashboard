@@ -426,16 +426,27 @@ app.get('/api/insights', async (req, res) => {
             Rating: 1,
             Department: 1,
             Phone: 1,
-            status_type: 1
+            status_type: 1,
+            Year: 1
         };
 
         const insights = await Insight.find({}, projection).lean();
-        const apiInsights = await ApiInsight.find({}, projection).lean();
 
-        // Combine both collections' data
-        const combinedInsights = [...insights, ...apiInsights];
+        // De-duplicate insights by Business name + Month + Year to solve duplicate data seeding issue
+        const uniqueMap = new Map();
+        for (const item of insights) {
+            const bName = (item["Business name"] || "").trim().toLowerCase();
+            const month = (item.Month || "").trim().toLowerCase();
+            const year = item.Year ? String(item.Year) : "";
+            const key = `${bName}_${month}_${year}`;
+            
+            if (!uniqueMap.has(key)) {
+                uniqueMap.set(key, item);
+            }
+        }
+        const deDuplicated = Array.from(uniqueMap.values());
 
-        res.json({ success: true, data: combinedInsights });
+        res.json({ success: true, data: deDuplicated });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -461,9 +472,36 @@ app.get('/api/doctors', async (req, res) => {
             Cluster: 1,
             Branch: 1,
             profile_screenshot: 1,
-            account: 1
+            account: 1,
+            "labels.rank": 1,
+            "labels.label": 1
         });
         res.json({ success: true, data: doctors });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 6.1 Doctor Details Route (For single profile details, loading heavy competitors and screenshot fields dynamically)
+app.get('/api/doctors/details', async (req, res) => {
+    const { businessName } = req.query;
+    try {
+        if (!businessName) {
+            return res.status(400).json({ success: false, error: "businessName parameter is required" });
+        }
+        const doctor = await Doctor.findOne({
+            business_name: { $regex: new RegExp(`^${businessName.trim()}$`, 'i') }
+        });
+        if (!doctor) {
+            const doctorByName = await Doctor.findOne({
+                name: { $regex: new RegExp(`^${businessName.trim()}$`, 'i') }
+            });
+            if (!doctorByName) {
+                return res.status(404).json({ success: false, error: "Doctor not found" });
+            }
+            return res.json({ success: true, data: doctorByName });
+        }
+        res.json({ success: true, data: doctor });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }

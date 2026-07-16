@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const ApiInsightSchema = new mongoose.Schema({
   Month: String,
-  Date: Date,
+  Date: String,
   Cluster: String,
   Branch: String,
   Department: String,
@@ -18,7 +18,8 @@ const ApiInsightSchema = new mongoose.Schema({
   Review: Number,
   Rating: Number,
   Phone: String,
-  status_type: String
+  status_type: String,
+  Year: Number
 }, { collection: 'manipalApiInsights' });
 
 module.exports = mongoose.model('ApiInsight', ApiInsightSchema);

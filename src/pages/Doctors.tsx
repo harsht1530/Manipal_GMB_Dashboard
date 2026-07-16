@@ -54,6 +54,7 @@ const Doctors = () => {
   const [selectedRatings, setSelectedRatings] = useState<number[]>([]);
   const [comboOpen, setComboOpen] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(20);
 
   const { doctors, insights, loading } = useMongoData();
   const [mounted, setMounted] = useState(false);
@@ -75,6 +76,10 @@ const Doctors = () => {
       setSelectedCluster([user.cluster]);
     }
   }, [user]);
+
+  useEffect(() => {
+    setVisibleCount(20);
+  }, [searchQuery, selectedCluster, selectedBranch, selectedSpeciality, selectedDepartments, selectedRatings]);
 
   const isBranchRestricted = !!user?.branch;
   const isClusterRestricted = !!user?.cluster && !user?.branch;
@@ -123,29 +128,19 @@ const Doctors = () => {
 
     // Sort by Year (from Date field) and then by Month string to ensure logical chronologic order
     const sortedInsights = [...insights].sort((a, b) => {
-      const getYear = (dateStr: string) => {
-        if (!dateStr) return 0;
-        const d = parseDateString(dateStr);
-        if (!isNaN(d.getFullYear())) return d.getFullYear();
-        const parts = dateStr.split('-');
-        if (parts.length === 3 && parts[2].length === 4) return parseInt(parts[2]);
-        return 0;
-      };
-
-      const yearA = getYear(a.date);
-      const yearB = getYear(b.date);
+      const yearA = parseInt(a.year) || 0;
+      const yearB = parseInt(b.year) || 0;
       
       if (yearA !== yearB) return yearB - yearA;
       return monthOrder.indexOf(b.month) - monthOrder.indexOf(a.month);
     });
 
     const latest = sortedInsights[0];
-    const latestDate = parseDateString(latest.date);
-    const fallbackYear = latest.date?.split('-')[2]?.length === 4 ? latest.date?.split('-')[2] : new Date().getFullYear().toString();
+    const fallbackYear = latest.year || new Date().getFullYear().toString();
     
     return {
       month: latest.month,
-      year: !isNaN(latestDate.getFullYear()) ? latestDate.getFullYear().toString() : fallbackYear
+      year: fallbackYear
     };
   }, [insights]);
 
@@ -274,6 +269,10 @@ const Doctors = () => {
         return b.averageRating - a.averageRating;
       });
   }, [doctors, insights, deferredSearchQuery, selectedCluster, selectedBranch, selectedDepartments, selectedRatings, selectedSpeciality, latestMonthDataMap, mounted, loading]);
+
+  const displayedDoctors = useMemo(() => {
+    return filteredDoctors.slice(0, visibleCount);
+  }, [filteredDoctors, visibleCount]);
 
   function specialityVariableMatch(docSpeciality: string, selected: string[]) {
     if (selected.length === 0) return true;
@@ -441,7 +440,7 @@ const Doctors = () => {
           </div>
         )}
         <div className="grid gap-6 md:grid-cols-2">
-          {filteredDoctors.map((doctor, index) => {
+          {displayedDoctors.map((doctor, index) => {
             const latestData = latestMonthDataMap[doctor.businessName];
             return (
               <DoctorCard
@@ -456,6 +455,17 @@ const Doctors = () => {
             );
           })}
         </div>
+
+        {filteredDoctors.length > visibleCount && (
+          <div className="flex justify-center mt-8 mb-12">
+            <Button
+              onClick={() => setVisibleCount((prev) => prev + 20)}
+              className="px-6 py-2 shadow-md hover:shadow-lg transition-all"
+            >
+              Load More Profiles
+            </Button>
+          </div>
+        )}
 
         {filteredDoctors.length === 0 && (
           <div className="text-center py-24 text-muted-foreground animate-fade-in">

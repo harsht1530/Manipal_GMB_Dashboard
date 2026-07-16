@@ -26,7 +26,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { InsightData, DoctorData, LabelData, useMongoData } from "@/hooks/useMongoData";
+import { InsightData, DoctorData, LabelData, useMongoData, transformDoctor } from "@/hooks/useMongoData";
 import {
   Star,
   TrendingUp,
@@ -86,6 +86,19 @@ export const DoctorDetailModal = ({
         setKeywords(foundDoctor.labels || []);
         setCompetitors([...new Set(foundDoctor.labels?.flatMap(l => l.competitors || []))] as string[]);
       }
+
+      // Fetch full details dynamically (loading competitors and screenshot fields)
+      fetch(`${import.meta.env.VITE_API_BASE_URL || "https://smldatamanagement.multiplierai.co"}/api/doctors/details?businessName=${encodeURIComponent(doctorName)}`)
+        .then(res => res.json())
+        .then(resData => {
+          if (resData.success && resData.data) {
+            const docData = transformDoctor(resData.data);
+            setProfile(docData);
+            setKeywords(docData.labels || []);
+            setCompetitors([...new Set(docData.labels?.flatMap(l => l.competitors || []))] as string[]);
+          }
+        })
+        .catch(err => console.error("Error loading doctor details in modal:", err));
 
       const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       const sortedInsights = [...foundInsights].sort((a, b) => months.indexOf(a.month) - months.indexOf(b.month));

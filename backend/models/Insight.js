@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const InsightSchema = new mongoose.Schema({
   Month: String,
-  Date: Date,
+  Date: String,
   Cluster: String,
   Branch: String,
   Department: String,
@@ -17,7 +17,9 @@ const InsightSchema = new mongoose.Schema({
   Calls: Number,
   Review: Number,
   Rating: Number,
-  Phone: String
+  Phone: String,
+  Year: Number,
+  status_type: String
 }, { collection: 'manipalinsightsdatas' });
 
 module.exports = mongoose.model('Insight', InsightSchema);

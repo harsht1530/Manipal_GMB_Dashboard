@@ -66,18 +66,7 @@ const Index = () => {
     }
 
     // Extract unique years
-    const uniqueYears = [...new Set(insights.map(i => {
-      // Assuming i.date is ISO string or interpretable date string
-      // Or if data object has Date object, getting full year. 
-      // If i.date is just a string, we might need robust parsing.
-      // Based on typical behavior, let's try creating a Date object.
-      // If invalid, fallback or handle error.
-      try {
-        const d = parseDateString(i.date);
-        return !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
-      } catch (e) { return ""; }
-    }))].filter(Boolean).sort().reverse();
-
+    const uniqueYears = [...new Set(insights.map(i => i.year))].filter(Boolean).sort().reverse();
     const years = uniqueYears;
 
     // 1. Clusters depend on selected Departments (Profile Types)
@@ -95,21 +84,13 @@ const Index = () => {
     const branches = [...new Set(branchData.map(i => i.branch))].filter(Boolean).sort();
 
     const monthData = selectedYear.length > 0
-      ? insights.filter(i => {
-        const d = parseDateString(i.date);
-        const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
-        return selectedYear.includes(y);
-      })
+      ? insights.filter(i => selectedYear.includes(i.year))
       : insights;
-
+ 
     const monthSet = new Set<string>();
     monthData.forEach(i => {
       if (!i.month) return;
-      let y = "Unknown Year";
-      if (i.date) {
-        const d = parseDateString(i.date);
-        y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : y;
-      }
+      const y = i.year || "Unknown Year";
       monthSet.add(JSON.stringify({ month: i.month, year: y }));
     });
 
@@ -130,9 +111,7 @@ const Index = () => {
       const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(i.rating) === r);
       let yearMatch = true;
       if (selectedYear.length > 0) {
-        const d = parseDateString(i.date);
-        const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
-        yearMatch = selectedYear.includes(y);
+        yearMatch = selectedYear.includes(i.year);
       }
       return clusterMatch && branchMatch && departmentMatch && ratingMatch && yearMatch;
     });
@@ -147,24 +126,19 @@ const Index = () => {
       const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(item.cluster);
       const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(item.branch);
 
-      let itemYear = "";
-      if (item.date) {
-        const d = parseDateString(item.date);
-        itemYear = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
-      }
-
+      const itemYear = item.year;
       const itemMonthYear = `${item.month} ${itemYear}`;
       const monthMatch = selectedMonth.length === 0 || selectedMonth.includes(itemMonthYear);
-
+ 
       const specialityMatch = selectedSpeciality.length === 0 || selectedSpeciality.includes(item.speciality);
       const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(item.department);
       const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(item.rating) === r);
-
+ 
       let yearMatch = true;
       if (selectedYear.length > 0) {
         yearMatch = selectedYear.includes(itemYear);
       }
-
+ 
       return clusterMatch && branchMatch && monthMatch && specialityMatch && departmentMatch && ratingMatch && yearMatch;
     });
   }, [insights, selectedCluster, selectedBranch, selectedMonth, selectedSpeciality, selectedDepartments, selectedRatings, selectedYear, mounted, loading]);
@@ -214,29 +188,19 @@ const Index = () => {
     
     // Sort by Year (from Date field) and then by Month string to ensure logical chronologic order
     const sortedInsights = [...insights].sort((a, b) => {
-      const getYear = (dateStr: string) => {
-        if (!dateStr) return 0;
-        const d = parseDateString(dateStr);
-        if (!isNaN(d.getFullYear())) return d.getFullYear();
-        const parts = dateStr.split('-');
-        if (parts.length === 3 && parts[2].length === 4) return parseInt(parts[2]);
-        return 0;
-      };
-
-      const yearA = getYear(a.date);
-      const yearB = getYear(b.date);
+      const yearA = parseInt(a.year) || 0;
+      const yearB = parseInt(b.year) || 0;
       
       if (yearA !== yearB) return yearB - yearA;
       return monthOrder.indexOf(b.month) - monthOrder.indexOf(a.month);
     });
 
     const latest = sortedInsights[0];
-    const latestDate = parseDateString(latest.date);
-    const fallbackYear = latest.date?.split('-')[2]?.length === 4 ? latest.date?.split('-')[2] : new Date().getFullYear().toString();
+    const fallbackYear = latest.year || new Date().getFullYear().toString();
     
     return {
       month: latest.month,
-      year: !isNaN(latestDate.getFullYear()) ? latestDate.getFullYear().toString() : fallbackYear
+      year: fallbackYear
     };
   }, [insights]);
 
@@ -245,7 +209,16 @@ const Index = () => {
 
   // Unique performers for the table
   const topUniquePerformers = useMemo(() => {
-    const grouped = filteredData.reduce((acc, item) => {
+    const targetMonthYear = selectedMonth.length > 0 
+      ? selectedMonth 
+      : [`${latestDataMonth} ${latestDataYear}`];
+
+    const performersData = filteredData.filter(item => {
+      const itemMonthYear = `${item.month} ${item.year}`;
+      return targetMonthYear.includes(itemMonthYear);
+    });
+
+    const grouped = performersData.reduce((acc, item) => {
       const totalSearches = item.googleSearchMobile + item.googleSearchDesktop;
       if (!acc[item.businessName]) {
         acc[item.businessName] = { ...item, totalSearches };
@@ -266,7 +239,7 @@ const Index = () => {
     return Object.values(grouped)
       .sort((a, b) => b.totalSearches - a.totalSearches)
       .slice(0, 10) as any[];
-  }, [filteredData]);
+  }, [filteredData, selectedMonth, latestDataMonth, latestDataYear]);
 
   // Processed locations data with conditional logic
   const latestLocationsInfo = useMemo(() => {
@@ -281,21 +254,20 @@ const Index = () => {
     }
 
     const sortedLocations = [...locations].sort((a, b) => {
-      const timeA = a.date ? parseDateString(a.date).getTime() : 0;
-      const timeB = b.date ? parseDateString(b.date).getTime() : 0;
-      if (!isNaN(timeA) && !isNaN(timeB) && timeA !== timeB) return timeB - timeA;
+      const timeA = a.timestamp || 0;
+      const timeB = b.timestamp || 0;
+      if (timeA !== timeB) return timeB - timeA;
       
       const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
       return monthOrder.indexOf(b.month) - monthOrder.indexOf(a.month);
     });
 
     const latest = sortedLocations[0];
-    const latestDate = parseDateString(latest.date);
-    const fallbackYear = latest.date?.split('-')[2]?.length === 4 ? latest.date?.split('-')[2] : new Date().getFullYear().toString();
+    const fallbackYear = latest.year || new Date().getFullYear().toString();
     
     return {
       month: latest.month || "Jan",
-      year: !isNaN(latestDate.getFullYear()) ? latestDate.getFullYear().toString() : fallbackYear,
+      year: fallbackYear,
       date: latest.date
     };
   }, [locations]);
@@ -312,7 +284,7 @@ const Index = () => {
     if (isSpecialityFiltered || isRatingFiltered) {
       // If rating or speciality are selected, show count of unique business names in target month and year
       const filteredInsights = insights.filter(i => {
-        const itemYear = parseDateString(i.date).getFullYear().toString();
+        const itemYear = i.year;
         const yearMatch = selectedYear.length === 0 ? itemYear === targetYear : selectedYear.includes(itemYear);
 
         return i.month === targetMonth &&
@@ -365,11 +337,7 @@ const Index = () => {
       const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(loc.unitName);
       const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(loc.department);
 
-      let locYear = "Unknown Year";
-      if (loc.date) {
-        const d = parseDateString(loc.date);
-        locYear = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
-      }
+      const locYear = loc.year || "Unknown Year";
 
       const exactMonthMatch = selectedMonth.length === 0
         ? locationsTargetMonth.includes(loc.month)
@@ -486,11 +454,7 @@ const Index = () => {
         const specialityMatch = selectedSpeciality.length === 0 || selectedSpeciality.includes(item.speciality);
         const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(item.department);
         const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(item.rating) === r);
-        let itemYear = "";
-        if (item.date) {
-          const d = parseDateString(item.date);
-          itemYear = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
-        }
+        const itemYear = item.year;
 
         const itemMonthYear = `${item.month} ${itemYear}`;
 
@@ -504,6 +468,9 @@ const Index = () => {
         let yearMatch = true;
         if (selectedYear.length > 0) {
           yearMatch = selectedYear.includes(itemYear);
+        } else if (selectedMonth.length === 0) {
+          // If no month is selected, default to latestDataYear to avoid combining years
+          yearMatch = itemYear === latestDataYear;
         }
 
         return monthMatch && clusterMatch && branchMatch && specialityMatch && departmentMatch && ratingMatch && yearMatch;
@@ -511,8 +478,8 @@ const Index = () => {
       return getAggregatedMetrics(data);
     };
 
-    // Main Value: Sum of selected (or all if none)
-    const mainM = getAggregatedForMonths(selectedMonth, true);
+    // Main Value: Sum of selected (or latest month if none)
+    const mainM = getAggregatedForMonths(selectedMonth.length > 0 ? selectedMonth : [latestDataMonth], false);
 
     // Comparison Value: For % change
     let currentComparisonM;
@@ -629,9 +596,9 @@ const Index = () => {
       
       const latestApiDate = apiInsightsData.length > 0 
         ? apiInsightsData.reduce((latest, current) => {
-            const currentD = parseDateString(current.date);
-            const latestD = parseDateString(latest.date);
-            return currentD > latestD ? current : latest;
+            const currentT = current.timestamp || 0;
+            const latestT = latest.timestamp || 0;
+            return currentT > latestT ? current : latest;
           }, apiInsightsData[0]).date 
         : "";
 
@@ -741,9 +708,9 @@ const Index = () => {
       const apiInsightsData = insights.filter(i => i.statusType !== undefined);
       const latestApiDate = apiInsightsData.length > 0 
         ? apiInsightsData.reduce((latest, current) => {
-            const currentD = parseDateString(current.date);
-            const latestD = parseDateString(latest.date);
-            return currentD > latestD ? current : latest;
+            const currentT = current.timestamp || 0;
+            const latestT = latest.timestamp || 0;
+            return currentT > latestT ? current : latest;
           }, apiInsightsData[0]).date 
         : "";
 
@@ -771,16 +738,7 @@ const Index = () => {
         const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(item.department);
         const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(item.rating) === r);
 
-        const getYear = (dateStr: string) => {
-          if (!dateStr) return 0;
-          const d = parseDateString(dateStr);
-          if (!isNaN(d.getFullYear())) return d.getFullYear();
-          const parts = dateStr.split('-');
-          if (parts.length === 3 && parts[2].length === 4) return parseInt(parts[2]);
-          return 0;
-        };
-        
-        const itemYear = getYear(item.date).toString();
+        const itemYear = item.year;
         const yearMatch = selectedYear.length > 0 ? selectedYear.includes(itemYear) : itemYear === latestDataYear;
 
         return item.month === latestDataMonth && clusterMatch && branchMatch && specialityMatch && departmentMatch && ratingMatch && yearMatch;

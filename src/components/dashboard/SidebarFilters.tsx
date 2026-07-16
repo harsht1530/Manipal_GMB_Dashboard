@@ -22,8 +22,8 @@ export const SidebarFilters = ({
   selectedRatings,
   onRatingsChange,
 }: SidebarFiltersProps) => {
-  const [departmentOpen, setDepartmentOpen] = useState(true);
-  const [ratingOpen, setRatingOpen] = useState(true);
+  const [departmentOpen, setDepartmentOpen] = useState(false);
+  const [ratingOpen, setRatingOpen] = useState(false);
 
   const handleDepartmentChange = (dept: string, checked: boolean) => {
     if (checked) {

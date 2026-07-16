@@ -21,6 +21,8 @@ export interface InsightData {
   department: string;
   phone: string;
   statusType?: string;
+  year: string;
+  timestamp: number;
 }
 
 export interface PostingData {
@@ -79,10 +81,14 @@ export interface LocationData {
   notInterested: number;
   outOfOrganization: number;
   date: string;
+  year: string;
+  timestamp: number;
 }
 
-// Transform MongoDB insight document to frontend format
 function transformInsight(doc: any): InsightData {
+  const dateVal = doc["Date"]?.$date || doc["Date"] || "";
+  const yearVal = doc["Year"] ? String(doc["Year"]) : (dateVal ? String(parseDateString(dateVal).getFullYear()) : "");
+  const timeVal = dateVal ? parseDateString(dateVal).getTime() : 0;
   return {
     id: doc._id?.$oid || String(Math.random()),
     businessName: doc["Business name"] || "",
@@ -96,7 +102,9 @@ function transformInsight(doc: any): InsightData {
     cluster: doc["Cluster"] || "",
     month: doc["Month"] || "",
     branch: doc["Branch"] || "",
-    date: doc["Date"]?.$date || doc["Date"] || "",
+    date: dateVal,
+    year: yearVal,
+    timestamp: timeVal,
     speciality: doc["Speciality"] || "",
     review: Number(doc["Review"]) || 0,
     rating: Number(doc["Rating"]) || 0,
@@ -107,7 +115,7 @@ function transformInsight(doc: any): InsightData {
 }
 
 // Transform MongoDB doctor document to frontend format
-function transformDoctor(doc: any): DoctorData {
+export function transformDoctor(doc: any): DoctorData {
   return {
     id: doc._id?.$oid || String(Math.random()),
     businessName: doc.business_name || "",
@@ -135,8 +143,28 @@ function transformDoctor(doc: any): DoctorData {
   };
 }
 
-// Transform MongoDB location document to frontend format
 function transformLocation(doc: any): LocationData {
+  const dateStr = doc["Date"]?.$date || doc["Date"] || "";
+  let yearVal = "";
+  let timeVal = 0;
+  if (dateStr) {
+    if (dateStr.includes('-')) {
+      const parts = dateStr.split('-');
+      if (parts.length === 3 && parts[2].length === 4) {
+        yearVal = parts[2];
+        timeVal = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`).getTime();
+      }
+    }
+    if (!yearVal) {
+      try {
+        const d = new Date(dateStr);
+        if (!isNaN(d.getFullYear())) {
+          yearVal = String(d.getFullYear());
+          timeVal = d.getTime();
+        }
+      } catch (e) {}
+    }
+  }
   return {
     id: doc._id?.$oid || String(Math.random()),
     month: doc["Month"] || "",
@@ -149,7 +177,9 @@ function transformLocation(doc: any): LocationData {
     needAccess: parseInt(doc["Need Access"]) || doc["Need Access"] || 0,
     notInterested: parseInt(doc["Not Interested"] || doc["Not Intrested"]) || doc["Not Intrested"] || 0,
     outOfOrganization: parseInt(doc["Out Of Organization"]) || doc["Out Of Organization"] || 0,
-    date: doc["Date"]?.$date || doc["Date"] || ""
+    date: dateStr,
+    year: yearVal || "2026",
+    timestamp: timeVal || 0
   };
 }
 

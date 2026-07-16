@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
-import { InsightData, DoctorData, LabelData, useMongoData } from "@/hooks/useMongoData";
+import { InsightData, DoctorData, LabelData, useMongoData, transformDoctor } from "@/hooks/useMongoData";
 import {
     Star,
     TrendingUp,
@@ -131,30 +131,72 @@ const DoctorDetails = () => {
                         return;
                     }
                 }
-
-                setProfile(foundDoctor);
-                setKeywords(foundDoctor.labels || []);
-                setCompetitors([...new Set(foundDoctor.labels?.flatMap(l => l.competitors || []))] as string[]);
-
-                // Fetch reviews if creds are available
-                if (foundDoctor.mailId && foundDoctor.account) {
-                    setReviewsLoading(true);
-                    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://smldatamanagement.multiplierai.co";
-                    fetch(`${API_BASE_URL}/api/reviews`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ email: foundDoctor.mailId, location: foundDoctor.account })
-                    })
-                        .then(res => res.json())
-                        .then(data => {
-                            if (data.success && data.data) {
-                                setReviewData(data.data);
-                            }
-                        })
-                        .catch(err => console.error("Failed to fetch reviews", err))
-                        .finally(() => setReviewsLoading(false));
-                }
             }
+
+            // Fetch full profile (with competitors and screenshots) from single doctor endpoint
+            fetch(`${import.meta.env.VITE_API_BASE_URL || "https://smldatamanagement.multiplierai.co"}/api/doctors/details?businessName=${encodeURIComponent(decodeURIComponent(businessName))}`)
+                .then(res => res.json())
+                .then(resData => {
+                    let activeDoc = foundDoctor;
+                    if (resData.success && resData.data) {
+                        const docData = transformDoctor(resData.data);
+                        setProfile(docData);
+                        setKeywords(docData.labels || []);
+                        setCompetitors([...new Set(docData.labels?.flatMap(l => l.competitors || []))] as string[]);
+                        activeDoc = docData;
+                    } else if (foundDoctor) {
+                        setProfile(foundDoctor);
+                        setKeywords(foundDoctor.labels || []);
+                        setCompetitors([...new Set(foundDoctor.labels?.flatMap(l => l.competitors || []))] as string[]);
+                    }
+
+                    // Fetch reviews if creds are available
+                    if (activeDoc?.mailId && activeDoc?.account) {
+                        setReviewsLoading(true);
+                        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://smldatamanagement.multiplierai.co";
+                        fetch(`${API_BASE_URL}/api/reviews`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email: activeDoc.mailId, location: activeDoc.account })
+                        })
+                            .then(res => res.json())
+                            .then(data => {
+                                if (data.success && data.data) {
+                                    setReviewData(data.data);
+                                }
+                            })
+                            .catch(err => console.error("Failed to fetch reviews", err))
+                            .finally(() => setReviewsLoading(false));
+                    }
+                    setIsLoading(false);
+                })
+                .catch(err => {
+                    console.error("Error loading doctor details:", err);
+                    if (foundDoctor) {
+                        setProfile(foundDoctor);
+                        setKeywords(foundDoctor.labels || []);
+                        setCompetitors([...new Set(foundDoctor.labels?.flatMap(l => l.competitors || []))] as string[]);
+
+                        if (foundDoctor.mailId && foundDoctor.account) {
+                            setReviewsLoading(true);
+                            const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://smldatamanagement.multiplierai.co";
+                            fetch(`${API_BASE_URL}/api/reviews`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ email: foundDoctor.mailId, location: foundDoctor.account })
+                            })
+                                .then(res => res.json())
+                                .then(data => {
+                                    if (data.success && data.data) {
+                                        setReviewData(data.data);
+                                    }
+                                })
+                                .catch(err => console.error("Failed to fetch reviews", err))
+                                .finally(() => setReviewsLoading(false));
+                        }
+                    }
+                    setIsLoading(false);
+                });
 
             // Extract available years
             const years = [...new Set(foundInsights.map((i) => {
