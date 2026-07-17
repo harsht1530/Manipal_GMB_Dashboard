@@ -49,65 +49,44 @@ const PhonePage = () => {
 
     // Get the latest month and year from the Date field
     const latestDataInfo = useMemo(() => {
-        const apiInsights = insights.filter(i => i.statusType !== undefined);
-        if (!mounted || loading || apiInsights.length === 0) {
+        if (!mounted || loading || insights.length === 0) {
             return { month: "", year: "" };
         }
         const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         
         // Find the record with the maximum Date value
-        const latestEntry = [...apiInsights].sort((a, b) => {
-            const getYear = (dateStr: string) => {
-                if (!dateStr) return 0;
-                const d = parseDateString(dateStr);
-                if (!isNaN(d.getFullYear())) return d.getFullYear();
-                const parts = dateStr.split('-');
-                if (parts.length === 3 && parts[2].length === 4) return parseInt(parts[2]);
-                return 0;
-            };
-
-            const yearA = getYear(a.date);
-            const yearB = getYear(b.date);
-            
+        const latestEntry = [...insights].sort((a, b) => {
+            const yearA = parseInt(a.year) || 0;
+            const yearB = parseInt(b.year) || 0;
             if (yearA !== yearB) return yearB - yearA;
             return monthOrder.indexOf(b.month) - monthOrder.indexOf(a.month);
         })[0];
 
         if (!latestEntry) return { month: "", year: "" };
         
-        const latestDate = parseDateString(latestEntry.date);
-        const fallbackYear = latestEntry.date?.split('-')[2]?.length === 4 ? latestEntry.date?.split('-')[2] : new Date().getFullYear().toString();
-        
         return {
             month: latestEntry.month,
-            year: !isNaN(latestDate.getFullYear()) ? latestDate.getFullYear().toString() : fallbackYear
+            year: latestEntry.year || new Date().getFullYear().toString()
         };
     }, [insights, mounted, loading]);
 
-    // Derive unique filter options from the apiInsights data
+    // Derive unique filter options from the insights data
     const filterOptions = useMemo(() => {
-        const apiInsights = insights.filter(i => i.statusType !== undefined && (i.statusType.toLowerCase() === "verified" || i.statusType.toLowerCase() === "verified and active"));
         if (!mounted || loading) {
             return { clusters: [], branches: [], months: [], specialities: [], years: [] };
         }
         // Extract unique years
-        const uniqueYears = [...new Set(apiInsights.map(i => {
-            try {
-                const d = parseDateString(i.date);
-                return !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
-            } catch (e) { return ""; }
-        }))].filter(Boolean).sort().reverse();
-
+        const uniqueYears = [...new Set(insights.map(i => i.year))].filter(Boolean).sort().reverse();
         const years = uniqueYears;
 
-        // 1. Clusters depend on selected Departments (Profile Types)
+        // Clusters depend on selected Departments (Profile Types)
         const clusterData = selectedDepartments.length > 0
-            ? apiInsights.filter(i => selectedDepartments.includes(i.department))
-            : apiInsights;
+            ? insights.filter(i => selectedDepartments.includes(i.department))
+            : insights;
         const clusters = [...new Set(clusterData.map(i => i.cluster))].filter(Boolean).sort();
 
-        // 2. Branches depend on selected Clusters AND selected Departments
-        const branchData = apiInsights.filter(i => {
+        // Branches depend on selected Clusters AND selected Departments
+        const branchData = insights.filter(i => {
             const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(i.cluster);
             const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(i.department);
             return clusterMatch && departmentMatch;
@@ -116,15 +95,11 @@ const PhonePage = () => {
 
         // Filter by year for months list
         const monthData = selectedYear.length > 0
-            ? apiInsights.filter(i => {
-                const d = parseDateString(i.date);
-                const y = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "";
-                return selectedYear.includes(y);
-            })
-            : apiInsights;
+            ? insights.filter(i => selectedYear.includes(i.year))
+            : insights;
 
         const months = [...new Set(monthData.map(i => i.month))].filter(Boolean);
-        const specialities = [...new Set(apiInsights.map(i => i.speciality))].filter(Boolean).sort();
+        const specialities = [...new Set(insights.map(i => i.speciality))].filter(Boolean).sort();
 
         // Sort months chronologically
         const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -136,11 +111,6 @@ const PhonePage = () => {
     const filteredData = useMemo(() => {
         if (!mounted || loading) return [];
         return insights.filter((item) => {
-            if (item.statusType === undefined) return false;
-            
-            const statusLower = item.statusType.toLowerCase();
-            if (statusLower !== "verified" && statusLower !== "verified and active") return false;
-
             const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(item.cluster);
             const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(item.branch);
             const specialityMatch = selectedSpeciality.length === 0 || selectedSpeciality.includes(item.speciality);
@@ -150,20 +120,12 @@ const PhonePage = () => {
             // Date filtering logic
             let dateMatch = true;
             if (selectedMonth.length === 0 && selectedYear.length === 0) {
-                // If no month/year selected, default to the latest available month and year from Date
-                const itemDate = parseDateString(item.date);
-                const itemYearStr = !isNaN(itemDate.getFullYear()) ? itemDate.getFullYear().toString() : "";
-                dateMatch = item.month === latestDataInfo.month && itemYearStr === latestDataInfo.year;
+                // If no month/year selected, default to the latest available month and year
+                dateMatch = item.month === latestDataInfo.month && item.year === latestDataInfo.year;
             } else {
                 // If month or year filters are used, use them
                 const monthMatch = selectedMonth.length === 0 || selectedMonth.includes(item.month);
-                
-                let yearMatch = true;
-                if (selectedYear.length > 0) {
-                    const itemDate = parseDateString(item.date);
-                    const itemYearStr = !isNaN(itemDate.getFullYear()) ? itemDate.getFullYear().toString() : "";
-                    yearMatch = selectedYear.includes(itemYearStr);
-                }
+                const yearMatch = selectedYear.length === 0 || selectedYear.includes(item.year);
                 dateMatch = monthMatch && yearMatch;
             }
 

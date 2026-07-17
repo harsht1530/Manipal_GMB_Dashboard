@@ -463,7 +463,6 @@ app.get('/api/doctors', async (req, res) => {
             newReviewUri: 1,
             mapsUri: 1,
             websiteUrl: 1,
-            labels: 1,
             primaryCategory: 1,
             address: 1,
             averageRating: 1,
