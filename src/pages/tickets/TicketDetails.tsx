@@ -47,7 +47,7 @@ export default function TicketDetails() {
 
   // Find active ticket
   const ticket = useMemo(() => {
-    return tickets.find(t => t.ticketId === ticketId) || null;
+    return tickets.find(t => t.ticketId === ticketId || t.requestId === ticketId) || null;
   }, [tickets, ticketId]);
 
   const canChangeStatus = useMemo(() => {
@@ -78,18 +78,21 @@ export default function TicketDetails() {
 
   if (!ticket) {
     return (
-      <DashboardLayout title="Ticket Details" subtitle="Loading GMB ticket details...">
+      <DashboardLayout title="Request Details" subtitle="Loading GMB request details...">
         <div className="max-w-4xl mx-auto py-12 text-center text-muted-foreground">
           <AlertCircle className="h-10 w-10 mx-auto text-muted-foreground/60 mb-2 animate-bounce" />
-          <p className="font-semibold text-lg">Ticket Not Found</p>
+          <p className="font-semibold text-lg">Request Not Found</p>
           <p className="text-sm mt-1">Please check the ID or return to the dashboard.</p>
-          <Link to="/tickets/dashboard" className="mt-4 inline-block">
+          <Link to="/requests/dashboard" className="mt-4 inline-block">
             <Button variant="outline">Back to Dashboard</Button>
           </Link>
         </div>
       </DashboardLayout>
     );
   }
+
+  const reqId = ticket.requestId || ticket.ticketId;
+  const reqType = ticket.requestType || ticket.ticketType;
 
   // Calculate SLA Remaining time
   const slaRemaining = () => {
@@ -116,7 +119,7 @@ export default function TicketDetails() {
       return;
     }
     setTransferLoading(true);
-    const updated = await transferTicket(ticket.ticketId, newAssigneeEmail, transferRemarks);
+    const updated = await transferTicket(reqId, newAssigneeEmail, transferRemarks);
     setTransferLoading(false);
     if (updated) {
       setTransferOpen(false);
@@ -153,7 +156,7 @@ export default function TicketDetails() {
     // Determine action type
     let action = "Comment Added";
     if (statusVal !== ticket.status) {
-      action = "Status Changes";
+      action = "Status Change";
       formData.append("prevValue", ticket.status);
       formData.append("newValue", statusVal);
     } else if (logAttachments.length > 0) {
@@ -169,7 +172,7 @@ export default function TicketDetails() {
       formData.append("attachments", file);
     });
 
-    const result = await addTicketLog(ticket.ticketId, formData);
+    const result = await addTicketLog(reqId, formData);
     setLoading(false);
 
     if (result) {
@@ -203,12 +206,12 @@ export default function TicketDetails() {
   };
 
   return (
-    <DashboardLayout title={`Ticket: ${ticket.ticketId}`} subtitle="Deep dive tracking, log details, and updates.">
+    <DashboardLayout title={`Request: ${reqId}`} subtitle="Deep dive tracking, log details, and updates.">
       <div className="space-y-6 max-w-6xl mx-auto">
         
         {/* Navigation & Toolbar Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b pb-4">
-          <Link to="/tickets/dashboard">
+          <Link to="/requests/dashboard">
             <Button variant="ghost" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
               <ArrowLeft className="h-4 w-4" /> Back to Dashboard
             </Button>
@@ -227,7 +230,7 @@ export default function TicketDetails() {
             </Badge>
 
             {/* SLA progress pipeline quick link */}
-            <Link to={`/tickets/sla-progress?ticketId=${ticket.ticketId}`}>
+            <Link to={`/requests/sla-progress?ticketId=${reqId}`}>
               <Button variant="outline" size="sm" className="h-9">
                 SLA Pipeline
               </Button>
@@ -254,13 +257,13 @@ export default function TicketDetails() {
         {/* 2-Column layout */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          {/* Left 2 cols: Ticket info, Attachments, Activity log */}
+          {/* Left 2 cols: Request info, Attachments, Activity log */}
           <div className="lg:col-span-2 space-y-6">
             
-            {/* Ticket Information */}
+            {/* Request Information */}
             <Card>
               <CardHeader className="bg-muted/15 border-b pb-3">
-                <CardTitle className="text-base font-semibold">Ticket Information</CardTitle>
+                <CardTitle className="text-base font-semibold">Request Information</CardTitle>
               </CardHeader>
               <CardContent className="p-5 text-left">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm mb-4">
@@ -269,8 +272,8 @@ export default function TicketDetails() {
                     <span className="font-semibold text-foreground">{ticket.category}</span>
                   </div>
                   <div>
-                    <span className="text-xs text-muted-foreground block font-medium">Ticket Type:</span>
-                    <span className="font-semibold text-foreground">{ticket.ticketType}</span>
+                    <span className="text-xs text-muted-foreground block font-medium">Request Type:</span>
+                    <span className="font-semibold text-foreground">{reqType}</span>
                   </div>
                   <div>
                     <span className="text-xs text-muted-foreground block font-medium">Raised By:</span>
@@ -360,7 +363,7 @@ export default function TicketDetails() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-muted-foreground text-center py-4">No attachments uploaded for this ticket.</p>
+                  <p className="text-xs text-muted-foreground text-center py-4">No attachments uploaded for this request.</p>
                 )}
               </CardContent>
             </Card>
@@ -463,7 +466,7 @@ export default function TicketDetails() {
               </CardHeader>
               <CardContent className="p-4">
                 <form onSubmit={handleSaveLog} className="space-y-4 text-left">
-                                    {/* Status update combobox (visible only to assignee or Admin) */}
+                  {/* Status update combobox (visible only to assignee or Admin) */}
                   {canChangeStatus ? (
                     <div className="space-y-1.5">
                       <Label htmlFor="status" className="font-semibold text-xs">Set Status</Label>
@@ -486,7 +489,7 @@ export default function TicketDetails() {
                     </div>
                   ) : (
                     <div className="space-y-1.5 p-3 rounded bg-muted/20 border border-primary/5 text-xs text-left">
-                      <span className="text-muted-foreground font-semibold block">Ticket Status (Read-Only)</span>
+                      <span className="text-muted-foreground font-semibold block">Request Status (Read-Only)</span>
                       <span className="font-bold flex items-center gap-1.5 mt-1 text-primary">
                         {ticket.status}
                       </span>
@@ -564,7 +567,7 @@ export default function TicketDetails() {
       <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
         <DialogContent className="sm:max-w-[425px] text-left">
           <DialogHeader>
-            <DialogTitle>Transfer GMB Ticket</DialogTitle>
+            <DialogTitle>Transfer GMB Request</DialogTitle>
             <DialogDescription>
               Assign this GMB request to another Multiplier Team member. Notification emails will be triggered.
             </DialogDescription>
@@ -594,7 +597,7 @@ export default function TicketDetails() {
               <Label htmlFor="transferRemarks" className="font-semibold text-sm">Reason / Remarks for Transfer</Label>
               <Textarea 
                 id="transferRemarks" 
-                placeholder="Why is this ticket being transferred?"
+                placeholder="Why is this request being transferred?"
                 className="min-h-[100px]"
                 value={transferRemarks}
                 onChange={(e) => setTransferRemarks(e.target.value)}

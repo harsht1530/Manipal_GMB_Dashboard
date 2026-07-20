@@ -49,6 +49,10 @@ const ForgotPassword = () => {
                         src={LOGO}
                         alt="Logo"
                         className="h-14 mx-auto mb-6 object-contain"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).onerror = null;
+                          (e.currentTarget as HTMLImageElement).src = "/placeholder.svg";
+                        }}
                     />
                     <h2 className="text-2xl font-bold tracking-tight">Forgot Password</h2>
                     <p className="text-sm text-muted-foreground mt-2">

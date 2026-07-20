@@ -196,32 +196,34 @@ export default function SlaProgress() {
     <DashboardLayout title="SLA Progress" subtitle="View and track the 8-day GMB Operations SLA pipeline.">
       <div className="space-y-6">
         
-        {/* Ticket Selector Card */}
+        {/* Request Selector Card */}
         <Card>
           <CardContent className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3 w-full sm:w-auto text-left">
-              <span className="font-semibold text-sm shrink-0">Select Ticket:</span>
+              <span className="font-semibold text-sm shrink-0">Select Request:</span>
               <Select value={selectedTicketId} onValueChange={setSelectedTicketId}>
                 <SelectTrigger className="w-full sm:w-[280px]">
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select GMB Ticket" />
-                  </SelectTrigger>
+                  <SelectValue placeholder="Select GMB Request" />
                 </SelectTrigger>
                 <SelectContent>
-                  {visibleTickets.map(t => (
-                    <SelectItem key={t.ticketId} value={t.ticketId}>
-                      {t.ticketId} - {t.branch} ({t.ticketType})
-                    </SelectItem>
-                  ))}
+                  {visibleTickets.map(t => {
+                    const reqId = t.requestId || t.ticketId;
+                    const reqType = t.requestType || t.ticketType;
+                    return (
+                      <SelectItem key={reqId} value={reqId}>
+                        {reqId} - {t.branch} ({reqType})
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
 
             {selectedTicket && (
               <div className="flex items-center gap-3">
-                <Link to={`/tickets/details/${selectedTicket.ticketId}`}>
+                <Link to={`/requests/details/${selectedTicket.requestId || selectedTicket.ticketId}`}>
                   <Button size="sm" variant="outline" className="flex items-center gap-1">
-                    Ticket Details <ExternalLink className="h-3.5 w-3.5" />
+                    Request Details <ExternalLink className="h-3.5 w-3.5" />
                   </Button>
                 </Link>
               </div>
@@ -233,7 +235,7 @@ export default function SlaProgress() {
           <>
             {/* Visual Step Timeline */}
             <Card className="p-6 overflow-x-auto text-left">
-              <h3 className="text-base font-bold text-foreground mb-6">SLA Lifecycle: {selectedTicket.ticketId}</h3>
+              <h3 className="text-base font-bold text-foreground mb-6">SLA Lifecycle: {selectedTicket.requestId || selectedTicket.ticketId}</h3>
               
               <div className="relative flex items-center justify-between min-w-[700px] px-8 py-4">
                 {/* Connecting Line */}
@@ -358,7 +360,7 @@ export default function SlaProgress() {
           </>
         ) : (
           <Card className="p-8 text-center text-muted-foreground font-medium">
-            No GMB tickets available to display SLA Progress. Raise a ticket first.
+            No GMB requests available to display SLA Progress. Raise a request first.
           </Card>
         )}
       </div>

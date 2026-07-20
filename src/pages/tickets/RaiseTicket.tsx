@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/components/ui/use-toast";
 import { 
   Download, 
@@ -19,7 +20,9 @@ import {
   UserCheck, 
   FileSpreadsheet, 
   CheckCircle,
-  Paperclip
+  Paperclip,
+  Info,
+  PlayCircle
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -91,6 +94,64 @@ const MULTIPLIER_CATEGORY_MAP: Record<string, string[]> = {
     "Ask supporting documents to verify the profiles"
   ],
   "Others": []
+};
+
+const TICKET_TYPE_DESCRIPTIONS: Record<string, string> = {
+  // Profile Creation
+  "Create new Google Business Profile": "Submit details to set up a brand-new official GMB listing for a doctor, department, or unit.",
+  
+  // Profile Verification
+  "Through Phone Number or Email": "Verification request via official phone call, SMS OTP, or domain email authorization.",
+  "Verify GBP through Video & Phone number": "Video verification or direct call support for GBP authorization.",
+  
+  // Ownership & Access
+  "Add/Remove Manager": "Add or remove manager/owner roles for authorized staff on existing GMB profiles.",
+  "Request ownership for existing profiles": "Request ownership transfer for profiles currently claimed by external users.",
+  
+  // Profile Updates
+  "Update business name": "Submit official name corrections or rebranding details for accurate Google Search display.",
+  "Update address": "Request pin relocation, building/floor changes, or official address line updates.",
+  "Update phone number": "Update primary or secondary contact helpline numbers for direct patient calls.",
+  "Update website": "Update primary landing page, department URL, or online appointment booking link.",
+  "Update Business Hours": "Update regular operating hours or holiday/special schedule listings.",
+  "Update Business Description": "Modify the 750-character business overview and services description.",
+  "Add/Update departments": "Associate child department or hospital wing listings with the main hospital profile.",
+  "Doctor Transfer": "Transfer doctor profile alignment or location settings between hospital branches.",
+  "Map Pin Correction": "Calibrate map pin geo-coordinates to direct patients to the exact OPD entrance.",
+  "Keyword Optimization": "Add target medical specialities, procedure terms, and search keywords.",
+  
+  // Profile Removal
+  "Remove doctor profile": "Request removal or unlinking of doctor profiles no longer practicing at the branch.",
+  
+  // Content
+  "Update Products & Services": "Update medical service menus, OPD consultation packages, and procedures list.",
+  "Upload photos / Videos": "Upload high-res hospital infrastructure, facility, or doctor portrait media.",
+  "Publish posts (Events / Offers/ Related to speciality)": "Schedule promotional, health awareness, or event posts on the GMB feed.",
+  "Update Cover & Logo": "Upload high-resolution official brand logo and cover banner imagery.",
+  "Irrelevant Content & Photos": "Flag and request removal of inappropriate or user-uploaded spam photos.",
+  
+  // Reviews
+  "Missing reviews": "Investigate and restore patient reviews that were posted but not visible publicly.",
+  "Rating Drop Investigation": "Audit and analyze sudden drops in branch overall star ratings.",
+  "Fake Review Escalation": "Flag and escalate spam, offensive, or policy-violating review comments to Google.",
+  
+  // Suspensions
+  "Suspended profile to be Reinstatement": "Prepare supporting business documents to appeal and restore suspended listings.",
+  "Ask supporting documents to verify the profiles": "Request utility bills or signage photos to clear profile suspension.",
+  
+  // Duplicates
+  "Remove duplicate profile": "Request removal of unauthorized or duplicate Google Business Profile listings.",
+  
+  // Merging
+  "Merge duplicate listings": "Merge reviews, photos, and ratings of duplicate listings into the primary profile.",
+  
+  // Closure
+  "Close/Mark permanently closed": "Mark inactive clinic or relocated branch profiles as permanently closed.",
+  
+  // Performance Reporting & Optimization
+  "Competitor Analysis": "Request keyword rank comparisons and competitor GMB visibility analysis.",
+  "Performance reports": "Generate weekly or monthly search, map view, call, and direction click performance reports.",
+  "Weekly Optimization Report": "Generate optimization health check reports across cluster profiles."
 };
 
 const getTemplateColumns = (category: string, ticketType: string, isMultiplier: boolean): string[] => {
@@ -239,7 +300,6 @@ export default function RaiseTicket() {
   const [loading, setLoading] = useState(false);
   const [branchesMeta, setBranchesMeta] = useState<{ branch: string; cluster: string }[]>([]);
 
-  // Fetch lightweight branches/clusters mapping
   useEffect(() => {
     fetch(`${import.meta.env.VITE_API_BASE_URL || "http://localhost:5000"}/api/branches-meta`)
       .then(res => res.json())
@@ -251,7 +311,6 @@ export default function RaiseTicket() {
       .catch(err => console.error("Error fetching branches metadata:", err));
   }, []);
   
-  // Form values
   const [category, setCategory] = useState("");
   const [ticketType, setTicketType] = useState("");
   const [branch, setBranch] = useState(user?.role === "Branch" && user?.branch ? user.branch : "");
@@ -259,12 +318,10 @@ export default function RaiseTicket() {
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [attachments, setAttachments] = useState<File[]>([]);
 
-  // Multiplier specific state for target assignee
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [assignedUserEmail, setAssignedUserEmail] = useState("");
   const [assignedUserName, setAssignedUserName] = useState("");
 
-  // Fetch users if multiplier
   useEffect(() => {
     if (isMultiplier) {
       fetch(`${import.meta.env.VITE_API_BASE_URL || "http://localhost:5000"}/api/users`)
@@ -278,7 +335,6 @@ export default function RaiseTicket() {
     }
   }, [isMultiplier]);
 
-  // Derive all users in the same cluster as the multiplier
   const clusterUsers = useMemo(() => {
     if (!currentMultiplierTeamMember) return [];
     const allowedClusters = currentMultiplierTeamMember.clusters || 
@@ -290,7 +346,6 @@ export default function RaiseTicket() {
     });
   }, [allUsers, currentMultiplierTeamMember]);
 
-  // Synchronize branch with selected user's Branch/Cluster
   useEffect(() => {
     if (isMultiplier && assignedUserEmail) {
       const selectedUserObj = clusterUsers.find(u => (u.orgEmail || u.mail) === assignedUserEmail);
@@ -300,7 +355,6 @@ export default function RaiseTicket() {
     }
   }, [assignedUserEmail, clusterUsers, isMultiplier]);
 
-  // Auto-select assignee if there is only 1 user for the cluster
   useEffect(() => {
     if (isMultiplier) {
       if (clusterUsers.length === 1) {
@@ -320,23 +374,25 @@ export default function RaiseTicket() {
     }
   }, [clusterUsers, isMultiplier, assignedUserEmail]);
 
-  // Reset ticket type on category change
   useEffect(() => {
     setTicketType("");
   }, [category]);
 
-  // Derive clusters & branches from branchesMeta data
   const { branches, clustersMap } = useMemo(() => {
     const map: Record<string, string> = {};
-    branchesMeta.forEach((b: any) => {
-      if (b.branch && b.cluster) {
-        map[b.branch] = b.cluster;
+    const set = new Set<string>();
+
+    branchesMeta.forEach(item => {
+      if (item.branch) {
+        set.add(item.branch);
+        if (item.cluster) {
+          map[item.branch] = item.cluster;
+        }
       }
     });
 
-    let activeBranches = branchesMeta.map((b: any) => b.branch).filter(Boolean).sort();
+    let activeBranches = Array.from(set).sort();
 
-    // Explicitly filter branches based on user role to guarantee correctness
     if (isMultiplier && currentMultiplierTeamMember) {
       const allowedClusters = currentMultiplierTeamMember.clusters || 
         (currentMultiplierTeamMember.cluster ? [currentMultiplierTeamMember.cluster] : []);
@@ -361,11 +417,9 @@ export default function RaiseTicket() {
     return { branches: activeBranches, clustersMap: map };
   }, [branchesMeta, user, isMultiplier, currentMultiplierTeamMember]);
 
-  // Derive cluster & auto-assigned person for the selected branch
   const derivedCluster = useMemo(() => {
     if (!branch) return "";
     let cl = clustersMap[branch] || "";
-    // If clustersMap has not loaded yet, fallback to user's cluster for branch users or currentMultiplierTeamMember's cluster for multipliers
     if (!cl) {
       if (isMultiplier && currentMultiplierTeamMember) {
         const allowedClusters = currentMultiplierTeamMember.clusters || 
@@ -381,10 +435,8 @@ export default function RaiseTicket() {
   const assignedPerson = useMemo(() => {
     if (!derivedCluster) return null;
     
-    // Look up Multiplier Team list (safely checking properties)
     const matches = team.filter(m => m && m.cluster && m.cluster.toLowerCase() === derivedCluster.toLowerCase());
     if (matches.length > 0) {
-      // Return first match or list them
       return {
         name: matches.map(m => m.name).join(" / "),
         email: matches[0].email
@@ -393,12 +445,11 @@ export default function RaiseTicket() {
     return { name: "Harsh (Default Owner)", email: "harsh@multipliersolutions.com" };
   }, [derivedCluster, team]);
 
-  // Generate Excel Template dynamically
   const handleDownloadTemplate = () => {
     if (!category || !ticketType) {
       toast({
         title: "Download Rejected",
-        description: "Please select a Category and Ticket Type first.",
+        description: "Please select a Category and Request Type first.",
         variant: "destructive"
       });
       return;
@@ -410,7 +461,6 @@ export default function RaiseTicket() {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Template");
     
-    // Save file
     const safeFilename = `${category.replace(/\s+/g, "_")}_Template.xlsx`;
     XLSX.writeFile(workbook, safeFilename);
     toast({
@@ -420,43 +470,41 @@ export default function RaiseTicket() {
   };
 
   const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (!file.name.endsWith(".xlsx") && !file.name.endsWith(".xls") && !file.name.endsWith(".csv")) {
-        toast({
-          title: "Invalid File Type",
-          description: "Please upload an Excel file (.xlsx, .xls, .csv).",
-          variant: "destructive"
-        });
-        e.target.value = "";
-        return;
-      }
-      setExcelFile(file);
+    if (e.target.files && e.target.files[0]) {
+      setExcelFile(e.target.files[0]);
     }
   };
 
   const handleAttachmentsUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files) {
-      setAttachments(Array.from(files));
+    if (e.target.files) {
+      setAttachments(Array.from(e.target.files));
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!category || !ticketType || !branch || !description) {
-      toast({
-        title: "Validation Error",
-        description: "Please fill in all mandatory fields.",
-        variant: "destructive"
-      });
+
+    if (!category) {
+      toast({ title: "Validation Error", description: "Please select a Category.", variant: "destructive" });
+      return;
+    }
+    if (!ticketType) {
+      toast({ title: "Validation Error", description: "Please select/enter a Request Type.", variant: "destructive" });
+      return;
+    }
+    if (!branch) {
+      toast({ title: "Validation Error", description: "Please select a Branch / Unit.", variant: "destructive" });
+      return;
+    }
+    if (!description.trim()) {
+      toast({ title: "Validation Error", description: "Please provide a Description for the request.", variant: "destructive" });
       return;
     }
 
     if (category !== "Others" && !excelFile) {
       toast({
-        title: "Mandatory Template Required",
-        description: "Please fill and upload the Excel template sheet.",
+        title: "Excel File Required",
+        description: `Please upload the filled Excel template for category "${category}".`,
         variant: "destructive"
       });
       return;
@@ -488,7 +536,6 @@ export default function RaiseTicket() {
       formData.append("assignedToEmail", assignedUserEmail);
     }
     
-    // Attach files
     if (excelFile) {
       formData.append("excelTemplate", excelFile);
     }
@@ -501,16 +548,16 @@ export default function RaiseTicket() {
     setLoading(false);
     
     if (result) {
-      navigate("/tickets/dashboard");
+      navigate("/requests/dashboard");
     }
   };
 
   return (
-    <DashboardLayout title="Raise Ticket" subtitle="Create a GMB operational request and assign to the Multiplier team.">
+    <DashboardLayout title="Raise Request" subtitle="Create a GMB operational request and assign to the Multiplier team.">
       <div className="max-w-4xl mx-auto space-y-6">
         
         <div className="flex items-center justify-between">
-          <Link to="/tickets/dashboard">
+          <Link to="/requests/dashboard">
             <Button variant="ghost" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
               <ArrowLeft className="h-4 w-4" /> Back to Dashboard
             </Button>
@@ -518,16 +565,14 @@ export default function RaiseTicket() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Main Form */}
           <Card className="lg:col-span-2 shadow-sm border border-border">
             <CardHeader className="border-b bg-muted/10">
-              <CardTitle className="text-lg">Raise GMB Request Ticket</CardTitle>
-              <CardDescription>Fill out the ticket parameters below. Every ticket initiates a 7-day SLA cycle.</CardDescription>
+              <CardTitle className="text-lg">Raise GMB Operational Request</CardTitle>
+              <CardDescription>Fill out the request parameters below. Every request initiates an 8-day SLA cycle.</CardDescription>
             </CardHeader>
             <CardContent className="p-6">
               <form onSubmit={handleSubmit} className="space-y-5 text-left">
                 
-                {/* 1. Category */}
                 <div className="space-y-1.5">
                   <Label htmlFor="category" className="font-semibold text-sm">Category <span className="text-destructive">*</span></Label>
                   <Select value={category} onValueChange={setCategory}>
@@ -542,21 +587,44 @@ export default function RaiseTicket() {
                   </Select>
                 </div>
 
-                {/* 2. Ticket Type */}
+                {/* 2. Request Type */}
                 <div className="space-y-1.5">
-                  <Label htmlFor="ticketType" className="font-semibold text-sm">Ticket Type <span className="text-destructive">*</span></Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="ticketType" className="font-semibold text-sm">Request Type <span className="text-destructive">*</span></Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button type="button" variant="ghost" size="icon" className="h-5 w-5 rounded-full text-sky-600 bg-sky-50 hover:bg-sky-100 dark:bg-sky-950 dark:hover:bg-sky-900 border border-sky-200 shadow-xs">
+                          <Info className="h-3 w-3" />
+                          <span className="sr-only">Request Type Description</span>
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent side="top" className="w-80 p-3 text-xs bg-background border border-border shadow-xl space-y-1.5">
+                        <div className="font-bold text-sky-600 flex items-center gap-1">
+                          <Info className="h-3.5 w-3.5" />
+                          {ticketType ? ticketType : "Request Type Information"}
+                        </div>
+                        <p className="text-muted-foreground leading-normal">
+                          {ticketType && TICKET_TYPE_DESCRIPTIONS[ticketType]
+                            ? TICKET_TYPE_DESCRIPTIONS[ticketType]
+                            : category
+                            ? "Select a Request Type from the dropdown to see its specific guidelines."
+                            : "Select a Category and Request Type to view its short description."}
+                        </p>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
                   {category === "Others" ? (
                     <Input
                       id="ticketType"
                       value={ticketType}
                       onChange={(e) => setTicketType(e.target.value)}
-                      placeholder="Enter Ticket Type"
+                      placeholder="Enter Request Type"
                       className="w-full"
                     />
                   ) : (
                     <Select value={ticketType} onValueChange={setTicketType} disabled={!category}>
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder={category ? "Select Ticket Type" : "Please select Category first"} />
+                        <SelectValue placeholder={category ? "Select Request Type" : "Please select Category first"} />
                       </SelectTrigger>
                       <SelectContent>
                         {category && categoryMap[category] && categoryMap[category].map(type => (
@@ -564,6 +632,12 @@ export default function RaiseTicket() {
                         ))}
                       </SelectContent>
                     </Select>
+                  )}
+                  {ticketType && TICKET_TYPE_DESCRIPTIONS[ticketType] && (
+                    <p className="text-[11px] text-sky-700 bg-sky-50 dark:bg-sky-950/50 dark:text-sky-300 p-2 rounded-md border border-sky-200/60 font-medium flex items-center gap-1.5 mt-1 animate-in fade-in-50 duration-200">
+                      <Info className="h-3.5 w-3.5 shrink-0 text-sky-600" />
+                      <span>{TICKET_TYPE_DESCRIPTIONS[ticketType]}</span>
+                    </p>
                   )}
                 </div>
 
@@ -667,11 +741,11 @@ export default function RaiseTicket() {
 
                 {/* Submit Buttons */}
                 <div className="flex justify-end gap-2 pt-4">
-                  <Link to="/tickets/dashboard">
+                  <Link to="/requests/dashboard">
                     <Button type="button" variant="ghost">Cancel</Button>
                   </Link>
                   <Button type="submit" className="bg-primary hover:bg-primary/95" disabled={loading}>
-                    {loading ? "Submitting Request..." : "Submit Ticket"}
+                    {loading ? "Submitting Request..." : "Submit Request"}
                   </Button>
                 </div>
 
@@ -683,7 +757,7 @@ export default function RaiseTicket() {
           <div className="space-y-6">
             <Card>
               <CardHeader className="bg-muted/15 border-b pb-3">
-                <CardTitle className="text-sm font-semibold">Ticket Routing</CardTitle>
+                <CardTitle className="text-sm font-semibold">Request Routing</CardTitle>
                 <CardDescription className="text-xs">Where will this request go?</CardDescription>
               </CardHeader>
               <CardContent className="p-4 space-y-4">
@@ -711,6 +785,40 @@ export default function RaiseTicket() {
               </CardContent>
             </Card>
 
+            {/* Tutorial Video Card */}
+            <Card className="overflow-hidden border border-primary/20 shadow-sm">
+              <CardHeader className="bg-primary/5 border-b pb-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2 text-primary">
+                  <PlayCircle className="h-4 w-4 text-primary" />
+                  How to Raise a Request (Tutorial)
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Watch this step-by-step video guide to learn how to submit requests correctly.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-3">
+                <div className="relative rounded-lg overflow-hidden bg-black/90 aspect-video flex items-center justify-center border border-border shadow-inner">
+                  <video 
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    controls
+                    preload="auto"
+                    className="w-full h-full object-contain"
+                    poster="/placeholder.svg"
+                  >
+                    <source src="/GMB/videos/raise_request_tutorial.mp4" type="video/mp4" />
+                    <source src="/videos/raise_request_tutorial.mp4" type="video/mp4" />
+                    Your browser does not support the video tag.
+                  </video>
+                </div>
+                {/* <p className="text-[10px] text-muted-foreground mt-2 text-center font-medium">
+                  📹 Tutorial File: <code className="bg-muted px-1 py-0.5 rounded text-[10px]">public/videos/raise_request_tutorial.mp4</code>
+                </p> */}
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader className="bg-muted/15 border-b pb-3">
                 <CardTitle className="text-sm font-semibold">GMB SLA Policies</CardTitle>
@@ -718,11 +826,11 @@ export default function RaiseTicket() {
               <CardContent className="p-4 text-left text-xs text-muted-foreground space-y-3">
                 <div className="flex gap-2">
                   <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                  <p>All tickets are generated with a strict <strong>7-Day Resolution SLA</strong> timer.</p>
+                  <p>All requests are generated with a strict <strong>7-Day Resolution SLA</strong> timer.</p>
                 </div>
                 <div className="flex gap-2">
                   <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                  <p>Priority increases automatically based on ticket age (Day 3: P4, Day 4: P3, Day 5-6: P2, Day 7: P1).</p>
+                  <p>Priority increases automatically based on request age (Day 3: P4, Day 4: P3, Day 5-6: P2, Day 7: P1).</p>
                 </div>
                 <div className="flex gap-2">
                   <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
@@ -730,7 +838,7 @@ export default function RaiseTicket() {
                 </div>
                 <div className="flex gap-2">
                   <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                  <p>Tickets breaching SLA (Day 8+) are automatically escalated to <strong>Manipal Corporate Team</strong>.</p>
+                  <p>Requests breaching SLA (Day 8+) are automatically escalated to <strong>Manipal Corporate Team</strong>.</p>
                 </div>
               </CardContent>
             </Card>

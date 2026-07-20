@@ -72,7 +72,7 @@ export default function AdminTicketConsole() {
 
   // Filtered tickets
   const filteredTickets = useMemo(() => {
-    return tickets.filter(ticket => {
+    const filtered = tickets.filter(ticket => {
       const matchSearch = 
         ticket.ticketId.toLowerCase().includes(search.toLowerCase()) ||
         ticket.ticketType.toLowerCase().includes(search.toLowerCase()) ||
@@ -86,6 +86,30 @@ export default function AdminTicketConsole() {
       const matchCluster = clusterFilter === "ALL" || ticket.cluster === clusterFilter;
 
       return matchSearch && matchStatus && matchPriority && matchCluster;
+    });
+
+    // Priority rank mapping (P1 highest, P5 lowest)
+    const priorityRank = (p: string) => {
+      switch (p) {
+        case "P1": return 1;
+        case "P2": return 2;
+        case "P3": return 3;
+        case "P4": return 4;
+        case "P5": return 5;
+        default: return 99;
+      }
+    };
+
+    // Sort: Highest priority first (P1 -> P5), then FIFO (First In, First Out: oldest createdAt first)
+    return filtered.sort((a, b) => {
+      const pA = priorityRank(a.priority);
+      const pB = priorityRank(b.priority);
+      if (pA !== pB) {
+        return pA - pB;
+      }
+      const timeA = new Date(a.createdAt).getTime();
+      const timeB = new Date(b.createdAt).getTime();
+      return timeA - timeB;
     });
   }, [tickets, search, statusFilter, priorityFilter, clusterFilter]);
 
@@ -205,7 +229,7 @@ export default function AdminTicketConsole() {
   };
 
   return (
-    <DashboardLayout title="Admin Control Console" subtitle="Supervise all system GMB tickets, audit timelines, and issue commands">
+    <DashboardLayout title="Admin Control Console" subtitle="Supervise all system GMB requests, audit timelines, and issue commands">
       <div className="space-y-6">
         
         {/* KPI Cards Grid */}
@@ -213,7 +237,7 @@ export default function AdminTicketConsole() {
           <Card className="bg-gradient-to-br from-primary/5 via-transparent to-transparent border-primary/10 shadow-sm">
             <CardContent className="p-5 flex items-center justify-between">
               <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Tickets</p>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Requests</p>
                 <h3 className="text-3xl font-bold text-foreground mt-1">{metrics.total}</h3>
               </div>
               <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
@@ -338,13 +362,13 @@ export default function AdminTicketConsole() {
           </CardContent>
         </Card>
 
-        {/* Tickets Listing Table */}
+        {/* Requests Listing Table */}
         <Card className="border-primary/10 shadow-sm overflow-hidden bg-background">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader className="bg-muted/30">
                 <TableRow>
-                  <TableHead className="font-bold w-[120px]">Ticket ID</TableHead>
+                  <TableHead className="font-bold w-[120px]">Request ID</TableHead>
                   <TableHead className="font-bold">Branch (Cluster)</TableHead>
                   <TableHead className="font-bold">Category & Type</TableHead>
                   <TableHead className="font-bold">Raised By</TableHead>
@@ -358,53 +382,57 @@ export default function AdminTicketConsole() {
                 {loading ? (
                   <TableRow>
                     <TableCell colSpan={8} className="h-32 text-center text-sm text-muted-foreground font-medium">
-                      Loading tickets and audit logs...
+                      Loading requests and audit logs...
                     </TableCell>
                   </TableRow>
                 ) : filteredTickets.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="h-32 text-center text-sm text-muted-foreground font-medium">
-                      No tickets found matching the filter criteria.
+                      No requests found matching the filter criteria.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredTickets.map(ticket => (
-                    <TableRow 
-                      key={ticket._id} 
-                      className="cursor-pointer hover:bg-muted/10 transition-colors"
-                      onClick={() => handleOpenTicket(ticket)}
-                    >
-                      <TableCell className="font-bold text-primary">{ticket.ticketId}</TableCell>
-                      <TableCell className="text-xs">
-                        <span className="font-semibold block">{ticket.branch}</span>
-                        <span className="text-[10px] text-muted-foreground">{ticket.cluster}</span>
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <span className="font-medium block">{ticket.category}</span>
-                        <span className="text-[10px] text-muted-foreground">{ticket.ticketType}</span>
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <span className="font-medium block">{ticket.raisedBy.name}</span>
-                        <span className="text-[10px] text-muted-foreground">{ticket.raisedBy.email}</span>
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <span className="font-semibold text-teal-600 block">{ticket.assignedTo.name}</span>
-                        <span className="text-[10px] text-muted-foreground">{ticket.assignedTo.email}</span>
-                      </TableCell>
-                      <TableCell>{getStatusBadge(ticket.status)}</TableCell>
-                      <TableCell>{getPriorityBadge(ticket.priority)}</TableCell>
-                      <TableCell className="text-xs font-semibold text-muted-foreground">
-                        {format(new Date(ticket.dueDate), 'MMM d, yyyy')}
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  filteredTickets.map(ticket => {
+                    const reqId = ticket.requestId || ticket.ticketId;
+                    const reqType = ticket.requestType || ticket.ticketType;
+                    return (
+                      <TableRow 
+                        key={ticket._id} 
+                        className="cursor-pointer hover:bg-muted/10 transition-colors"
+                        onClick={() => handleOpenTicket(ticket)}
+                      >
+                        <TableCell className="font-bold text-primary">{reqId}</TableCell>
+                        <TableCell className="text-xs">
+                          <span className="font-semibold block">{ticket.branch}</span>
+                          <span className="text-[10px] text-muted-foreground">{ticket.cluster}</span>
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <span className="font-medium block">{ticket.category}</span>
+                          <span className="text-[10px] text-muted-foreground">{reqType}</span>
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <span className="font-medium block">{ticket.raisedBy.name}</span>
+                          <span className="text-[10px] text-muted-foreground">{ticket.raisedBy.email}</span>
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <span className="font-semibold text-teal-600 block">{ticket.assignedTo.name}</span>
+                          <span className="text-[10px] text-muted-foreground">{ticket.assignedTo.email}</span>
+                        </TableCell>
+                        <TableCell>{getStatusBadge(ticket.status)}</TableCell>
+                        <TableCell>{getPriorityBadge(ticket.priority)}</TableCell>
+                        <TableCell className="text-xs font-semibold text-muted-foreground">
+                          {format(new Date(ticket.dueDate), 'MMM d, yyyy')}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
           </div>
         </Card>
 
-        {/* Dynamic Ticket Inspection & Comments Dialog */}
+        {/* Dynamic Request Inspection & Comments Dialog */}
         {selectedTicket && (
           <Dialog open={!!selectedTicket} onOpenChange={(open) => !open && setSelectedTicket(null)}>
             <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto border-primary/10 shadow-2xl p-6 custom-scrollbar bg-background">
@@ -412,7 +440,7 @@ export default function AdminTicketConsole() {
                 <div className="flex items-center justify-between">
                   <div className="space-y-1">
                     <DialogTitle className="text-xl font-bold flex items-center gap-2 text-primary">
-                      {selectedTicket.ticketId}
+                      {selectedTicket.requestId || selectedTicket.ticketId}
                       {getStatusBadge(selectedTicket.status)}
                       {getPriorityBadge(selectedTicket.priority)}
                     </DialogTitle>
@@ -431,7 +459,7 @@ export default function AdminTicketConsole() {
                     <CardHeader className="py-3 px-4 border-b">
                       <CardTitle className="text-sm font-bold flex items-center gap-2">
                         <FileSpreadsheet className="h-4 w-4 text-primary" />
-                        Ticket Meta Details
+                        Request Meta Details
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="p-4 space-y-4">
@@ -441,8 +469,8 @@ export default function AdminTicketConsole() {
                           <span className="font-semibold">{selectedTicket.category}</span>
                         </div>
                         <div>
-                          <span className="text-muted-foreground block font-medium">Ticket Type:</span>
-                          <span className="font-semibold">{selectedTicket.ticketType}</span>
+                          <span className="text-muted-foreground block font-medium">Request Type:</span>
+                          <span className="font-semibold">{selectedTicket.requestType || selectedTicket.ticketType}</span>
                         </div>
                         <div>
                           <span className="text-muted-foreground block font-medium">Raised By:</span>

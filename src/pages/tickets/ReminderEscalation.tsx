@@ -68,7 +68,8 @@ export default function ReminderEscalation() {
   // Trigger Manual SLA Reminder Email
   const handleSendReminder = async (ticket: Ticket) => {
     if (!user) return;
-    setActionLoading(`${ticket.ticketId}-reminder`);
+    const reqId = ticket.requestId || ticket.ticketId;
+    setActionLoading(`${reqId}-reminder`);
     try {
       const formData = new FormData();
       formData.append("user", user.name);
@@ -78,7 +79,7 @@ export default function ReminderEscalation() {
       formData.append("sendEmailNotify", "true"); // trigger SMTP email
       formData.append("isInternal", "false");
 
-      await addTicketLog(ticket.ticketId, formData);
+      await addTicketLog(reqId, formData);
       toast({
         title: "Reminder Sent",
         description: `Email reminder triggered successfully to ${ticket.assignedTo.name}.`,
@@ -90,27 +91,26 @@ export default function ReminderEscalation() {
     }
   };
 
-  // Trigger Manual Ticket Escalation
+  // Trigger Manual Request Escalation
   const handleEscalate = async (ticket: Ticket) => {
     if (!user) return;
-    setActionLoading(`${ticket.ticketId}-escalate`);
+    const reqId = ticket.requestId || ticket.ticketId;
+    setActionLoading(`${reqId}-escalate`);
     try {
       const formData = new FormData();
       formData.append("user", user.name);
       formData.append("email", user.email);
       formData.append("action", "Escalations");
       formData.append("newValue", "Escalated");
-      formData.append("remarks", `Ticket manually escalated to Regional Marketing Head by ${user.name}. Priority set to P1 (Highest).`);
+      formData.append("remarks", `Request manually escalated to Regional Marketing Head by ${user.name}. Priority set to P1 (Highest).`);
       formData.append("sendEmailNotify", "true");
       formData.append("isInternal", "false");
 
-      // Also updates local state status to 'Escalated' in context
-      await addTicketLog(ticket.ticketId, formData);
+      await addTicketLog(reqId, formData);
       
-      // Update status directly through server logs endpoint
       toast({
-        title: "Ticket Escalated",
-        description: `Ticket ${ticket.ticketId} is now escalated to the Regional Marketing Head.`,
+        title: "Request Escalated",
+        description: `Request ${reqId} is now escalated to the Regional Marketing Head.`,
       });
     } catch (e) {
       console.error(e);
@@ -129,7 +129,7 @@ export default function ReminderEscalation() {
   };
 
   return (
-    <DashboardLayout title="Reminder & Escalation" subtitle="Identify and action tickets approaching or breaching SLA limits.">
+    <DashboardLayout title="Reminder & Escalation" subtitle="Identify and action requests approaching or breaching SLA limits.">
       
       {/* SLA Metric Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
@@ -197,7 +197,7 @@ export default function ReminderEscalation() {
           )}
         >
           <div className="space-y-1 text-left">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Escalated Tickets</span>
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Escalated Requests</span>
             <h3 className="text-3xl font-bold tracking-tight text-red-600">{slaGroups.escalated.length}</h3>
             <span className="text-[10px] text-muted-foreground block font-medium">Escalated to RMH</span>
           </div>
@@ -213,7 +213,7 @@ export default function ReminderEscalation() {
         <CardHeader className="bg-muted/15 border-b pb-3">
           <CardTitle className="text-base font-semibold flex items-center gap-2">
             <TrendingUp className="h-4.5 w-4.5 text-primary" />
-            Tickets Requiring Attention: 
+            Requests Requiring Attention: 
             <span className="text-primary font-bold">
               {selectedGroup === "day5" && "Day 5 (Reminder 1)"}
               {selectedGroup === "day6" && "Day 6 (Reminder 2)"}
@@ -227,7 +227,7 @@ export default function ReminderEscalation() {
           <Table>
             <TableHeader className="bg-muted/30">
               <TableRow>
-                <TableHead className="w-[120px]">Ticket ID</TableHead>
+                <TableHead className="w-[120px]">Request ID</TableHead>
                 <TableHead>Category / Type</TableHead>
                 <TableHead>Branch / Unit</TableHead>
                 <TableHead>Assigned To</TableHead>
@@ -242,76 +242,80 @@ export default function ReminderEscalation() {
               {currentGroupTickets.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={9} className="h-28 text-center text-muted-foreground font-medium">
-                    No GMB tickets currently in this SLA bracket.
+                    No GMB requests currently in this SLA bracket.
                   </TableCell>
                 </TableRow>
               ) : (
-                currentGroupTickets.map(ticket => (
-                  <TableRow key={ticket._id} className="hover:bg-muted/20 transition-colors">
-                    <TableCell className="font-semibold text-primary">
-                      <Link to={`/tickets/details/${ticket.ticketId}`} className="hover:underline flex items-center gap-1">
-                        {ticket.ticketId}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      <div className="flex flex-col text-left">
-                        <span className="text-xs text-muted-foreground">{ticket.category}</span>
-                        <span className="text-sm font-semibold truncate max-w-[180px]">{ticket.ticketType}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-xs font-semibold text-foreground">{ticket.branch}</TableCell>
-                    <TableCell className="text-xs">{ticket.assignedTo.name}</TableCell>
-                    <TableCell className="text-xs">{ticket.raisedBy.name}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {new Date(ticket.createdAt).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={cn("text-[10px] font-semibold border px-2 py-0.5", getPriorityBadgeColor(ticket.priority))}>
-                        {ticket.priority}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={cn("text-[10px] font-semibold border px-2 py-0.5", 
-                        ticket.status === "Escalated" ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-amber-50 text-amber-700 border-amber-200"
-                      )}>
-                        {ticket.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right space-x-2">
-                      <Link to={`/tickets/details/${ticket.ticketId}`}>
-                        <Button size="sm" variant="outline" className="h-8 text-xs font-medium">
-                          Open <ArrowUpRight className="ml-1 h-3.5 w-3.5" />
-                        </Button>
-                      </Link>
-                      
-                      {selectedGroup !== "escalated" && (
-                        <Button 
-                          size="sm" 
-                          variant="secondary"
-                          className="h-8 text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20"
-                          onClick={() => handleSendReminder(ticket)}
-                          disabled={actionLoading === `${ticket.ticketId}-reminder`}
-                        >
-                          <Send className="mr-1 h-3.5 w-3.5" />
-                          {actionLoading === `${ticket.ticketId}-reminder` ? "Sending..." : "Send Reminder"}
-                        </Button>
-                      )}
+                currentGroupTickets.map(ticket => {
+                  const reqId = ticket.requestId || ticket.ticketId;
+                  const reqType = ticket.requestType || ticket.ticketType;
+                  return (
+                    <TableRow key={ticket._id} className="hover:bg-muted/20 transition-colors">
+                      <TableCell className="font-semibold text-primary">
+                        <Link to={`/requests/details/${reqId}`} className="hover:underline flex items-center gap-1">
+                          {reqId}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex flex-col text-left">
+                          <span className="text-xs text-muted-foreground">{ticket.category}</span>
+                          <span className="text-sm font-semibold truncate max-w-[180px]">{reqType}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs font-semibold text-foreground">{ticket.branch}</TableCell>
+                      <TableCell className="text-xs">{ticket.assignedTo.name}</TableCell>
+                      <TableCell className="text-xs">{ticket.raisedBy.name}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {new Date(ticket.createdAt).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={cn("text-[10px] font-semibold border px-2 py-0.5", getPriorityBadgeColor(ticket.priority))}>
+                          {ticket.priority}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={cn("text-[10px] font-semibold border px-2 py-0.5", 
+                          ticket.status === "Escalated" ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-amber-50 text-amber-700 border-amber-200"
+                        )}>
+                          {ticket.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right space-x-2">
+                        <Link to={`/requests/details/${reqId}`}>
+                          <Button size="sm" variant="outline" className="h-8 text-xs font-medium">
+                            Open <ArrowUpRight className="ml-1 h-3.5 w-3.5" />
+                          </Button>
+                        </Link>
+                        
+                        {selectedGroup !== "escalated" && (
+                          <Button 
+                            size="sm" 
+                            variant="secondary"
+                            className="h-8 text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20"
+                            onClick={() => handleSendReminder(ticket)}
+                            disabled={actionLoading === `${reqId}-reminder`}
+                          >
+                            <Send className="mr-1 h-3.5 w-3.5" />
+                            {actionLoading === `${reqId}-reminder` ? "Sending..." : "Send Reminder"}
+                          </Button>
+                        )}
 
-                      {ticket.status !== "Escalated" && (
-                        <Button 
-                          size="sm" 
-                          variant="destructive"
-                          className="h-8 text-xs font-medium border border-rose-200 text-rose-600 bg-rose-50 hover:bg-rose-100"
-                          onClick={() => handleEscalate(ticket)}
-                          disabled={actionLoading === `${ticket.ticketId}-escalate`}
-                        >
-                          <AlertTriangle className="mr-1 h-3.5 w-3.5" />
-                          {actionLoading === `${ticket.ticketId}-escalate` ? "Escalating..." : "Escalate Now"}
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
+                        {ticket.status !== "Escalated" && (
+                          <Button 
+                            size="sm" 
+                            variant="destructive"
+                            className="h-8 text-xs font-medium border border-rose-200 text-rose-600 bg-rose-50 hover:bg-rose-100"
+                            onClick={() => handleEscalate(ticket)}
+                            disabled={actionLoading === `${reqId}-escalate`}
+                          >
+                            <AlertTriangle className="mr-1 h-3.5 w-3.5" />
+                            {actionLoading === `${reqId}-escalate` ? "Escalating..." : "Escalate Now"}
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>

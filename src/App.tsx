@@ -57,7 +57,7 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <HashRouter>
+        <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
             <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
             <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
@@ -78,7 +78,23 @@ const App = () => (
             <Route path="/critical-issues" element={<ProtectedRoute><CriticalIssues /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             
-            {/* GMB Ticket routes wrapped in TicketProvider */}
+            {/* GMB Request routes wrapped in TicketProvider */}
+            <Route path="/requests/*" element={
+              <ProtectedRoute>
+                <TicketProvider>
+                  <Routes>
+                    <Route path="dashboard" element={<TicketDashboard />} />
+                    <Route path="admin-console" element={<AdminTicketConsole />} />
+                    <Route path="raise" element={<RaiseTicket />} />
+                    <Route path="multiplier-raise" element={<MultiplierRaiseRequest />} />
+                    <Route path="escalations" element={<ReminderEscalation />} />
+                    <Route path="sla-progress" element={<SlaProgress />} />
+                    <Route path="details/:ticketId" element={<TicketDetails />} />
+                  </Routes>
+                </TicketProvider>
+              </ProtectedRoute>
+            } />
+
             <Route path="/tickets/*" element={
               <ProtectedRoute>
                 <TicketProvider>

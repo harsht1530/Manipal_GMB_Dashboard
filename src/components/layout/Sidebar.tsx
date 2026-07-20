@@ -40,15 +40,15 @@ const navItems = [
   { icon: FileText, label: "GBP Postings", path: "/postings" },
   { icon: Ticket, label: "Case Management", path: "/raising-case" },
   {
-    label: "GMB Ticketing",
+    label: "Request Management",
     icon: ClipboardList,
-    path: "/tickets",
+    path: "/requests",
     isParent: true,
     children: [
-      { icon: LayoutDashboard, label: "Ticket Dashboard", path: "/tickets/dashboard" },
-      { icon: PlusCircle, label: "Raise Ticket", path: "/tickets/raise" },
-      { icon: ShieldAlert, label: "SLA Alerts", path: "/tickets/escalations" },
-      { icon: Clock, label: "SLA Pipeline", path: "/tickets/sla-progress" },
+      { icon: LayoutDashboard, label: "Request Dashboard", path: "/requests/dashboard" },
+      { icon: PlusCircle, label: "Raise Request", path: "/requests/raise" },
+      { icon: ShieldAlert, label: "SLA Alerts", path: "/requests/escalations" },
+      { icon: Clock, label: "SLA Pipeline", path: "/requests/sla-progress" },
     ]
   },
   { icon: AlertTriangle, label: "Critical Issues", path: "/critical-issues" },
@@ -92,31 +92,26 @@ export const Sidebar = ({
 
   const isAdmin = user?.role === "Admin";
 
-  // Build GMB Ticketing children dynamically based on access
+  // Build Request Management children dynamically based on access
   const ticketingChildren = [
-    { icon: LayoutDashboard, label: "Ticket Dashboard", path: "/tickets/dashboard" },
+    { icon: LayoutDashboard, label: "Request Dashboard", path: "/requests/dashboard" },
   ];
 
   if (isAdmin) {
-    ticketingChildren.push({ icon: ClipboardList, label: "Admin Console", path: "/tickets/admin-console" });
+    ticketingChildren.push({ icon: ClipboardList, label: "Admin Console", path: "/requests/admin-console" });
   }
 
-  // Everyone can raise a ticket (SPOCs to Multiplier, or fallback)
-  ticketingChildren.push({ icon: PlusCircle, label: "Raise Ticket", path: "/tickets/raise" });
+  // Everyone can raise a request
+  ticketingChildren.push({ icon: PlusCircle, label: "Raise Request", path: "/requests/raise" });
 
   if (isAdmin || user?.role === "Cluster") {
-    ticketingChildren.push({ icon: ShieldAlert, label: "SLA Alerts", path: "/tickets/escalations" });
+    ticketingChildren.push({ icon: ShieldAlert, label: "SLA Alerts", path: "/requests/escalations" });
   }
 
-  ticketingChildren.push({ icon: Clock, label: "SLA Pipeline", path: "/tickets/sla-progress" });
-
-  // Only Multiplier team members can raise a request to Branch users
-  // if (isMultiplierUser) {
-  //   ticketingChildren.push({ icon: PlusCircle, label: "Request to Branch", path: "/tickets/multiplier-raise" });
-  // }
+  ticketingChildren.push({ icon: Clock, label: "SLA Pipeline", path: "/requests/sla-progress" });
 
   const filteredNavItems = navItems.map(item => {
-    if (item.label === "GMB Ticketing") {
+    if (item.label === "Request Management" || item.label === "GMB Ticketing") {
       return { ...item, children: ticketingChildren };
     }
     return item;
@@ -143,6 +138,10 @@ export const Sidebar = ({
                 src="https://multipliersolutions.in/manipalhospitals/manipallogo2.png"
                 alt="Logo"
                 className="h-16 w-auto object-contain"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).onerror = null;
+                  (e.currentTarget as HTMLImageElement).src = "/placeholder.svg";
+                }}
               />
             </div>
             <Button

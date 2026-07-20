@@ -137,6 +137,10 @@ const Login = () => {
             src={LOGO}
             alt="Logo"
             className="h-14 mx-auto mb-6 object-contain"
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).onerror = null;
+              (e.currentTarget as HTMLImageElement).src = "/placeholder.svg";
+            }}
           />
           <h2 className="text-2xl font-bold tracking-tight">
             {step === 1 ? "Sign In" : "Security Check"}

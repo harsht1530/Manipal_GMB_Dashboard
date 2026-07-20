@@ -122,6 +122,30 @@ export default function TicketDashboard() {
 
       return matchesSearch && matchesCategory && matchesStatus && matchesPriority && matchesCluster && matchesBranch;
     });
+
+    // Priority rank mapping (P1 highest, P5 lowest)
+    const priorityRank = (p: string) => {
+      switch (p) {
+        case "P1": return 1;
+        case "P2": return 2;
+        case "P3": return 3;
+        case "P4": return 4;
+        case "P5": return 5;
+        default: return 99;
+      }
+    };
+
+    // Sort: Highest priority first (P1 -> P5), then FIFO (First In, First Out: oldest createdAt first)
+    return filtered.sort((a, b) => {
+      const pA = priorityRank(a.priority);
+      const pB = priorityRank(b.priority);
+      if (pA !== pB) {
+        return pA - pB;
+      }
+      const timeA = new Date(a.createdAt).getTime();
+      const timeB = new Date(b.createdAt).getTime();
+      return timeA - timeB;
+    });
   }, [tabTickets, searchTerm, categoryFilter, statusFilter, priorityFilter, clusterFilter, branchFilter]);
 
   // Quick Summary Box calculation
@@ -246,13 +270,13 @@ export default function TicketDashboard() {
   };
 
   return (
-    <DashboardLayout title="Ticket Management" subtitle="Monitor and manage Google Business Profile operational requests.">
+    <DashboardLayout title="Request Management" subtitle="Monitor and manage Google Business Profile operational requests.">
       
       {/* 1. KPI Cards Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-6">
         <Card className="hover:shadow-md transition-all duration-200">
           <CardContent className="p-4 flex flex-col justify-between h-24">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Tickets</span>
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Requests</span>
             <div className="flex items-baseline justify-between mt-1">
               <span className="text-2xl font-bold tracking-tight text-primary">{kpis.total}</span>
               <span className="text-[10px] text-green-500 font-medium">↑ 12%</span>
@@ -262,7 +286,7 @@ export default function TicketDashboard() {
 
         <Card className="hover:shadow-md transition-all duration-200">
           <CardContent className="p-4 flex flex-col justify-between h-24">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Open Tickets</span>
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Open Requests</span>
             <div className="flex items-baseline justify-between mt-1">
               <span className="text-2xl font-bold tracking-tight">{kpis.open}</span>
               <span className="text-[10px] text-red-500 font-medium">↓ 5%</span>
@@ -333,19 +357,19 @@ export default function TicketDashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         
-        {/* Left column - Ticket Tabs & Grid List */}
+        {/* Left column - Request Tabs & Grid List */}
         <div className="lg:col-span-3 space-y-6">
           <Tabs defaultValue="my-raised" onValueChange={(val) => setActiveTab(val as any)} className="w-full">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
               <TabsList className="bg-muted/80">
-                <TabsTrigger value="my-raised" className="data-[state=active]:bg-background">My Raised Tickets</TabsTrigger>
+                <TabsTrigger value="my-raised" className="data-[state=active]:bg-background">My Raised Requests</TabsTrigger>
                 <TabsTrigger value="assigned-to-me" className="data-[state=active]:bg-background">Assigned To Me</TabsTrigger>
               </TabsList>
               
               <div className="flex items-center gap-2 w-full sm:w-auto">
-                <Link to="/tickets/raise">
+                <Link to="/requests/raise">
                   <Button size="sm" className="bg-primary text-primary-foreground flex items-center gap-1.5 shadow-sm hover:bg-primary/95 transition-all">
-                    <Plus className="h-4 w-4" /> Raise Ticket
+                    <Plus className="h-4 w-4" /> Raise Request
                   </Button>
                 </Link>
                 <Button variant="outline" size="icon" className="h-9 w-9" onClick={refreshTickets} disabled={loading}>
@@ -360,7 +384,7 @@ export default function TicketDashboard() {
                 <div className="relative flex-1 min-w-[200px]">
                   <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input 
-                    placeholder="Search tickets, branch, description..." 
+                    placeholder="Search requests, branch, description..." 
                     className="pl-9 h-9 border-border bg-background focus:ring-1" 
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -433,9 +457,9 @@ export default function TicketDashboard() {
                   <Table>
                     <TableHeader className="bg-muted/50">
                       <TableRow>
-                        <TableHead className="w-[120px]">Ticket ID</TableHead>
+                        <TableHead className="w-[120px]">Request ID</TableHead>
                         <TableHead>Category</TableHead>
-                        <TableHead>Ticket Type</TableHead>
+                        <TableHead>Request Type</TableHead>
                         <TableHead>Branch / Unit</TableHead>
                         <TableHead>Assigned To</TableHead>
                         <TableHead>Due Date</TableHead>
@@ -449,22 +473,24 @@ export default function TicketDashboard() {
                       {filteredTickets.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={10} className="h-28 text-center text-muted-foreground font-medium">
-                            No raised tickets found matching filters.
+                            No raised requests found matching filters.
                           </TableCell>
                         </TableRow>
                       ) : (
                         filteredTickets.map(ticket => {
                           const sla = getSlaInfo(ticket);
+                          const reqId = ticket.requestId || ticket.ticketId;
+                          const reqType = ticket.requestType || ticket.ticketType;
                           return (
                             <TableRow key={ticket._id} className="hover:bg-muted/20 transition-colors">
                               <TableCell className="font-semibold text-primary">
-                                <Link to={`/tickets/details/${ticket.ticketId}`} className="hover:underline flex items-center gap-1">
+                                <Link to={`/requests/details/${reqId}`} className="hover:underline flex items-center gap-1">
                                   <TicketIcon className="h-3.5 w-3.5 shrink-0" />
-                                  {ticket.ticketId}
+                                  {reqId}
                                 </Link>
                               </TableCell>
                               <TableCell className="font-medium text-xs text-muted-foreground">{ticket.category}</TableCell>
-                              <TableCell className="font-medium text-sm max-w-[150px] truncate">{ticket.ticketType}</TableCell>
+                              <TableCell className="font-medium text-sm max-w-[150px] truncate">{reqType}</TableCell>
                               <TableCell className="text-xs text-muted-foreground flex items-center gap-1 mt-2.5">
                                 <Building className="h-3 w-3 shrink-0" />
                                 <span className="font-medium text-foreground">{ticket.branch}</span>
@@ -494,7 +520,7 @@ export default function TicketDashboard() {
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-right">
-                                <Link to={`/tickets/details/${ticket.ticketId}`}>
+                                <Link to={`/requests/details/${reqId}`}>
                                   <Button size="sm" variant="ghost" className="h-8 text-primary hover:text-primary hover:bg-primary/10">
                                     View <ArrowUpRight className="ml-1 h-3 w-3" />
                                   </Button>
@@ -516,9 +542,9 @@ export default function TicketDashboard() {
                   <Table>
                     <TableHeader className="bg-muted/50">
                       <TableRow>
-                        <TableHead className="w-[120px]">Ticket ID</TableHead>
+                        <TableHead className="w-[120px]">Request ID</TableHead>
                         <TableHead>Category</TableHead>
-                        <TableHead>Ticket Type</TableHead>
+                        <TableHead>Request Type</TableHead>
                         <TableHead>Branch / Unit</TableHead>
                         <TableHead>Raised By</TableHead>
                         <TableHead>Due Date</TableHead>
@@ -532,22 +558,24 @@ export default function TicketDashboard() {
                       {filteredTickets.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={10} className="h-28 text-center text-muted-foreground font-medium">
-                            No assigned tickets found matching filters.
+                            No assigned requests found matching filters.
                           </TableCell>
                         </TableRow>
                       ) : (
                         filteredTickets.map(ticket => {
                           const sla = getSlaInfo(ticket);
+                          const reqId = ticket.requestId || ticket.ticketId;
+                          const reqType = ticket.requestType || ticket.ticketType;
                           return (
                             <TableRow key={ticket._id} className="hover:bg-muted/20 transition-colors">
                               <TableCell className="font-semibold text-primary">
-                                <Link to={`/tickets/details/${ticket.ticketId}`} className="hover:underline flex items-center gap-1">
+                                <Link to={`/requests/details/${reqId}`} className="hover:underline flex items-center gap-1">
                                   <TicketIcon className="h-3.5 w-3.5 shrink-0" />
-                                  {ticket.ticketId}
+                                  {reqId}
                                 </Link>
                               </TableCell>
                               <TableCell className="font-medium text-xs text-muted-foreground">{ticket.category}</TableCell>
-                              <TableCell className="font-medium text-sm max-w-[150px] truncate">{ticket.ticketType}</TableCell>
+                              <TableCell className="font-medium text-sm max-w-[150px] truncate">{reqType}</TableCell>
                               <TableCell className="text-xs text-muted-foreground flex items-center gap-1 mt-2.5">
                                 <Building className="h-3 w-3 shrink-0" />
                                 <span className="font-medium text-foreground">{ticket.branch}</span>
@@ -577,7 +605,7 @@ export default function TicketDashboard() {
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-right">
-                                <Link to={`/tickets/details/${ticket.ticketId}`}>
+                                <Link to={`/requests/details/${reqId}`}>
                                   <Button size="sm" variant="ghost" className="h-8 text-primary hover:text-primary hover:bg-primary/10">
                                     View <ArrowUpRight className="ml-1 h-3 w-3" />
                                   </Button>
@@ -601,12 +629,12 @@ export default function TicketDashboard() {
           <Card>
             <CardHeader className="pb-3 border-b bg-muted/20">
               <CardTitle className="text-base font-semibold">Quick Summary</CardTitle>
-              <CardDescription className="text-xs">Consolidated ticket status metrics</CardDescription>
+              <CardDescription className="text-xs">Consolidated request status metrics</CardDescription>
             </CardHeader>
             <CardContent className="p-4 space-y-4">
               <div className="flex justify-between items-center py-2 border-b border-border/60">
                 <span className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500" /> Open Tickets
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" /> Open Requests
                 </span>
                 <span className="text-sm font-bold bg-emerald-100/60 text-emerald-800 border px-2 py-0.5 rounded">{quickSummary.open}</span>
               </div>
@@ -641,35 +669,38 @@ export default function TicketDashboard() {
           <Card>
             <CardHeader className="pb-3 border-b bg-muted/20">
               <CardTitle className="text-base font-semibold">Recent Activity</CardTitle>
-              <CardDescription className="text-xs">Latest updates on your GMB tickets</CardDescription>
+              <CardDescription className="text-xs">Latest updates on your GMB requests</CardDescription>
             </CardHeader>
             <CardContent className="p-4">
               {recentLogs.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-6">No recent GMB activities recorded.</p>
               ) : (
                 <div className="relative border-l border-border pl-4 ml-2 space-y-6 text-left">
-                  {recentLogs.map((log, index) => (
-                    <div key={index} className="relative">
-                      {/* Timeline dot */}
-                      <span className="absolute -left-[21px] top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background border border-primary">
-                        <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-                      </span>
-                      <div className="flex flex-col">
-                        <span className="text-xs font-semibold text-primary">
-                          <Link to={`/tickets/details/${log.ticketId}`} className="hover:underline">
-                            {log.ticketId}
-                          </Link>
-                          <span className="text-muted-foreground font-normal"> - {log.action}</span>
+                  {recentLogs.map((log, index) => {
+                    const logReqId = log.ticketId;
+                    return (
+                      <div key={index} className="relative">
+                        {/* Timeline dot */}
+                        <span className="absolute -left-[21px] top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background border border-primary">
+                          <span className="h-1.5 w-1.5 rounded-full bg-primary" />
                         </span>
-                        <span className="text-[10px] text-muted-foreground mt-0.5 font-medium">
-                          {new Date(log.timestamp).toLocaleString()} | by {log.user}
-                        </span>
-                        <p className="text-xs text-foreground/80 mt-1 italic max-w-[220px] truncate">
-                          "{log.remarks}"
-                        </p>
+                        <div className="flex flex-col">
+                          <span className="text-xs font-semibold text-primary">
+                            <Link to={`/requests/details/${logReqId}`} className="hover:underline">
+                              {logReqId}
+                            </Link>
+                            <span className="text-muted-foreground font-normal"> - {log.action}</span>
+                          </span>
+                          <span className="text-[10px] text-muted-foreground mt-0.5 font-medium">
+                            {new Date(log.timestamp).toLocaleString()} | by {log.user}
+                          </span>
+                          <p className="text-xs text-foreground/80 mt-1 italic max-w-[220px] truncate">
+                            "{log.remarks}"
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
