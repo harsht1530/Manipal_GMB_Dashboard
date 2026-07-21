@@ -197,7 +197,35 @@ const getRequestDetailsUrl = (req, requestId) => {
     return `${baseUrl}/#/requests/details/${requestId}`;
 };
 
-const getEmailTemplate = (content, title = "GMB Request Management") => `
+const getEmailTemplate = (content) => `
+    <html>
+    <head>
+        <style>
+            .btn:hover {
+                background-color: #48BEB9 !important;
+                color: white !important;
+            }
+        </style>
+    </head>
+    <body style="margin: 0; padding: 0;">
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; text-align: center; border: 1px solid #ddd; border-radius: 10px;">
+        <div style="margin-bottom: 20px;">
+            <img src="${MANIPAL_LOGO}" alt="Manipal Hospitals" style="max-width: 150px; margin-bottom: 10px;">
+        </div>
+        <div style="color: #333; line-height: 1.6;">
+            ${content}
+        </div>
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #888; text-align: center;">
+            <p>&copy; ${new Date().getFullYear()} Multiplier AI. All rights reserved.</p>
+        </div>
+    </div>
+    </body>
+    </html>
+`;
+
+const REQUEST_VECTOR_ICON = "https://img.icons8.com/fluency/96/assignment-turned-in.png";
+
+const getRequestEmailTemplate = (content, title = "GMB Request Management") => `
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -205,136 +233,50 @@ const getEmailTemplate = (content, title = "GMB Request Management") => `
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>${title}</title>
         <style>
-            body {
-                margin: 0;
-                padding: 0;
-                background-color: #f4f7f6;
-                font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-                -webkit-font-smoothing: antialiased;
-            }
-            .email-wrapper {
-                width: 100%;
-                background-color: #f4f7f6;
-                padding: 30px 10px;
-                box-sizing: border-box;
-            }
-            .email-card {
-                max-width: 600px;
-                margin: 0 auto;
-                background-color: #ffffff;
-                border-radius: 16px;
-                overflow: hidden;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.08);
-                border: 1px solid #e5e7eb;
-            }
-            .top-accent-bar {
-                height: 6px;
-                background: linear-gradient(90deg, #217a74 0%, #48BEB9 50%, #217a74 100%);
-            }
-            .header-banner {
-                padding: 24px 30px 20px;
-                background: #ffffff;
-                text-align: center;
-                border-bottom: 1px solid #f0f0f0;
-            }
-            .vector-icon-badge {
-                display: inline-block;
-                width: 72px;
-                height: 72px;
-                background: linear-gradient(135deg, #217a74 0%, #48BEB9 100%);
-                border-radius: 20px;
-                box-shadow: 0 8px 20px rgba(33, 122, 116, 0.28);
-                margin: 10px auto 16px;
-                text-align: center;
-            }
-            .content-body {
-                padding: 28px 32px;
-                color: #374151;
-                font-size: 15px;
-                line-height: 1.6;
-            }
-            .btn-primary {
-                background: linear-gradient(135deg, #217a74 0%, #48BEB9 100%);
-                color: #ffffff !important;
-                padding: 14px 32px;
-                text-decoration: none;
-                border-radius: 8px;
-                font-weight: 700;
-                font-size: 15px;
-                display: inline-block;
-                box-shadow: 0 4px 14px rgba(33, 122, 116, 0.35);
-            }
-            .data-table {
-                width: 100%;
-                border-collapse: separate;
-                border-spacing: 0;
-                margin: 20px 0;
-                border: 1px solid #e5e7eb;
-                border-radius: 10px;
-                overflow: hidden;
-            }
-            .data-table th {
-                background-color: #f9fafb;
-                color: #4b5563;
-                font-weight: 600;
-                padding: 10px 14px;
-                font-size: 13px;
-                text-align: left;
-                width: 130px;
-                border-bottom: 1px solid #e5e7eb;
-            }
-            .data-table td {
-                padding: 10px 14px;
-                color: #111827;
-                font-size: 14px;
-                border-bottom: 1px solid #e5e7eb;
-            }
-            .data-table tr:last-child th,
-            .data-table tr:last-child td {
-                border-bottom: none;
-            }
-            .footer {
-                padding: 20px 30px;
-                background-color: #f9fafb;
-                border-top: 1px solid #f0f0f0;
-                font-size: 12px;
-                color: #6b7280;
-                text-align: center;
-            }
-            @media only screen and (max-width: 600px) {
-                .content-body { padding: 20px 18px !important; }
-                .header-banner { padding: 18px 16px !important; }
-                .btn-primary { width: 90% !important; box-sizing: border-box !important; }
+            .btn-primary:hover {
+                background: #217a74 !important;
             }
         </style>
     </head>
-    <body>
-    <div class="email-wrapper">
-        <div class="email-card">
-            <div class="top-accent-bar"></div>
-            <div class="header-banner">
-                <img src="${MANIPAL_LOGO}" alt="Manipal Hospitals" style="max-width: 140px; height: auto; margin-bottom: 12px;">
-                <div>
-                    <div class="vector-icon-badge">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-top: 17px;">
-                            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
-                            <polyline points="14 2 14 8 20 8"></polyline>
-                            <line x1="16" y1="13" x2="8" y2="13"></line>
-                            <line x1="16" y1="17" x2="8" y2="17"></line>
-                            <line x1="10" y1="9" x2="8" y2="9"></line>
-                        </svg>
-                    </div>
-                </div>
-            </div>
-            <div class="content-body">
-                ${content}
-            </div>
-            <div class="footer">
-                <p style="margin: 0 0 6px 0;"><strong>Manipal Hospitals GMB Request Management Portal</strong></p>
-                <p style="margin: 0;">&copy; ${new Date().getFullYear()} Multiplier AI. All rights reserved.</p>
-            </div>
-        </div>
-    </div>
+    <body style="margin: 0; padding: 0; background-color: #f4f7f6; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f4f7f6; padding: 25px 10px;">
+        <tr>
+            <td align="center">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid #e5e7eb; box-shadow: 0 10px 30px rgba(0,0,0,0.08);">
+                    <!-- Top Accent Line -->
+                    <tr>
+                        <td style="height: 6px; background-color: #217a74; background: linear-gradient(90deg, #217a74 0%, #48BEB9 50%, #217a74 100%);"></td>
+                    </tr>
+                    <!-- Header Banner -->
+                    <tr>
+                        <td align="center" style="padding: 24px 20px 16px; background-color: #ffffff; border-bottom: 1px solid #f0f0f0;">
+                            <img src="${MANIPAL_LOGO}" alt="Manipal Hospitals" width="140" style="display: block; max-width: 140px; height: auto; margin-bottom: 14px; border: 0;" />
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                                <tr>
+                                    <td align="center" style="width: 68px; height: 68px; background-color: #217a74; background: linear-gradient(135deg, #217a74 0%, #48BEB9 100%); border-radius: 18px; box-shadow: 0 8px 18px rgba(33, 122, 116, 0.25);">
+                                        <img src="${REQUEST_VECTOR_ICON}" alt="Request Icon" width="42" height="42" style="display: block; margin: 0 auto; border: 0;" />
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    <!-- Content Body -->
+                    <tr>
+                        <td style="padding: 26px 30px 20px; color: #374151; font-size: 15px; line-height: 1.6; text-align: left;">
+                            ${content}
+                        </td>
+                    </tr>
+                    <!-- Footer -->
+                    <tr>
+                        <td align="center" style="padding: 18px 24px; background-color: #f9fafb; border-top: 1px solid #f0f0f0; font-size: 12px; color: #6b7280; text-align: center;">
+                            <p style="margin: 0 0 4px 0; font-weight: 600; color: #374151;">Manipal Hospitals GMB Request Management Portal</p>
+                            <p style="margin: 0;">&copy; ${new Date().getFullYear()} Multiplier AI. All rights reserved.</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
     </body>
     </html>
 `;
@@ -1771,7 +1713,7 @@ const createRequestHandler = async (req, res) => {
         
         // Send email notifications
         const assigneeActionUrl = getRequestDetailsUrl(req, requestId);
-        const assigneeMailHtml = getEmailTemplate(`
+        const assigneeMailHtml = getRequestEmailTemplate(`
             <h2 style="color: #111827; margin-top: 0; font-size: 20px; font-weight: 700;">New GMB Request Assigned</h2>
             <p style="font-size: 15px; color: #4b5563;">
                 Hello <strong>${assignee.name}</strong>,<br/><br/>
@@ -1794,7 +1736,7 @@ const createRequestHandler = async (req, res) => {
         await sendEmail(assignee.email, `New GMB Request: ${requestId} - ${finalRequestType}`, assigneeMailHtml);
         
         const spocActionUrl = getRequestDetailsUrl(req, requestId);
-        const spocMailHtml = getEmailTemplate(`
+        const spocMailHtml = getRequestEmailTemplate(`
             <h2 style="color: #111827; margin-top: 0; font-size: 20px; font-weight: 700;">Request Raised Successfully</h2>
             <p style="font-size: 15px; color: #4b5563;">
                 Hello <strong>${raisedByName}</strong>,<br/><br/>
@@ -1907,7 +1849,7 @@ const addRequestLogHandler = async (req, res) => {
                 ? `The status of request <strong style="color: #217a74;">${reqIdStr}</strong> has been updated to <strong style="color: #111827;">${newValue}</strong> by ${user}.`
                 : `A new update has been logged on request <strong style="color: #217a74;">${reqIdStr}</strong> by ${user}:<br/><blockquote style="margin: 12px 0; padding: 10px 14px; background: #f9fafb; border-left: 3px solid #217a74; font-style: italic; color: #4b5563;">${remarks}</blockquote>`;
             
-            const mailHtml = getEmailTemplate(`
+            const mailHtml = getRequestEmailTemplate(`
                 <h2 style="color: #111827; margin-top: 0; font-size: 20px; font-weight: 700;">Request Update Notification</h2>
                 <p style="font-size: 15px; color: #4b5563;">${mailMessage}</p>
                 <div style="text-align: center; margin: 30px 0 10px;">
@@ -1977,7 +1919,7 @@ const transferRequestHandler = async (req, res) => {
         
         const reqIdStr = requestDoc.requestId || requestDoc.ticketId;
         const transferActionUrl = getRequestDetailsUrl(req, reqIdStr);
-        const notifyNewHtml = getEmailTemplate(`
+        const notifyNewHtml = getRequestEmailTemplate(`
             <h2 style="color: #111827; margin-top: 0; font-size: 20px; font-weight: 700;">GMB Request Transferred to You</h2>
             <p style="font-size: 15px; color: #4b5563;">
                 Request <strong style="color: #217a74;">${reqIdStr}</strong> has been transferred to you by <strong>${transferByName}</strong>.
@@ -1994,7 +1936,7 @@ const transferRequestHandler = async (req, res) => {
         `);
         await sendEmail(newAssignee.email, `Request Assigned (Transfer): ${reqIdStr}`, notifyNewHtml);
         
-        const notifyOldHtml = getEmailTemplate(`
+        const notifyOldHtml = getRequestEmailTemplate(`
             <h2 style="color: #111827; margin-top: 0; font-size: 20px; font-weight: 700;">Request Transferred Out</h2>
             <p style="font-size: 15px; color: #4b5563;">
                 Request <strong style="color: #217a74;">${reqIdStr}</strong> has been reassigned from you to <strong>${newAssignee.name}</strong> by ${transferByName}.
@@ -2040,7 +1982,7 @@ const remindRequestHandler = async (req, res) => {
 
         // Send Email notification to the assignee
         const reminderActionUrl = getRequestDetailsUrl(req, reqIdStr);
-        const mailHtml = getEmailTemplate(`
+        const mailHtml = getRequestEmailTemplate(`
             <h2 style="color: #111827; margin-top: 0; font-size: 20px; font-weight: 700;">Manual SLA Reminder</h2>
             <p style="font-size: 15px; color: #4b5563;">
                 Hello <strong>${requestDoc.assignedTo.name}</strong>,<br/><br/>
@@ -2115,7 +2057,7 @@ const runSlaCheck = async () => {
             }
 
             const escalActionUrl = getRequestDetailsUrl(null, reqIdStr);
-            const escalHtml = getEmailTemplate(`
+            const escalHtml = getRequestEmailTemplate(`
                 <h2 style="color: #dc2626; margin-top: 0; font-size: 20px; font-weight: 700;">SLA Breach Escalation Notice</h2>
                 <p style="font-size: 15px; color: #4b5563;">
                     The GMB operations request <strong style="color: #dc2626;">${reqIdStr}</strong> has been unresolved for 8+ days and is escalated to the Manipal Corporate Team and Regional Marketing Head.
