@@ -1387,15 +1387,25 @@ app.post('/api/multiplier/tickets', uploadTicket.fields([
         
         // Generate Sequential Ticket ID
         const currentYear = new Date().getFullYear();
-        const latestTicket = await ManipalTicket.findOne({ ticketId: new RegExp(`TKT-${currentYear}-`) }).sort({ createdAt: -1 });
-        let nextSeq = 1;
-        if (latestTicket) {
-            const parts = latestTicket.ticketId.split('-');
-            const lastSeq = parseInt(parts[parts.length - 1]);
-            if (!isNaN(lastSeq)) {
-                nextSeq = lastSeq + 1;
+        const allTickets = await ManipalTicket.find({
+            $or: [
+                { ticketId: new RegExp(`TKT-${currentYear}-`) },
+                { requestId: new RegExp(`TKT-${currentYear}-`) }
+            ]
+        }, { ticketId: 1, requestId: 1 });
+
+        let maxSeq = 0;
+        for (const doc of allTickets) {
+            const idStr = doc.ticketId || doc.requestId || "";
+            if (idStr && idStr.includes('-')) {
+                const parts = idStr.split('-');
+                const seq = parseInt(parts[parts.length - 1]);
+                if (!isNaN(seq) && seq > maxSeq) {
+                    maxSeq = seq;
+                }
             }
         }
+        const nextSeq = maxSeq + 1;
         const ticketId = `TKT-${currentYear}-${String(nextSeq).padStart(5, '0')}`;
         
         // SLA: 7 days lifecycle
@@ -1580,22 +1590,31 @@ const createRequestHandler = async (req, res) => {
 
         // Generate Sequential Request ID
         const currentYear = new Date().getFullYear();
-        const latestDoc = await ManipalRequest.findOne({
+        const allDocs = await ManipalRequest.find({
             $or: [
                 { requestId: new RegExp(`REQ-${currentYear}-`) },
-                { ticketId: new RegExp(`TKT-${currentYear}-`) }
+                { ticketId: new RegExp(`TKT-${currentYear}-`) },
+                { ticketId: new RegExp(`REQ-${currentYear}-`) },
+                { requestId: new RegExp(`TKT-${currentYear}-`) }
             ]
-        }).sort({ createdAt: -1 });
+        }, { requestId: 1, ticketId: 1 });
 
-        let nextSeq = 1;
-        if (latestDoc) {
-            const idStr = latestDoc.requestId || latestDoc.ticketId || "";
-            const parts = idStr.split('-');
-            const lastSeq = parseInt(parts[parts.length - 1]);
-            if (!isNaN(lastSeq)) {
-                nextSeq = lastSeq + 1;
-            }
+        let maxSeq = 0;
+        for (const doc of allDocs) {
+            const id1 = doc.requestId || "";
+            const id2 = doc.ticketId || "";
+            
+            [id1, id2].forEach(idStr => {
+                if (idStr && idStr.includes('-')) {
+                    const parts = idStr.split('-');
+                    const seq = parseInt(parts[parts.length - 1]);
+                    if (!isNaN(seq) && seq > maxSeq) {
+                        maxSeq = seq;
+                    }
+                }
+            });
         }
+        const nextSeq = maxSeq + 1;
         const requestId = `REQ-${currentYear}-${String(nextSeq).padStart(5, '0')}`;
         const ticketId = requestId;
         

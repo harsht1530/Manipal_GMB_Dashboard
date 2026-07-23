@@ -36,8 +36,8 @@ const navItems = [
   { icon: Phone, label: "Phone", path: "/phone" },
   { icon: Target, label: "Keywords", path: "/keywords" },
   { icon: Search, label: "Search Perf.", path: "/search-performance" },
-  { icon: Target, label: "Monthly Optimisation", path: "/optimizations" },
-  { icon: FileText, label: "GBP Postings", path: "/postings" },
+  // { icon: Target, label: "Monthly Optimisation", path: "/optimizations" },
+  // { icon: FileText, label: "GBP Postings", path: "/postings" },
   { icon: Ticket, label: "Case Management", path: "/raising-case" },
   {
     label: "Request Management",
@@ -51,7 +51,7 @@ const navItems = [
       { icon: Clock, label: "SLA Pipeline", path: "/requests/sla-progress" },
     ]
   },
-  { icon: AlertTriangle, label: "Critical Issues", path: "/critical-issues" },
+  // { icon: AlertTriangle, label: "Critical Issues", path: "/critical-issues" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
 

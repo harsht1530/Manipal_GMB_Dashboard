@@ -41,8 +41,28 @@ export const PhoneDetailsTable = ({ data }: PhoneDetailsTableProps) => {
     }));
   }, [data]);
 
-  const hasPhone = phoneData.filter((d) => d.phone !== "Not available").length;
-  const noPhone = phoneData.filter((d) => d.phone === "Not available").length;
+  const isPhoneMissing = (phone: any): boolean => {
+    if (phone === null || phone === undefined) return true;
+    const str = String(phone).trim().toLowerCase();
+    return (
+      !str ||
+      str === "not available" ||
+      str === "n/a" ||
+      str === "na" ||
+      str === "null" ||
+      str === "undefined" ||
+      str === "none" ||
+      str === "0" ||
+      str === "0000000000" ||
+      str === "18000000000" ||
+      str === "7030000000" ||
+      str === "-" ||
+      str === "--"
+    );
+  };
+
+  const noPhone = phoneData.filter((d) => isPhoneMissing(d.phone)).length;
+  const hasPhone = phoneData.length - noPhone;
 
   const totalPages = Math.ceil(phoneData.length / pageSize);
   const currentData = phoneData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -167,8 +187,8 @@ export const PhoneDetailsTable = ({ data }: PhoneDetailsTableProps) => {
                       {item.businessName}
                     </TableCell>
                     <TableCell className="text-center">
-                      {item.phone === "Not available" ? (
-                        <Badge variant="secondary" className="bg-muted text-muted-foreground font-normal border-transparent">
+                      {isPhoneMissing(item.phone) ? (
+                        <Badge variant="secondary" className="bg-rose-50 text-rose-700 border-rose-200 font-normal">
                           NA
                         </Badge>
                       ) : (
