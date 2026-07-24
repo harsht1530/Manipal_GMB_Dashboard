@@ -180,11 +180,13 @@ const getAppBaseUrl = (req) => {
         }
     }
 
-    if (!origin || origin.includes('localhost') || origin.includes('127.0.0.1')) {
-        return origin ? origin.split('#')[0].replace(/\/+$/, '') : 'http://localhost:5173';
+    let cleanOrigin = '';
+    if (origin) {
+        cleanOrigin = origin.split('#')[0].replace(/\/+$/, '');
+    } else {
+        cleanOrigin = 'http://localhost:8080';
     }
 
-    let cleanOrigin = origin.split('#')[0].replace(/\/+$/, '');
     if (!cleanOrigin.endsWith('/GMB') && !cleanOrigin.includes('/GMB/')) {
         cleanOrigin = `${cleanOrigin}/GMB`;
     }
@@ -403,7 +405,8 @@ app.post('/api/forgot-password', async (req, res) => {
         user.resetTokenExpires = Date.now() + 3600000; // 1 hour
         await user.save();
 
-        const resetUrl = `${req.headers.origin}/reset-password?token=${token}&email=${email}`;
+        const baseUrl = getAppBaseUrl(req);
+        const resetUrl = `${baseUrl}/#/reset-password?token=${token}&email=${email}`;
 
         const emailHtml = getEmailTemplate(`
             <h2 style="color: #333;">Password Reset Request</h2>
@@ -1487,7 +1490,7 @@ app.post('/api/multiplier/tickets', uploadTicket.fields([
                 <tr><th style="padding: 8px; border-bottom: 1px solid #ddd;">Instructions:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;">${description}</td></tr>
             </table>
             <div style="text-align: center; margin: 30px 0;">
-                <a href="${req.headers.origin || 'http://localhost:5173'}/#/tickets/details/${ticketId}" class="btn" style="background-color: transparent; color: #48BEB9; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; border: 2px solid #48BEB9; transition: all 0.3s ease;">Open Request Details</a>
+                <a href="${getAppBaseUrl(req)}/#/tickets/details/${ticketId}" class="btn" style="background-color: transparent; color: #48BEB9; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; border: 2px solid #48BEB9; transition: all 0.3s ease;">Open Request Details</a>
             </div>
         `);
         await sendEmail(targetUserEmail, `Action Required: GMB Optimization Request - ${ticketId}`, spocMailHtml);
