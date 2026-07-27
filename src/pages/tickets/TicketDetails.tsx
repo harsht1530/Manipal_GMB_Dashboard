@@ -100,6 +100,11 @@ export default function TicketDetails() {
     const due = new Date(ticket.dueDate).getTime();
     const now = new Date().getTime();
     const diff = due - now;
+
+    if (ticket.status === "Waiting for Google" && diff < 0) {
+      return "Exceeded (Google Delay)";
+    }
+
     if (diff < 0) return "SLA Breached";
 
     const hours = Math.ceil(diff / (1000 * 60 * 60));
@@ -222,7 +227,9 @@ export default function TicketDetails() {
             <Badge variant="outline" className={cn(
               "text-xs font-bold border px-3 py-1 shadow-sm",
               ticket.status === "Completed" || ticket.status === "Closed" ? "bg-green-50 text-green-700 border-green-200" : (
-                slaRemaining().startsWith("SLA") ? "bg-red-50 text-red-700 border-red-200" : "bg-sky-50 text-sky-700 border-sky-200"
+                slaRemaining().includes("Exceeded") ? "bg-amber-50 text-amber-700 border-amber-200" : (
+                  slaRemaining().startsWith("SLA") ? "bg-red-50 text-red-700 border-red-200" : "bg-sky-50 text-sky-700 border-sky-200"
+                )
               )
             )}>
               <Clock className="h-3.5 w-3.5 mr-1" />

@@ -233,6 +233,12 @@ export default function TicketDashboard() {
     const now = new Date().getTime();
     const diff = due - now;
 
+    if (ticket.status === "Waiting for Google") {
+      if (diff < 0) {
+        return { text: "Exceeded (Google Delay)", color: "bg-amber-100 text-amber-800 border-amber-200" };
+      }
+    }
+
     if (diff < 0) {
       return { text: "Breached", color: "bg-red-100 text-red-800 border-red-200" };
     }

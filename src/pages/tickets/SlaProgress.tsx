@@ -173,7 +173,7 @@ export default function SlaProgress() {
           const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
           countdown = `${hours}h ${mins}m`;
         } else {
-          countdown = "Breached";
+          countdown = selectedTicket.status === "Waiting for Google" ? "Exceeded (Google Delay)" : "Breached";
         }
       } else if (status === "completed") {
         countdown = "Completed";

@@ -2113,6 +2113,9 @@ const runSlaCheck = async () => {
     
     let updatedCount = 0;
     for (const requestDoc of unresolvedRequests) {
+        if (requestDoc.status === 'Waiting for Google') {
+            continue; // Skip SLA progression check if waiting for Google
+        }
         const reqIdStr = requestDoc.requestId || requestDoc.ticketId;
         const diffTime = Math.abs(now - requestDoc.createdAt);
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));

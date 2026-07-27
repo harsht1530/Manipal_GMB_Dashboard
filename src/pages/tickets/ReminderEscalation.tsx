@@ -38,7 +38,7 @@ export default function ReminderEscalation() {
     const escalatedTickets: Ticket[] = [];
 
     tickets.forEach(t => {
-      if (t.status === "Completed" || t.status === "Closed") return;
+      if (t.status === "Completed" || t.status === "Closed" || t.status === "Waiting for Google") return;
 
       const created = new Date(t.createdAt).getTime();
       const diffTime = Math.abs(now - created);
