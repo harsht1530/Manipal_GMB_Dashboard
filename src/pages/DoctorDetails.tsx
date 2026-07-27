@@ -72,13 +72,17 @@ interface ReviewData {
     ratings: number[];
     goodReviews: { comment: string; author: string; date: string }[];
     badReviews: { comment: string; author: string; date: string }[];
+    averageRating?: number;
+    totalReviewCount?: number;
+    duration?: string;
 }
 
 import { useAuth } from "@/contexts/AuthContext";
 
 const DoctorDetails = () => {
     const { user } = useAuth();
-    const { businessName } = useParams<{ businessName: string }>();
+    const params = useParams();
+    const businessName = params['*'] || params.businessName;
     const navigate = useNavigate();
     const { doctors, insights, loading: globalLoading } = useMongoData();
     const [profile, setProfile] = useState<DoctorData | null>(null);
@@ -92,28 +96,32 @@ const DoctorDetails = () => {
     const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
     const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
     const [availableYears, setAvailableYears] = useState<string[]>([]);
-
+ 
     useEffect(() => {
         const timer = setTimeout(() => {
             setMounted(true);
         }, 10);
         return () => clearTimeout(timer);
     }, []);
-
+ 
     useEffect(() => {
         // Wait for global loading to finish
         if (globalLoading) return;
-
+ 
         if (businessName) {
             setIsLoading(true);
             // Find the doctor profile locally using businessName (case-insensitive and trimmed)
             const targetName = decodeURIComponent(businessName).trim().toLowerCase();
-
-            const foundDoctor = doctors.find(d =>
-                (d.businessName || "").trim().toLowerCase() === targetName ||
-                (d.name || "").trim().toLowerCase() === targetName
+ 
+            let foundDoctor = doctors.find(d =>
+                (d.businessName || "").trim().toLowerCase() === targetName
             );
-
+            if (!foundDoctor) {
+                foundDoctor = doctors.find(d =>
+                    (d.name || "").trim().toLowerCase() === targetName
+                );
+            }
+ 
             // Find all insights for this doctor
             const foundInsights = insights.filter(i =>
                 (i.businessName || "").trim().toLowerCase() === targetName
@@ -797,9 +805,16 @@ const DoctorDetails = () => {
                             <div className="grid md:grid-cols-2 gap-6">
                                 <Card className="md:col-span-2">
                                     <CardHeader>
-                                        <CardTitle className="flex items-center gap-2">
-                                            <Star className="h-5 w-5 text-warning fill-warning" />
-                                            Rating Analysis
+                                        <CardTitle className="flex items-center justify-between gap-2">
+                                            <span className="flex items-center gap-2">
+                                                <Star className="h-5 w-5 text-warning fill-warning" />
+                                                Rating Analysis
+                                            </span>
+                                            {reviewData.duration && (
+                                                <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 text-xs px-2.5 py-0.5 font-medium rounded-full">
+                                                    Duration: {reviewData.duration}
+                                                </Badge>
+                                            )}
                                         </CardTitle>
                                     </CardHeader>
                                     <CardContent>
@@ -816,18 +831,25 @@ const DoctorDetails = () => {
                                             <div className="flex flex-col items-center justify-center space-y-6 p-6 bg-muted/20 rounded-xl min-w-[300px]">
                                                 <div className="text-center">
                                                     <h3 className="text-4xl font-bold text-foreground">
-                                                        {(reviewData.ratings.reduce((acc, count, i) => acc + count * (i + 1), 0) / Math.max(1, reviewData.ratings.reduce((a, b) => a + b, 0))).toFixed(1)}
+                                                        {reviewData.averageRating !== undefined && reviewData.averageRating !== null
+                                                            ? Number(reviewData.averageRating).toFixed(1)
+                                                            : (reviewData.ratings.reduce((acc, count, i) => acc + count * (i + 1), 0) / Math.max(1, reviewData.ratings.reduce((a, b) => a + b, 0))).toFixed(1)}
                                                     </h3>
                                                     <div className="flex items-center justify-center gap-1 my-2">
-                                                        {[1, 2, 3, 4, 5].map((star) => (
-                                                            <Star
-                                                                key={star}
-                                                                className={`h-5 w-5 ${star <= Math.round(reviewData.ratings.reduce((acc, count, i) => acc + count * (i + 1), 0) / Math.max(1, reviewData.ratings.reduce((a, b) => a + b, 0)))
-                                                                    ? "text-warning fill-warning"
-                                                                    : "text-muted-foreground/30"
-                                                                    }`}
-                                                            />
-                                                        ))}
+                                                        {[1, 2, 3, 4, 5].map((star) => {
+                                                            const avgRating = reviewData.averageRating !== undefined && reviewData.averageRating !== null
+                                                                ? Math.round(Number(reviewData.averageRating))
+                                                                : Math.round(reviewData.ratings.reduce((acc, count, i) => acc + count * (i + 1), 0) / Math.max(1, reviewData.ratings.reduce((a, b) => a + b, 0)));
+                                                            return (
+                                                                <Star
+                                                                    key={star}
+                                                                    className={`h-5 w-5 ${star <= avgRating
+                                                                        ? "text-warning fill-warning"
+                                                                        : "text-muted-foreground/30"
+                                                                        }`}
+                                                                />
+                                                            );
+                                                        })}
                                                     </div>
                                                     <p className="text-muted-foreground font-medium">Average Rating</p>
                                                 </div>
@@ -836,23 +858,39 @@ const DoctorDetails = () => {
 
                                                 <div className="text-center">
                                                     <h3 className="text-3xl font-bold text-foreground">
-                                                        {reviewData.ratings.reduce((a, b) => a + b, 0)}
+                                                        {reviewData.totalReviewCount !== undefined && reviewData.totalReviewCount !== null
+                                                            ? Number(reviewData.totalReviewCount).toLocaleString()
+                                                            : reviewData.ratings.reduce((a, b) => a + b, 0)}
                                                     </h3>
                                                     <p className="text-muted-foreground font-medium">Total Reviews</p>
                                                 </div>
 
                                                 <div className="w-full h-px bg-border/50" />
 
-                                                {reviewData.ratings[3] + reviewData.ratings[4] > reviewData.ratings[0] + reviewData.ratings[1] ? (
-                                                    <div className="flex items-center gap-2 text-emerald-600 font-semibold bg-emerald-50 dark:bg-emerald-900/20 px-4 py-2 rounded-full">
-                                                        <ThumbsUp className="h-4 w-4" />
-                                                        <span>Excellent Performance!</span>
-                                                    </div>
+                                                {reviewData.averageRating !== undefined && reviewData.averageRating !== null ? (
+                                                    Number(reviewData.averageRating) >= 4.0 ? (
+                                                        <div className="flex items-center gap-2 text-emerald-600 font-semibold bg-emerald-50 dark:bg-emerald-900/20 px-4 py-2 rounded-full">
+                                                            <ThumbsUp className="h-4 w-4" />
+                                                            <span>Excellent Performance!</span>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center gap-2 text-destructive font-semibold bg-red-50 dark:bg-red-900/20 px-4 py-2 rounded-full">
+                                                            <ThumbsDown className="h-4 w-4" />
+                                                            <span>Needs Attention</span>
+                                                        </div>
+                                                    )
                                                 ) : (
-                                                    <div className="flex items-center gap-2 text-destructive font-semibold bg-red-50 dark:bg-red-900/20 px-4 py-2 rounded-full">
-                                                        <ThumbsDown className="h-4 w-4" />
-                                                        <span>Needs Attention</span>
-                                                    </div>
+                                                    reviewData.ratings[3] + reviewData.ratings[4] > reviewData.ratings[0] + reviewData.ratings[1] ? (
+                                                        <div className="flex items-center gap-2 text-emerald-600 font-semibold bg-emerald-50 dark:bg-emerald-900/20 px-4 py-2 rounded-full">
+                                                            <ThumbsUp className="h-4 w-4" />
+                                                            <span>Excellent Performance!</span>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center gap-2 text-destructive font-semibold bg-red-50 dark:bg-red-900/20 px-4 py-2 rounded-full">
+                                                            <ThumbsDown className="h-4 w-4" />
+                                                            <span>Needs Attention</span>
+                                                        </div>
+                                                    )
                                                 )}
                                             </div>
                                         </div>

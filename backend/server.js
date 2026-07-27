@@ -602,12 +602,14 @@ app.get('/api/doctors/details', async (req, res) => {
         if (!businessName) {
             return res.status(400).json({ success: false, error: "businessName parameter is required" });
         }
+        const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const escapedName = escapeRegExp(businessName.trim());
         const doctor = await Doctor.findOne({
-            business_name: { $regex: new RegExp(`^${businessName.trim()}$`, 'i') }
+            business_name: { $regex: new RegExp(`^${escapedName}$`, 'i') }
         });
         if (!doctor) {
             const doctorByName = await Doctor.findOne({
-                name: { $regex: new RegExp(`^${businessName.trim()}$`, 'i') }
+                name: { $regex: new RegExp(`^${escapedName}$`, 'i') }
             });
             if (!doctorByName) {
                 return res.status(404).json({ success: false, error: "Doctor not found" });
@@ -751,7 +753,20 @@ app.get('/api/doctor-details/:name', async (req, res) => {
 });
 
 // Helper for Reviews
-async function fetchAllReviews(email, location, pageToken = "", aggregatedData = { ratings: [0, 0, 0, 0, 0], goodReviews: [], badReviews: [], totalFetched: 0 }) {
+// Helper for Reviews
+async function fetchAllReviews(email, location, pageToken = "", aggregatedData = null) {
+    if (!aggregatedData) {
+        aggregatedData = {
+            ratings: [0, 0, 0, 0, 0],
+            goodReviews: [],
+            badReviews: [],
+            totalFetched: 0,
+            averageRating: null,
+            totalReviewCount: null,
+            duration: null
+        };
+    }
+
     return new Promise((resolve, reject) => {
         const http = require('http');
         const postData = JSON.stringify({ function: "reviews", email, location, pageToken });
@@ -768,24 +783,76 @@ async function fetchAllReviews(email, location, pageToken = "", aggregatedData =
             res.on('end', async () => {
                 try {
                     const data = JSON.parse(body);
+                    
+                    // Capture overall metadata from Google API on first page load
+                    const apiAverageRating = data.averageRating !== undefined ? data.averageRating : data.averagerating;
+                    const apiTotalReviewCount = data.totalReviewCount !== undefined ? data.totalReviewCount : data.totalreviewcount;
+                    if (apiAverageRating !== undefined && apiAverageRating !== null && aggregatedData.averageRating === null) {
+                        aggregatedData.averageRating = Number(apiAverageRating);
+                    }
+                    if (apiTotalReviewCount !== undefined && apiTotalReviewCount !== null && aggregatedData.totalReviewCount === null) {
+                        aggregatedData.totalReviewCount = Number(apiTotalReviewCount);
+                    }
+
+                    // Compute dynamic date cutoff: current year or last 6 months, whichever is longer/earlier
+                    const now = new Date();
+                    const startOfCurrentYear = new Date(`${now.getFullYear()}-01-01T00:00:00Z`);
+                    const sixMonthsAgo = new Date();
+                    sixMonthsAgo.setMonth(now.getMonth() - 6);
+                    const cutoffDate = startOfCurrentYear < sixMonthsAgo ? startOfCurrentYear : sixMonthsAgo;
+                    
+                    // Conditionally apply cutoff if it is a large profile (>1000 reviews)
+                    const isLargeProfile = (aggregatedData.totalReviewCount !== null && Number(aggregatedData.totalReviewCount) > 1000);
+                    const durationText = isLargeProfile 
+                        ? (startOfCurrentYear < sixMonthsAgo ? "Current Year" : "Last 6 Months") 
+                        : "All Time";
+                    
+                    if (aggregatedData.duration === null) {
+                        aggregatedData.duration = durationText;
+                    }
+
+                    let reachedCutoff = false;
+
                     if (data.reviews) {
                         data.reviews.forEach(review => {
+                            if (isLargeProfile && review.createTime) {
+                                const reviewDate = new Date(review.createTime);
+                                if (reviewDate < cutoffDate) {
+                                    reachedCutoff = true;
+                                    return; // Skip reviews older than cutoff for large profiles
+                                }
+                            }
                             if (review.starRating) {
                                 const ratingMap = { "ONE": 0, "TWO": 1, "THREE": 2, "FOUR": 3, "FIVE": 4 };
                                 const index = ratingMap[review.starRating];
                                 if (index !== undefined) aggregatedData.ratings[index]++;
-                                if (review.comment) {
-                                    if (review.starRating === "FIVE" && aggregatedData.goodReviews.length < 5) aggregatedData.goodReviews.push({ comment: review.comment, author: review.reviewer.displayName, date: review.createTime });
-                                    if (review.starRating === "ONE" && aggregatedData.badReviews.length < 5) aggregatedData.badReviews.push({ comment: review.comment, author: review.reviewer.displayName, date: review.createTime });
+                                
+                                const cleanComment = review.comment ? review.comment.trim() : "";
+                                if (cleanComment) {
+                                    const authorName = review.reviewer && review.reviewer.displayName ? review.reviewer.displayName : "Anonymous";
+                                    // Accept 5 and 4 star ratings as positive comments
+                                    if ((review.starRating === "FIVE" || review.starRating === "FOUR") && aggregatedData.goodReviews.length < 5) {
+                                        aggregatedData.goodReviews.push({ comment: cleanComment, author: authorName, date: review.createTime });
+                                    }
+                                    // Accept 1, 2, and 3 star ratings as critical comments
+                                    if ((review.starRating === "ONE" || review.starRating === "TWO" || review.starRating === "THREE") && aggregatedData.badReviews.length < 5) {
+                                        aggregatedData.badReviews.push({ comment: cleanComment, author: authorName, date: review.createTime });
+                                    }
                                 }
                             }
                         });
                         aggregatedData.totalFetched += data.reviews.length;
                     }
-                    if (data.nextPageToken && aggregatedData.totalFetched < 3000) {
+                    
+                    // Stop pagination immediately if we reached reviews older than the cutoff date (applies to large profiles)
+                    if (data.nextPageToken && !reachedCutoff && aggregatedData.totalFetched < 3000) {
                         try { resolve(await fetchAllReviews(email, location, data.nextPageToken, aggregatedData)); } catch (e) { reject(e); }
-                    } else { resolve(aggregatedData); }
-                } catch (e) { resolve(aggregatedData); }
+                    } else { 
+                        resolve(aggregatedData); 
+                    }
+                } catch (e) { 
+                    resolve(aggregatedData); 
+                }
             });
         });
         req.on('error', (e) => resolve(aggregatedData));
