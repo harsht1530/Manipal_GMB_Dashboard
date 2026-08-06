@@ -120,7 +120,13 @@ const seedManipalCorporate = async () => {
                 { name: "Harsh Mishra", email: "harsh@multipliersolutions.com", role: "Admin", accessScope: "Global", cluster: "All", branch: "All", isActive: true },
                 { name: "Rupesh Mishra", email: "rupesh.mishra@manipalhospitals.com", role: "Admin", accessScope: "Global", cluster: "All", branch: "All", isActive: true },
                 { name: "Rumela Bhattacharya", email: "rumela.bhattacharya@manipalhospitals.com", role: "Admin", accessScope: "Global", cluster: "All", branch: "All", isActive: true },
-                { name: "Mayank Agarwal", email: "mayank.agarwal@multipliersolutions.com", role: "Admin", accessScope: "Global", cluster: "All", branch: "All", isActive: true }
+                { name: "Mayank Agarwal", email: "mayank.agarwal@multipliersolutions.com", role: "Admin", accessScope: "Global", cluster: "All", branch: "All", isActive: true },
+                { name: "Dr. Bhavana B.", email: "bhavana.b@manipalhospitals.com", role: "Cluster", accessScope: "Cluster", cluster: "South", branch: "All", isActive: true },
+                { name: "Abhishek Mishra", email: "abhishek.mishra@manipalhospitals.com", role: "Cluster", accessScope: "Cluster", cluster: "North", branch: "All", isActive: true },
+                { name: "Dr. Arun Chakravarty", email: "arun.chakravarty@manipalhospitals.com", role: "Cluster", accessScope: "Cluster", cluster: "East", branch: "All", isActive: true },
+                { name: "Bejoy Changarath", email: "bejoy.changarath@manipalhospitals.com", role: "Cluster", accessScope: "Cluster", cluster: "South", branch: "All", isActive: true },
+                { name: "Ravi Shankar Danaboina", email: "ravi.danaboina@manipalhospitals.com", role: "Cluster", accessScope: "Cluster", cluster: "South-East", branch: "All", isActive: true },
+                { name: "Rakesh Dharshan", email: "rakesh.dharshan@manipalhospitals.com", role: "Cluster", accessScope: "Cluster", cluster: "West", branch: "All", isActive: true }
             ];
             await ManipalCorporate.insertMany(members);
             console.log("Manipal Corporate Escalation Recipients seeded successfully!");
@@ -2136,7 +2142,18 @@ const runSlaCheck = async () => {
             
             // Fetch active corporate escalation contacts
             const corporateContacts = await ManipalCorporate.find({ isActive: true });
-            let recipientEmails = corporateContacts.map(c => c.email).filter(Boolean);
+            const ticketCluster = (requestDoc.cluster || "").trim().toLowerCase();
+            let recipientEmails = corporateContacts
+                .filter(c => {
+                    const contactCluster = (c.cluster || "").trim().toLowerCase();
+                    // Admin (All) always gets notified
+                    if (contactCluster === "all") return true;
+                    // Particular cluster owner gets notified
+                    if (ticketCluster && contactCluster === ticketCluster) return true;
+                    return false;
+                })
+                .map(c => c.email)
+                .filter(Boolean);
 
             if (recipientEmails.length === 0) {
                 recipientEmails = [

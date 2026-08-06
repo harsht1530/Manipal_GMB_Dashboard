@@ -85,6 +85,7 @@ const App = () => (
                   <Routes>
                     <Route path="dashboard" element={<TicketDashboard />} />
                     <Route path="admin-console" element={<AdminTicketConsole />} />
+                    <Route path="cluster-console" element={<AdminTicketConsole />} />
                     <Route path="raise" element={<RaiseTicket />} />
                     <Route path="multiplier-raise" element={<MultiplierRaiseRequest />} />
                     <Route path="escalations" element={<ReminderEscalation />} />
@@ -101,6 +102,7 @@ const App = () => (
                   <Routes>
                     <Route path="dashboard" element={<TicketDashboard />} />
                     <Route path="admin-console" element={<AdminTicketConsole />} />
+                    <Route path="cluster-console" element={<AdminTicketConsole />} />
                     <Route path="raise" element={<RaiseTicket />} />
                     <Route path="multiplier-raise" element={<MultiplierRaiseRequest />} />
                     <Route path="escalations" element={<ReminderEscalation />} />

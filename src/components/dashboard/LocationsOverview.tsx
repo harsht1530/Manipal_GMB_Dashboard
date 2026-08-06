@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { CheckCircle, XCircle, AlertCircle, Building2, Info, ArrowUp, ArrowDown, Download } from "lucide-react";
 import { LocationData, parseDateString, InsightData } from "@/hooks/useMongoData";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ interface LocationsOverviewProps {
   apiInsights?: InsightData[];
   selectedMonths: string[];
   selectedYear: string[];
+  onVerifiedCountChange?: (count: number) => void;
 }
 
 const TrendIndicator = ({ current, previous, inverseColors = false }: { current: number; previous: number, inverseColors?: boolean }) => {
@@ -53,7 +54,7 @@ const TrendIndicator = ({ current, previous, inverseColors = false }: { current:
   );
 };
 
-export const LocationsOverview = ({ data, apiInsights = [], selectedMonths, selectedYear }: LocationsOverviewProps) => {
+export const LocationsOverview = ({ data, apiInsights = [], selectedMonths, selectedYear, onVerifiedCountChange }: LocationsOverviewProps) => {
   const [viewMode, setViewMode] = useState<"standard" | "realtime">("standard");
   const [exportDataCtx, setExportDataCtx] = useState<{
     isOpen: boolean;
@@ -385,6 +386,13 @@ export const LocationsOverview = ({ data, apiInsights = [], selectedMonths, sele
   const realtimeVerificationRate = realtimeTotals.totalProfiles > 0
     ? Math.round((realtimeTotals.verifiedProfiles / realtimeTotals.totalProfiles) * 100)
     : 0;
+
+  const activeVerifiedCount = viewMode === "realtime" ? realtimeTotals.verifiedProfiles : totals.verifiedProfiles;
+  useEffect(() => {
+    if (onVerifiedCountChange) {
+      onVerifiedCountChange(activeVerifiedCount);
+    }
+  }, [activeVerifiedCount, onVerifiedCountChange]);
 
   return (
     <TooltipProvider>

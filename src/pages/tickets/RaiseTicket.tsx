@@ -179,7 +179,7 @@ const getTemplateColumns = (category: string, ticketType: string, isMultiplier: 
     }
     if (category === "Profile Verification") {
       if (ticketType === "Through Phone Number or Email") {
-        return ["Phone number"];
+        return ["Phone number", "Profile Link"];
       }
     }
     if (category === "Ownership & Access") {
@@ -292,6 +292,7 @@ export default function RaiseTicket() {
   const { createTicket, team, isMultiplier, currentMultiplierTeamMember } = useTickets();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const redirectPath = user?.role === "Cluster" ? "/requests/cluster-console" : "/requests/dashboard";
 
   const categoryMap = useMemo(() => {
     return isMultiplier ? MULTIPLIER_CATEGORY_MAP : CLIENT_CATEGORY_MAP;
@@ -548,7 +549,7 @@ export default function RaiseTicket() {
     setLoading(false);
     
     if (result) {
-      navigate("/requests/dashboard");
+      navigate(redirectPath);
     }
   };
 
@@ -557,7 +558,7 @@ export default function RaiseTicket() {
       <div className="max-w-4xl mx-auto space-y-6">
         
         <div className="flex items-center justify-between">
-          <Link to="/requests/dashboard">
+          <Link to={redirectPath}>
             <Button variant="ghost" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
               <ArrowLeft className="h-4 w-4" /> Back to Dashboard
             </Button>
@@ -741,7 +742,7 @@ export default function RaiseTicket() {
 
                 {/* Submit Buttons */}
                 <div className="flex justify-end gap-2 pt-4">
-                  <Link to="/requests/dashboard">
+                  <Link to={redirectPath}>
                     <Button type="button" variant="ghost">Cancel</Button>
                   </Link>
                   <Button type="submit" className="bg-primary hover:bg-primary/95" disabled={loading}>

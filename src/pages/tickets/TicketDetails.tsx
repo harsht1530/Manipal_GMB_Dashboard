@@ -38,8 +38,8 @@ export default function TicketDetails() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
-  
   const { tickets, team, isMultiplier, addTicketLog, transferTicket, refreshTickets } = useTickets();
+  const redirectPath = user?.role === "Cluster" ? "/requests/cluster-console" : "/requests/dashboard";
 
   useEffect(() => {
     refreshTickets();
@@ -83,7 +83,7 @@ export default function TicketDetails() {
           <AlertCircle className="h-10 w-10 mx-auto text-muted-foreground/60 mb-2 animate-bounce" />
           <p className="font-semibold text-lg">Request Not Found</p>
           <p className="text-sm mt-1">Please check the ID or return to the dashboard.</p>
-          <Link to="/requests/dashboard" className="mt-4 inline-block">
+          <Link to={redirectPath} className="mt-4 inline-block">
             <Button variant="outline">Back to Dashboard</Button>
           </Link>
         </div>
@@ -216,7 +216,7 @@ export default function TicketDetails() {
         
         {/* Navigation & Toolbar Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b pb-4">
-          <Link to="/requests/dashboard">
+          <Link to={redirectPath}>
             <Button variant="ghost" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
               <ArrowLeft className="h-4 w-4" /> Back to Dashboard
             </Button>

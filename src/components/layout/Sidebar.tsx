@@ -101,6 +101,10 @@ export const Sidebar = ({
     ticketingChildren.push({ icon: ClipboardList, label: "Admin Console", path: "/requests/admin-console" });
   }
 
+  if (user?.role === "Cluster") {
+    ticketingChildren.push({ icon: ClipboardList, label: "Cluster Console", path: "/requests/cluster-console" });
+  }
+
   // Everyone can raise a request
   ticketingChildren.push({ icon: PlusCircle, label: "Raise Request", path: "/requests/raise" });
 

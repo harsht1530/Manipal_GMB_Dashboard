@@ -37,6 +37,7 @@ export default function AdminTicketConsole() {
   const { tickets, loading, addTicketLog, refreshTickets } = useTickets();
   const { user } = useAuth();
   const { toast } = useToast();
+  const isClusterUser = user?.role === "Cluster";
 
   useEffect(() => {
     refreshTickets();
@@ -83,7 +84,7 @@ export default function AdminTicketConsole() {
       
       const matchStatus = statusFilter === "ALL" || ticket.status === statusFilter;
       const matchPriority = priorityFilter === "ALL" || ticket.priority === priorityFilter;
-      const matchCluster = clusterFilter === "ALL" || ticket.cluster === clusterFilter;
+      const matchCluster = isClusterUser || clusterFilter === "ALL" || ticket.cluster === clusterFilter;
 
       return matchSearch && matchStatus && matchPriority && matchCluster;
     });
@@ -228,8 +229,13 @@ export default function AdminTicketConsole() {
     }
   };
 
+  const title = isClusterUser ? "Cluster Control Console" : "Admin Control Console";
+  const subtitle = isClusterUser
+    ? `Supervise GMB requests for cluster: ${user?.cluster || ""}`
+    : "Supervise all system GMB requests, audit timelines, and issue commands";
+
   return (
-    <DashboardLayout title="Admin Control Console" subtitle="Supervise all system GMB requests, audit timelines, and issue commands">
+    <DashboardLayout title={title} subtitle={subtitle}>
       <div className="space-y-6">
         
         {/* KPI Cards Grid */}
@@ -315,17 +321,19 @@ export default function AdminTicketConsole() {
               </div>
               
               {/* Cluster Dropdown */}
-              <Select value={clusterFilter} onValueChange={setClusterFilter}>
-                <SelectTrigger className="h-9 w-[130px] bg-muted/20 border-primary/5 text-xs font-medium">
-                  <SelectValue placeholder="Cluster" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All Clusters</SelectItem>
-                  {clusters.map(c => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {!isClusterUser && (
+                <Select value={clusterFilter} onValueChange={setClusterFilter}>
+                  <SelectTrigger className="h-9 w-[130px] bg-muted/20 border-primary/5 text-xs font-medium">
+                    <SelectValue placeholder="Cluster" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Clusters</SelectItem>
+                    {clusters.map(c => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
 
               {/* Status Dropdown */}
               <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -482,9 +490,9 @@ export default function AdminTicketConsole() {
                         </div>
                       </div>
                       
-                      <div className="border-t pt-3">
+                      <div className="border-t pt-3 w-full max-w-full overflow-hidden">
                         <span className="text-muted-foreground block text-xs font-medium">Description:</span>
-                        <p className="text-xs text-foreground mt-1 whitespace-pre-line bg-muted/20 p-2.5 rounded border border-primary/5 leading-relaxed font-medium">
+                        <p className="text-xs text-foreground mt-1 whitespace-pre-line break-words [word-break:break-word] bg-muted/20 p-2.5 rounded border border-primary/5 leading-relaxed font-medium w-full max-w-full overflow-y-auto max-h-[300px]">
                           {selectedTicket.description}
                         </p>
                       </div>

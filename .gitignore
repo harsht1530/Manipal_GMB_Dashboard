@@ -26,6 +26,8 @@ out
 .next
 .cache
 .parcel-cache
+public/videos
+public/videos/*.mp4
 
 # Editor directories and files
 .vscode/*

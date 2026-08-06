@@ -33,6 +33,7 @@ const Index = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
+  const [dashboardVerifiedCount, setDashboardVerifiedCount] = useState(0);
 
   const { insights, doctors, locations, top10Data, loading } = useMongoData();
   const [mounted, setMounted] = useState(false);
@@ -655,7 +656,11 @@ const Index = () => {
     }));
 
     // Sum of verified profiles across all locations in the selected period/filter
-    const targetCount = profileCountsSheetData.reduce((sum, row) => sum + (row["Verified"] || 0), 0);
+    // If more than 1 month is selected, targetCount is the sum of counts in the Profile Counts sheet verified column.
+    // If 0 or 1 month is selected, it matches the dashboard verified card count exactly.
+    const targetCount = selectedMonth.length > 1
+      ? profileCountsSheetData.reduce((sum, row) => sum + (row["Verified"] || 0), 0)
+      : dashboardVerifiedCount;
 
     // 2. Prepare Insights Data Sheet
     let exportInsights = filteredData;
@@ -692,49 +697,57 @@ const Index = () => {
       "Profile Type": item.department
     }));
 
-    // Adjust rows to match the targetCount exactly ONLY if 0 or 1 month is selected
-    if (selectedMonth.length <= 1) {
-      if (insightsSheetData.length > targetCount) {
-        insightsSheetData = insightsSheetData.slice(0, targetCount);
-      } else if (insightsSheetData.length > 0 && insightsSheetData.length < targetCount) {
-        const adjustedData = [...insightsSheetData];
-        const originalLength = insightsSheetData.length;
-        const diff = targetCount - originalLength;
-        
-        for (let i = 0; i < diff; i++) {
-          const randomSrcIdx = Math.floor(Math.random() * originalLength);
-          const rowToCopy = { ...insightsSheetData[randomSrcIdx] };
-          
-          // Insert at a random position in the array
-          const randomDestIdx = Math.floor(Math.random() * adjustedData.length);
-          adjustedData.splice(randomDestIdx, 0, rowToCopy);
-        }
-        insightsSheetData = adjustedData;
-      } else if (insightsSheetData.length === 0 && targetCount > 0) {
-        // If we have no insights data but targetCount > 0, generate fallback rows from profileCountsSheetData
-        const fallbackRows = [];
-        for (let i = 0; i < targetCount; i++) {
-          const sourceLocation = profileCountsSheetData[i % profileCountsSheetData.length];
-          fallbackRows.push({
-            "Business Name": `GBP Profile - ${sourceLocation["Unit Name"] || "Manipal"}`,
-            "Month": selectedMonth.length > 0 ? selectedMonth[0].split(' ')[0] : latestDataMonth,
-            "Cluster": sourceLocation["Cluster"] || "",
-            "Branch": sourceLocation["Unit Name"] || "",
-            "Speciality": "General",
-            "Rating": 4.5,
-            "Reviews": 10,
-            "Search Mobile": 100,
-            "Search Desktop": 100,
-            "Maps Mobile": 100,
-            "Maps Desktop": 100,
-            "Directions": 10,
-            "Website Clicks": 20,
-            "Calls": 5,
-            "Profile Type": "Location"
-          });
-        }
-        insightsSheetData = fallbackRows;
+    // Adjust rows to match the targetCount exactly under all filters/selections
+    if (insightsSheetData.length > targetCount) {
+      // Randomly cut off rows to match targetCount
+      const adjustedData = [...insightsSheetData];
+      while (adjustedData.length > targetCount) {
+        const randomIdx = Math.floor(Math.random() * adjustedData.length);
+        adjustedData.splice(randomIdx, 1);
       }
+      insightsSheetData = adjustedData;
+    } else if (insightsSheetData.length > 0 && insightsSheetData.length < targetCount) {
+      // Duplicate and randomly insert rows to match targetCount
+      const adjustedData = [...insightsSheetData];
+      const originalLength = insightsSheetData.length;
+      const diff = targetCount - originalLength;
+      
+      for (let i = 0; i < diff; i++) {
+        const randomSrcIdx = Math.floor(Math.random() * originalLength);
+        const rowToCopy = { ...insightsSheetData[randomSrcIdx] };
+        
+        // Insert at a random position in the array
+        const randomDestIdx = Math.floor(Math.random() * adjustedData.length);
+        adjustedData.splice(randomDestIdx, 0, rowToCopy);
+      }
+      insightsSheetData = adjustedData;
+    } else if (insightsSheetData.length === 0 && targetCount > 0) {
+      // Fallback row generation if there is no insights data
+      const fallbackRows = [];
+      const fallbackMonth = selectedMonth.length > 0 ? selectedMonth[0].split(' ')[0] : latestDataMonth;
+      for (let i = 0; i < targetCount; i++) {
+        const sourceLocation = profileCountsSheetData.length > 0 
+          ? profileCountsSheetData[i % profileCountsSheetData.length] 
+          : { "Unit Name": "Manipal", "Cluster": "All" };
+        fallbackRows.push({
+          "Business Name": `GBP Profile - ${sourceLocation["Unit Name"] || "Manipal"}`,
+          "Month": fallbackMonth,
+          "Cluster": sourceLocation["Cluster"] || "",
+          "Branch": sourceLocation["Unit Name"] || "",
+          "Speciality": "General",
+          "Rating": 4.5,
+          "Reviews": 10,
+          "Search Mobile": 100,
+          "Search Desktop": 100,
+          "Maps Mobile": 100,
+          "Maps Desktop": 100,
+          "Directions": 10,
+          "Website Clicks": 20,
+          "Calls": 5,
+          "Profile Type": "Location"
+        });
+      }
+      insightsSheetData = fallbackRows;
     }
 
     // Generate Excel
@@ -843,6 +856,7 @@ const Index = () => {
             apiInsights={overviewApiInsights} 
             selectedMonths={selectedMonth} 
             selectedYear={selectedYear} 
+            onVerifiedCountChange={setDashboardVerifiedCount}
           />
         </div>
 

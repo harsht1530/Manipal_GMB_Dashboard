@@ -1,4 +1,6 @@
 const mongoose = require('mongoose');
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://vasudeva:ommN1EMg2KsURyPQ@cluster0.n3ejr.mongodb.net/HarshDB';
 
@@ -45,6 +47,60 @@ const corporateMembers = [
     role: "Admin",
     accessScope: "Global",
     cluster: "All",
+    branch: "All",
+    isActive: true
+  },
+  {
+    name: "Dr. Bhavana B.",
+    email: "bhavana.b@manipalhospitals.com",
+    role: "Cluster",
+    accessScope: "Cluster",
+    cluster: "South",
+    branch: "All",
+    isActive: true
+  },
+  {
+    name: "Abhishek Mishra",
+    email: "abhishek.mishra@manipalhospitals.com",
+    role: "Cluster",
+    accessScope: "Cluster",
+    cluster: "North",
+    branch: "All",
+    isActive: true
+  },
+  {
+    name: "Dr. Arun Chakravarty",
+    email: "arun.chakravarty@manipalhospitals.com",
+    role: "Cluster",
+    accessScope: "Cluster",
+    cluster: "East",
+    branch: "All",
+    isActive: true
+  },
+  {
+    name: "Bejoy Changarath",
+    email: "bejoy.changarath@manipalhospitals.com",
+    role: "Cluster",
+    accessScope: "Cluster",
+    cluster: "South",
+    branch: "All",
+    isActive: true
+  },
+  {
+    name: "Ravi Shankar Danaboina",
+    email: "ravi.danaboina@manipalhospitals.com",
+    role: "Cluster",
+    accessScope: "Cluster",
+    cluster: "South-East",
+    branch: "All",
+    isActive: true
+  },
+  {
+    name: "Rakesh Dharshan",
+    email: "rakesh.dharshan@manipalhospitals.com",
+    role: "Cluster",
+    accessScope: "Cluster",
+    cluster: "West",
     branch: "All",
     isActive: true
   }
