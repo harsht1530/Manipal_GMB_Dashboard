@@ -19,6 +19,7 @@ const ResetPassword = () => {
 
     const email = searchParams.get("email");
     const token = searchParams.get("token");
+    const userId = searchParams.get("userId");
 
     useEffect(() => {
         if (!email || !token) {
@@ -47,7 +48,7 @@ const ResetPassword = () => {
             const response = await fetch(`${API_BASE_URL}/api/reset-password`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email, token, newPassword }),
+                body: JSON.stringify({ email, token, newPassword, userId: userId || undefined }),
             });
 
             const data = await response.json();

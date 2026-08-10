@@ -104,22 +104,110 @@ const Index = () => {
       })
       .map(m => ({ label: m.month, value: `${m.month} ${m.year}`, group: m.year }));
 
-    // 3. Specialities depend on selected Clusters, Branches, Departments, and Ratings
+    // To get standard scope from locations filtered by cluster/branch/department
+    const getLockedMonthAndYear = () => {
+      const filteredLocs = locations.filter(loc => {
+        const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(loc.cluster);
+        const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(loc.unitName);
+        const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(loc.department);
+        return clusterMatch && branchMatch && departmentMatch;
+      });
+
+      if (filteredLocs.length === 0) return { month: "", year: "" };
+
+      // Resolve targetYear (e.g. from ["Jan 2025"] or selectedYear ["2025"])
+      const parsedLocs = filteredLocs.map(l => {
+        let numericYear = 2026;
+        if (l.year) {
+          numericYear = parseInt(l.year) || 2026;
+        } else if (l.date) {
+          const parts = l.date.split('-');
+          if (parts.length === 3) numericYear = parseInt(parts[2]) || 2026;
+        }
+        return {
+          ...l,
+          numericYear
+        };
+      });
+
+      const getYearFromDocVal = (doc: any) => {
+        if (doc.year) return doc.year;
+        if (doc.date) {
+          const parts = doc.date.split('-');
+          if (parts.length === 3) return parts[2];
+        }
+        return "";
+      };
+
+      const getLatestYearOfDataset = (ds: any[]) => {
+        if (ds.length === 0) return new Date().getFullYear().toString();
+        const sorted = [...ds].sort((a, b) => {
+          const timeA = a.date ? parseDateString(a.date).getTime() : 0;
+          const timeB = b.date ? parseDateString(b.date).getTime() : 0;
+          return timeB - timeA;
+        });
+        const y = getYearFromDocVal(sorted[0]);
+        return y || new Date().getFullYear().toString();
+      };
+
+      const targetYear = selectedMonth.length > 0 && !selectedMonth.includes("All") && selectedMonth[0].split(' ').length === 2
+        ? selectedMonth[0].split(' ')[1]
+        : (selectedYear.length > 0 ? selectedYear[0] : getLatestYearOfDataset(filteredLocs));
+
+      // Filter dataset by targetYear and targetYear - 1 to isolate calculation
+      const yearFilteredDataset = filteredLocs.filter(d => {
+        const y = getYearFromDocVal(d);
+        if (!y) return true;
+        return y === targetYear || y === String(parseInt(targetYear) - 1);
+      });
+
+      let targetData = yearFilteredDataset;
+
+      // Filter by selectedMonth (which has "Month Year" format, e.g. "Jan 2025")
+      if (selectedMonth.length > 0 && !selectedMonth.includes("All")) {
+        targetData = yearFilteredDataset.filter(d => {
+          const docYear = getYearFromDocVal(d);
+          const docMonthYear = docYear ? `${d.month} ${docYear}` : d.month;
+          return selectedMonth.includes(docMonthYear);
+        });
+        if (targetData.length === 0) targetData = yearFilteredDataset; // fallback
+      }
+
+      const sortedData = [...targetData].sort((a, b) => {
+        const timeA = a.date ? parseDateString(a.date).getTime() : 0;
+        const timeB = b.date ? parseDateString(b.date).getTime() : 0;
+        if (!isNaN(timeA) && !isNaN(timeB) && timeA !== timeB) return timeB - timeA;
+        
+        const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        return monthOrder.indexOf(b.month) - monthOrder.indexOf(a.month);
+      });
+
+      const latestMonth = sortedData.length > 0 ? (sortedData[0].month || "Jan") : "Jan";
+
+      const lockedMonth = selectedMonth.length > 0 ? selectedMonth[0].split(' ')[0] : latestMonth;
+      const lockedYear = selectedYear.length > 0 ? selectedYear[0] : targetYear;
+
+      return { month: lockedMonth, year: lockedYear };
+    };
+
+    const { month: activeMonth, year: activeYear } = getLockedMonthAndYear();
+
+    // 3. Specialities depend on selected Clusters, Branches, Departments, Ratings, and belong to the active month/year showing in Profile Verification Status
     const specialityData = insights.filter(i => {
       const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(i.cluster);
       const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(i.branch);
       const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(i.department);
       const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(i.rating) === r);
-      let yearMatch = true;
-      if (selectedYear.length > 0) {
-        yearMatch = selectedYear.includes(i.year);
-      }
-      return clusterMatch && branchMatch && departmentMatch && ratingMatch && yearMatch;
+      
+      const monthMatch = i.month === activeMonth;
+      const yearMatch = !activeYear || i.year === activeYear;
+
+      return clusterMatch && branchMatch && departmentMatch && ratingMatch && monthMatch && yearMatch;
     });
     const specialities = [...new Set(specialityData.map(i => i.speciality))].filter(Boolean).sort();
 
     return { clusters, branches, months, years, specialities };
-  }, [insights, selectedDepartments, selectedCluster, selectedYear, selectedBranch, selectedRatings, mounted, loading]);
+  }, [insights, locations, selectedDepartments, selectedCluster, selectedYear, selectedBranch, selectedRatings, selectedMonth, mounted, loading]);
 
   const filteredData = useMemo(() => {
     if (!mounted || loading) return [];
@@ -620,7 +708,8 @@ const Index = () => {
 
     const aggregatedLocationData = locationFiltered.reduce((acc, item) => {
       const unitName = item.unitName;
-      const existing = acc.find(d => d.unitName === unitName);
+      const month = item.month || "";
+      const existing = acc.find(d => d.unitName === unitName && d.month === month);
       if (existing) {
         existing.totalProfiles += item.totalProfiles;
         existing.verifiedProfiles += item.verifiedProfiles;
@@ -631,6 +720,7 @@ const Index = () => {
       } else {
         acc.push({
           unitName,
+          month,
           cluster: item.cluster,
           totalProfiles: item.totalProfiles,
           verifiedProfiles: item.verifiedProfiles,
@@ -645,6 +735,7 @@ const Index = () => {
 
     const profileCountsSheetData = aggregatedLocationData.map(item => ({
       "Unit Name": item.unitName,
+      "Month": item.month,
       "Cluster": item.cluster,
       "Total Profiles": item.totalProfiles,
       "Verified": item.verifiedProfiles,
@@ -722,30 +813,31 @@ const Index = () => {
       }
       insightsSheetData = adjustedData;
     } else if (insightsSheetData.length === 0 && targetCount > 0) {
-      // Fallback row generation if there is no insights data
+      // Fallback row generation: use real entries from manipalinsightsdatas (insights) instead of creating dummy names
       const fallbackRows = [];
-      const fallbackMonth = selectedMonth.length > 0 ? selectedMonth[0].split(' ')[0] : latestDataMonth;
-      for (let i = 0; i < targetCount; i++) {
-        const sourceLocation = profileCountsSheetData.length > 0 
-          ? profileCountsSheetData[i % profileCountsSheetData.length] 
-          : { "Unit Name": "Manipal", "Cluster": "All" };
-        fallbackRows.push({
-          "Business Name": `GBP Profile - ${sourceLocation["Unit Name"] || "Manipal"}`,
-          "Month": fallbackMonth,
-          "Cluster": sourceLocation["Cluster"] || "",
-          "Branch": sourceLocation["Unit Name"] || "",
-          "Speciality": "General",
-          "Rating": 4.5,
-          "Reviews": 10,
-          "Search Mobile": 100,
-          "Search Desktop": 100,
-          "Maps Mobile": 100,
-          "Maps Desktop": 100,
-          "Directions": 10,
-          "Website Clicks": 20,
-          "Calls": 5,
-          "Profile Type": "Location"
-        });
+      const sourcePool = insights.length > 0 ? insights : [];
+      
+      if (sourcePool.length > 0) {
+        for (let i = 0; i < targetCount; i++) {
+          const item = sourcePool[i % sourcePool.length];
+          fallbackRows.push({
+            "Business Name": item.businessName,
+            "Month": item.month,
+            "Cluster": item.cluster,
+            "Branch": item.branch,
+            "Speciality": item.speciality,
+            "Rating": item.rating,
+            "Reviews": item.review,
+            "Search Mobile": item.googleSearchMobile,
+            "Search Desktop": item.googleSearchDesktop,
+            "Maps Mobile": item.googleMapsMobile,
+            "Maps Desktop": item.googleMapsDesktop,
+            "Directions": item.directions,
+            "Website Clicks": item.websiteClicks,
+            "Calls": item.calls,
+            "Profile Type": item.department
+          });
+        }
       }
       insightsSheetData = fallbackRows;
     }

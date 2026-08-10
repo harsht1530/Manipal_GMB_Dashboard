@@ -397,11 +397,41 @@ app.post('/api/verify-otp', async (req, res) => {
     }
 });
 
+// 2.1.5 Check Email Access Route (multiple access check)
+app.post('/api/forgot-password/check', async (req, res) => {
+    const { email } = req.body;
+    if (!email) {
+        return res.status(400).json({ success: false, error: "Email is required" });
+    }
+    try {
+        const users = await User.find({ $or: [{ orgEmail: email }, { mail: email }] });
+        if (users.length > 1) {
+            const accounts = users.map(u => ({
+                id: u._id,
+                user: u.user || 'User',
+                cluster: u.Cluster,
+                branch: u.Branch,
+                name: u.Name
+            }));
+            return res.json({ success: true, multiple: true, accounts });
+        }
+        res.json({ success: true, multiple: false });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // 2.2 Forgot Password Route
 app.post('/api/forgot-password', async (req, res) => {
-    const { email } = req.body;
+    const { email, userId } = req.body;
     try {
-        const user = await User.findOne({ $or: [{ orgEmail: email }, { mail: email }] });
+        let user;
+        if (userId) {
+            user = await User.findOne({ _id: userId, $or: [{ orgEmail: email }, { mail: email }] });
+        } else {
+            user = await User.findOne({ $or: [{ orgEmail: email }, { mail: email }] });
+        }
+
         if (!user) {
             return res.json({ success: true, message: "If that email exists, a reset link has been sent." });
         }
@@ -412,11 +442,15 @@ app.post('/api/forgot-password', async (req, res) => {
         await user.save();
 
         const baseUrl = getAppBaseUrl(req);
-        const resetUrl = `${baseUrl}/#/reset-password?token=${token}&email=${email}`;
+        const resetUrl = `${baseUrl}/#/reset-password?token=${token}&email=${email}${userId ? `&userId=${userId}` : ''}`;
+
+        const detailsText = user.Branch 
+            ? `Branch: ${user.Branch}` 
+            : (user.Cluster ? `Cluster: ${user.Cluster}` : `${user.user || 'User'} Account`);
 
         const emailHtml = getEmailTemplate(`
             <h2 style="color: #333;">Password Reset Request</h2>
-            <p style="font-size: 16px; color: #555;">We received a request to reset your password.</p>
+            <p style="font-size: 16px; color: #555;">We received a request to reset the password for your <strong>${detailsText}</strong>.</p>
             <div style="text-align: center; margin: 30px 0;">
                 <a href="${resetUrl}" class="btn" style="background-color: transparent; color: #48BEB9; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; border: 2px solid #48BEB9; transition: all 0.3s ease;">Reset Password</a>
             </div>
@@ -438,14 +472,21 @@ app.post('/api/forgot-password', async (req, res) => {
 
 // 2.3 Reset Password Route
 app.post('/api/reset-password', async (req, res) => {
-    const { email, token, newPassword } = req.body;
+    const { email, token, newPassword, userId } = req.body;
     try {
+        const query = {
+            resetToken: token,
+            resetTokenExpires: { $gt: Date.now() }
+        };
+
+        if (userId) {
+            query._id = userId;
+        } else {
+            query.$or = [{ orgEmail: email }, { mail: email }];
+        }
+
         const user = await User.findOneAndUpdate(
-            {
-                $or: [{ orgEmail: email }, { mail: email }],
-                resetToken: token,
-                resetTokenExpires: { $gt: Date.now() }
-            },
+            query,
             {
                 $set: { psw: newPassword },
                 $unset: { resetToken: 1, resetTokenExpires: 1 }
