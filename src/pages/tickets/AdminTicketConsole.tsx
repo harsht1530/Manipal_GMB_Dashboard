@@ -48,6 +48,8 @@ export default function AdminTicketConsole() {
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [priorityFilter, setPriorityFilter] = useState("ALL");
   const [clusterFilter, setClusterFilter] = useState("ALL");
+  const [assignStartDate, setAssignStartDate] = useState("");
+  const [assignEndDate, setAssignEndDate] = useState("");
   
   // Selected ticket for modal
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
@@ -62,7 +64,13 @@ export default function AdminTicketConsole() {
 
   const canAdminChangeStatus = useMemo(() => {
     if (!user || !selectedTicket) return false;
-    return user.email.toLowerCase() === selectedTicket.assignedTo.email.toLowerCase();
+    const emailLower = user.email.toLowerCase();
+    const isAssignee = emailLower === selectedTicket.assignedTo.email.toLowerCase();
+    const isAssignor = emailLower === selectedTicket.raisedBy.email.toLowerCase();
+    const isAdmin = user.role === "Admin";
+    const isCluster = user.role === "Cluster" && selectedTicket.cluster && user.cluster && selectedTicket.cluster.toLowerCase() === user.cluster.toLowerCase();
+    
+    return isAssignee || isAssignor || isAdmin || isCluster;
   }, [user, selectedTicket]);
 
   // Extract unique clusters for filter dropdown
@@ -76,7 +84,7 @@ export default function AdminTicketConsole() {
     const filtered = tickets.filter(ticket => {
       const matchSearch = 
         ticket.ticketId.toLowerCase().includes(search.toLowerCase()) ||
-        ticket.ticketType.toLowerCase().includes(search.toLowerCase()) ||
+        (ticket.ticketType || ticket.requestType || "").toLowerCase().includes(search.toLowerCase()) ||
         ticket.description.toLowerCase().includes(search.toLowerCase()) ||
         ticket.raisedBy.name.toLowerCase().includes(search.toLowerCase()) ||
         ticket.assignedTo.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -86,7 +94,23 @@ export default function AdminTicketConsole() {
       const matchPriority = priorityFilter === "ALL" || ticket.priority === priorityFilter;
       const matchCluster = isClusterUser || clusterFilter === "ALL" || ticket.cluster === clusterFilter;
 
-      return matchSearch && matchStatus && matchPriority && matchCluster;
+      // 5. Assigned Date Range Filter
+      let matchesAssignDate = true;
+      const assignDate = ticket.assignedAt ? new Date(ticket.assignedAt) : new Date(ticket.createdAt);
+      
+      if (assignStartDate) {
+          const startDate = new Date(assignStartDate);
+          startDate.setHours(0, 0, 0, 0);
+          if (assignDate < startDate) matchesAssignDate = false;
+      }
+      
+      if (assignEndDate) {
+          const endDate = new Date(assignEndDate);
+          endDate.setHours(23, 59, 59, 999);
+          if (assignDate > endDate) matchesAssignDate = false;
+      }
+
+      return matchSearch && matchStatus && matchPriority && matchCluster && matchesAssignDate;
     });
 
     // Priority rank mapping (P1 highest, P5 lowest)
@@ -112,7 +136,7 @@ export default function AdminTicketConsole() {
       const timeB = new Date(b.createdAt).getTime();
       return timeA - timeB;
     });
-  }, [tickets, search, statusFilter, priorityFilter, clusterFilter]);
+  }, [tickets, search, statusFilter, priorityFilter, clusterFilter, assignStartDate, assignEndDate]);
 
   // Metrics calculation
   const metrics = useMemo(() => {
@@ -366,6 +390,34 @@ export default function AdminTicketConsole() {
                   <SelectItem value="P5">P5 (Lowest)</SelectItem>
                 </SelectContent>
               </Select>
+
+              {/* Assigned Date Range Filter */}
+              <div className="flex items-center gap-2 border border-border/40 rounded-md px-3 h-9 bg-muted/10 shrink-0">
+                <span className="text-[11px] text-muted-foreground whitespace-nowrap">Assigned:</span>
+                <Input 
+                  type="date"
+                  className="w-[115px] h-7 border-0 bg-transparent p-0 text-xs focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none" 
+                  value={assignStartDate}
+                  onChange={(e) => setAssignStartDate(e.target.value)}
+                />
+                <span className="text-[11px] text-muted-foreground">to</span>
+                <Input 
+                  type="date"
+                  className="w-[115px] h-7 border-0 bg-transparent p-0 text-xs focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none" 
+                  value={assignEndDate}
+                  onChange={(e) => setAssignEndDate(e.target.value)}
+                />
+                {(assignStartDate || assignEndDate) && (
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-5 w-5 text-destructive hover:bg-destructive/10 shrink-0 ml-1"
+                    onClick={() => { setAssignStartDate(""); setAssignEndDate(""); }}
+                  >
+                    ×
+                  </Button>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -383,19 +435,20 @@ export default function AdminTicketConsole() {
                   <TableHead className="font-bold">Assigned To</TableHead>
                   <TableHead className="font-bold">Status</TableHead>
                   <TableHead className="font-bold w-[70px]">Priority</TableHead>
+                  <TableHead className="font-bold">Assign Date</TableHead>
                   <TableHead className="font-bold">Due Date</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-32 text-center text-sm text-muted-foreground font-medium">
+                    <TableCell colSpan={9} className="h-32 text-center text-sm text-muted-foreground font-medium">
                       Loading requests and audit logs...
                     </TableCell>
                   </TableRow>
                 ) : filteredTickets.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-32 text-center text-sm text-muted-foreground font-medium">
+                    <TableCell colSpan={9} className="h-32 text-center text-sm text-muted-foreground font-medium">
                       No requests found matching the filter criteria.
                     </TableCell>
                   </TableRow>
@@ -428,6 +481,9 @@ export default function AdminTicketConsole() {
                         </TableCell>
                         <TableCell>{getStatusBadge(ticket.status)}</TableCell>
                         <TableCell>{getPriorityBadge(ticket.priority)}</TableCell>
+                        <TableCell className="text-xs font-semibold text-muted-foreground">
+                          {format(new Date(ticket.assignedAt || ticket.createdAt), 'MMM d, yyyy')}
+                        </TableCell>
                         <TableCell className="text-xs font-semibold text-muted-foreground">
                           {format(new Date(ticket.dueDate), 'MMM d, yyyy')}
                         </TableCell>

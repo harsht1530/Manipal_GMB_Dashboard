@@ -42,6 +42,8 @@ export default function TicketDashboard() {
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [clusterFilter, setClusterFilter] = useState("all");
   const [branchFilter, setBranchFilter] = useState("all");
+  const [assignStartDate, setAssignStartDate] = useState("");
+  const [assignEndDate, setAssignEndDate] = useState("");
   const [activeTab, setActiveTab] = useState<"my-raised" | "assigned-to-me">("my-raised");
 
   // Filter tickets by active tab (access level/email/branch constraints)
@@ -96,7 +98,7 @@ export default function TicketDashboard() {
 
   // Filter & Search Tickets
   const filteredTickets = useMemo(() => {
-    return tabTickets.filter(t => {
+    const filtered = tabTickets.filter(t => {
       // 1. Search term (ID, description, branch, category, names)
       const matchesSearch = 
         t.ticketId.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -120,7 +122,23 @@ export default function TicketDashboard() {
       // 6. Branch Filter
       const matchesBranch = branchFilter === "all" || t.branch === branchFilter;
 
-      return matchesSearch && matchesCategory && matchesStatus && matchesPriority && matchesCluster && matchesBranch;
+      // 7. Assigned Date Range Filter
+      let matchesAssignDate = true;
+      const assignDate = t.assignedAt ? new Date(t.assignedAt) : new Date(t.createdAt);
+      
+      if (assignStartDate) {
+          const startDate = new Date(assignStartDate);
+          startDate.setHours(0, 0, 0, 0);
+          if (assignDate < startDate) matchesAssignDate = false;
+      }
+      
+      if (assignEndDate) {
+          const endDate = new Date(assignEndDate);
+          endDate.setHours(23, 59, 59, 999);
+          if (assignDate > endDate) matchesAssignDate = false;
+      }
+
+      return matchesSearch && matchesCategory && matchesStatus && matchesPriority && matchesCluster && matchesBranch && matchesAssignDate;
     });
 
     // Priority rank mapping (P1 highest, P5 lowest)
@@ -146,7 +164,7 @@ export default function TicketDashboard() {
       const timeB = new Date(b.createdAt).getTime();
       return timeA - timeB;
     });
-  }, [tabTickets, searchTerm, categoryFilter, statusFilter, priorityFilter, clusterFilter, branchFilter]);
+  }, [tabTickets, searchTerm, categoryFilter, statusFilter, priorityFilter, clusterFilter, branchFilter, assignStartDate, assignEndDate]);
 
   // Quick Summary Box calculation
   const quickSummary = useMemo(() => {
@@ -451,6 +469,33 @@ export default function TicketDashboard() {
                   </SelectContent>
                 </Select>
 
+                <div className="flex items-center gap-2 border border-border rounded-md px-3 h-9 bg-background">
+                  <span className="text-[11px] text-muted-foreground whitespace-nowrap">Assigned:</span>
+                  <Input 
+                    type="date"
+                    className="w-[115px] h-7 border-0 bg-transparent p-0 text-xs focus-visible:ring-0 focus-visible:ring-offset-0" 
+                    value={assignStartDate}
+                    onChange={(e) => setAssignStartDate(e.target.value)}
+                  />
+                  <span className="text-[11px] text-muted-foreground">to</span>
+                  <Input 
+                    type="date"
+                    className="w-[115px] h-7 border-0 bg-transparent p-0 text-xs focus-visible:ring-0 focus-visible:ring-offset-0" 
+                    value={assignEndDate}
+                    onChange={(e) => setAssignEndDate(e.target.value)}
+                  />
+                  {(assignStartDate || assignEndDate) && (
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-6 w-6 text-destructive hover:bg-destructive/10 shrink-0 ml-1"
+                      onClick={() => { setAssignStartDate(""); setAssignEndDate(""); }}
+                    >
+                      ×
+                    </Button>
+                  )}
+                </div>
+
                 <Button variant="outline" size="sm" onClick={handleExportExcel} className="h-9 flex items-center gap-1">
                   <Download className="h-4 w-4" /> Export Excel
                 </Button>
@@ -468,6 +513,7 @@ export default function TicketDashboard() {
                         <TableHead>Request Type</TableHead>
                         <TableHead>Branch / Unit</TableHead>
                         <TableHead>Assigned To</TableHead>
+                        <TableHead>Assign Date</TableHead>
                         <TableHead>Due Date</TableHead>
                         <TableHead>Current SLA</TableHead>
                         <TableHead>Priority</TableHead>
@@ -478,7 +524,7 @@ export default function TicketDashboard() {
                     <TableBody>
                       {filteredTickets.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={10} className="h-28 text-center text-muted-foreground font-medium">
+                          <TableCell colSpan={11} className="h-28 text-center text-muted-foreground font-medium">
                             No raised requests found matching filters.
                           </TableCell>
                         </TableRow>
@@ -506,6 +552,9 @@ export default function TicketDashboard() {
                                   <User className="h-3 w-3 text-muted-foreground" />
                                   {ticket.assignedTo.name}
                                 </div>
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground font-medium">
+                                {ticket.assignedAt ? new Date(ticket.assignedAt).toLocaleDateString() : new Date(ticket.createdAt).toLocaleDateString()}
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground font-medium">
                                 {new Date(ticket.dueDate).toLocaleDateString()}
@@ -553,6 +602,7 @@ export default function TicketDashboard() {
                         <TableHead>Request Type</TableHead>
                         <TableHead>Branch / Unit</TableHead>
                         <TableHead>Raised By</TableHead>
+                        <TableHead>Assign Date</TableHead>
                         <TableHead>Due Date</TableHead>
                         <TableHead>Current SLA</TableHead>
                         <TableHead>Priority</TableHead>
@@ -563,7 +613,7 @@ export default function TicketDashboard() {
                     <TableBody>
                       {filteredTickets.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={10} className="h-28 text-center text-muted-foreground font-medium">
+                          <TableCell colSpan={11} className="h-28 text-center text-muted-foreground font-medium">
                             No assigned requests found matching filters.
                           </TableCell>
                         </TableRow>
@@ -591,6 +641,9 @@ export default function TicketDashboard() {
                                   <User className="h-3 w-3 text-muted-foreground" />
                                   {ticket.raisedBy.name}
                                 </div>
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground font-medium">
+                                {ticket.assignedAt ? new Date(ticket.assignedAt).toLocaleDateString() : new Date(ticket.createdAt).toLocaleDateString()}
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground font-medium">
                                 {new Date(ticket.dueDate).toLocaleDateString()}

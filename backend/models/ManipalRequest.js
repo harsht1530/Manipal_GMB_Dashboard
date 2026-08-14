@@ -85,6 +85,14 @@ const ManipalRequestSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    attachedUrl: {
+        type: String,
+        required: false
+    },
+    assignedAt: {
+        type: Date,
+        default: Date.now
+    },
     excelTemplate: {
         filename: String,
         path: String

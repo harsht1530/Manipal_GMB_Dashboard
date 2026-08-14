@@ -52,7 +52,13 @@ export default function TicketDetails() {
 
   const canChangeStatus = useMemo(() => {
     if (!user || !ticket) return false;
-    return user.email.toLowerCase() === ticket.assignedTo.email.toLowerCase();
+    const emailLower = user.email.toLowerCase();
+    const isAssignee = emailLower === ticket.assignedTo.email.toLowerCase();
+    const isAssignor = emailLower === ticket.raisedBy.email.toLowerCase();
+    const isAdmin = user.role === "Admin";
+    const isCluster = user.role === "Cluster" && ticket.cluster && user.cluster && ticket.cluster.toLowerCase() === user.cluster.toLowerCase();
+    
+    return isAssignee || isAssignor || isAdmin || isCluster;
   }, [user, ticket]);
 
   // UI state
@@ -323,6 +329,21 @@ export default function TicketDetails() {
                     {ticket.description}
                   </p>
                 </div>
+
+                {ticket.attachedUrl && (
+                  <div className="border-t pt-4 mt-4">
+                    <span className="text-xs text-muted-foreground block font-medium mb-1">Attached URL:</span>
+                    <a 
+                      href={ticket.attachedUrl} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="text-primary hover:underline break-all text-sm font-medium flex items-center gap-1.5"
+                    >
+                      <Globe className="h-4 w-4 shrink-0 text-primary" />
+                      {ticket.attachedUrl}
+                    </a>
+                  </div>
+                )}
               </CardContent>
             </Card>
 

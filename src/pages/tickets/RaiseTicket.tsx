@@ -316,6 +316,7 @@ export default function RaiseTicket() {
   const [ticketType, setTicketType] = useState("");
   const [branch, setBranch] = useState(user?.role === "Branch" && user?.branch ? user.branch : "");
   const [description, setDescription] = useState("");
+  const [attachedUrl, setAttachedUrl] = useState("");
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [attachments, setAttachments] = useState<File[]>([]);
 
@@ -531,6 +532,7 @@ export default function RaiseTicket() {
     formData.append("cluster", derivedCluster);
     formData.append("branch", branch);
     formData.append("description", description);
+    formData.append("attachedUrl", attachedUrl);
     
     if (isMultiplier) {
       formData.append("assignedToName", assignedUserName);
@@ -725,6 +727,18 @@ export default function RaiseTicket() {
                     className="min-h-[120px]"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
+                  />
+                </div>
+
+                {/* 6.5 Attached URL (Optional) */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="attachedUrl" className="font-semibold text-sm">Attached URL (Optional)</Label>
+                  <Input 
+                    id="attachedUrl" 
+                    type="url"
+                    placeholder="https://example.com"
+                    value={attachedUrl}
+                    onChange={(e) => setAttachedUrl(e.target.value)}
                   />
                 </div>
 

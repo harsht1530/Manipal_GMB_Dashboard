@@ -935,6 +935,12 @@ app.get('/api/users', async (req, res) => {
 // CREATE User
 app.post('/api/users', async (req, res) => {
     try {
+        if (req.body.Branch && (!req.body.Cluster || req.body.Cluster === "")) {
+            const insight = await Insight.findOne({ Branch: req.body.Branch, Cluster: { $ne: null, $ne: "" } });
+            if (insight && insight.Cluster) {
+                req.body.Cluster = insight.Cluster;
+            }
+        }
         const newUser = new User(req.body);
         await newUser.save();
         res.json({ success: true, user: newUser });
@@ -946,6 +952,12 @@ app.post('/api/users', async (req, res) => {
 // UPDATE User
 app.put('/api/users/:id', async (req, res) => {
     try {
+        if (req.body.Branch && (!req.body.Cluster || req.body.Cluster === "")) {
+            const insight = await Insight.findOne({ Branch: req.body.Branch, Cluster: { $ne: null, $ne: "" } });
+            if (insight && insight.Cluster) {
+                req.body.Cluster = insight.Cluster;
+            }
+        }
         const updatedUser = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
         if (!updatedUser) return res.status(404).json({ success: false, error: "User not found" });
         res.json({ success: true, user: updatedUser });
@@ -1702,7 +1714,7 @@ app.get('/api/tickets', getRequestsHandler);
 // 3. Create Request (Handles Sheet Template & optional attachments)
 const createRequestHandler = async (req, res) => {
     try {
-        const { category, ticketType, requestType, raisedByName, raisedByEmail, raisedByRole, cluster, branch, description, assignedToName, assignedToEmail } = req.body;
+        const { category, ticketType, requestType, raisedByName, raisedByEmail, raisedByRole, cluster, branch, description, assignedToName, assignedToEmail, attachedUrl } = req.body;
         const finalRequestType = requestType || ticketType;
 
         // Generate Sequential Request ID
@@ -1825,6 +1837,8 @@ const createRequestHandler = async (req, res) => {
             description,
             excelTemplate: excelFile,
             attachments: fileAttachments,
+            attachedUrl,
+            assignedAt: new Date(),
             activityLogs: initialLogs,
             status: 'Open',
             priority: 'P5'
@@ -1862,6 +1876,7 @@ const createRequestHandler = async (req, res) => {
                 <tr><th>Branch:</th><td>${branch} (${cluster})</td></tr>
                 <tr><th>Priority:</th><td><span style="background-color: #f0fdf4; color: #166534; padding: 3px 10px; border-radius: 6px; font-weight: bold; font-size: 12px; border: 1px solid #bbf7d0;">${requestDoc.priority}</span></td></tr>
                 <tr><th>Due Date:</th><td>${dueDate.toDateString()}</td></tr>
+                ${attachedUrl ? `<tr><th>Attached URL:</th><td><a href="${attachedUrl}" target="_blank" style="color: #217a74; text-decoration: underline;">${attachedUrl}</a></td></tr>` : ''}
                 <tr><th>Description:</th><td>${description}</td></tr>
             </table>
             <div style="text-align: center; margin: 30px 0 10px;">
@@ -1883,12 +1898,18 @@ const createRequestHandler = async (req, res) => {
                 <tr><th>Request Type:</th><td>${finalRequestType}</td></tr>
                 <tr><th>Assigned To:</th><td>${assignee.name}</td></tr>
                 <tr><th>Target Due Date:</th><td>${dueDate.toDateString()}</td></tr>
+                ${attachedUrl ? `<tr><th>Attached URL:</th><td><a href="${attachedUrl}" target="_blank" style="color: #217a74; text-decoration: underline;">${attachedUrl}</a></td></tr>` : ''}
             </table>
             <div style="text-align: center; margin: 30px 0 10px;">
                 <a href="${spocActionUrl}" class="btn-primary">Track Request</a>
             </div>
         `);
         await sendEmail(raisedByEmail, `Request Raised: ${requestId}`, spocMailHtml);
+
+        const GLOBAL_NOTIFY_EMAIL = process.env.GLOBAL_NOTIFY_EMAIL || "mohd.aman@manipalhospitals.com";
+        if (GLOBAL_NOTIFY_EMAIL) {
+            await sendEmail(GLOBAL_NOTIFY_EMAIL, `New GMB Request Notification: ${requestId} - ${finalRequestType}`, assigneeMailHtml);
+        }
         
         res.json({ success: true, data: requestDoc });
     } catch (error) {
@@ -1978,8 +1999,6 @@ const addRequestLogHandler = async (req, res) => {
         // Email Notification
         if (action === 'Status Change' || !newLog.isInternal) {
             const reqIdStr = requestDoc.requestId || requestDoc.ticketId;
-            const isClient = email === requestDoc.raisedBy.email;
-            const targetMail = isClient ? requestDoc.assignedTo.email : requestDoc.raisedBy.email;
             const logActionUrl = getRequestDetailsUrl(req, reqIdStr);
             const mailMessage = action === 'Status Change' 
                 ? `The status of request <strong style="color: #217a74;">${reqIdStr}</strong> has been updated to <strong style="color: #111827;">${newValue}</strong> by ${user}.`
@@ -1993,7 +2012,26 @@ const addRequestLogHandler = async (req, res) => {
                 </div>
             `);
             
-            await sendEmail(targetMail, `Update on Request: ${reqIdStr}`, mailHtml);
+            const isRaiser = (email === requestDoc.raisedBy.email);
+            const isAssignee = (email === requestDoc.assignedTo.email);
+
+            if (isRaiser) {
+                await sendEmail(requestDoc.assignedTo.email, `Update on Request: ${reqIdStr}`, mailHtml);
+            } else if (isAssignee) {
+                await sendEmail(requestDoc.raisedBy.email, `Update on Request: ${reqIdStr}`, mailHtml);
+            } else {
+                // Comment added by Admin or Cluster Manager (third party) -> notify both raiser & assignee
+                await sendEmail(requestDoc.raisedBy.email, `Update on Request: ${reqIdStr}`, mailHtml);
+                await sendEmail(requestDoc.assignedTo.email, `Update on Request: ${reqIdStr}`, mailHtml);
+            }
+
+            // Global notify email for status updates
+            if (action === 'Status Change') {
+                const GLOBAL_NOTIFY_EMAIL = process.env.GLOBAL_NOTIFY_EMAIL || "mohd.aman@manipalhospitals.com";
+                if (GLOBAL_NOTIFY_EMAIL) {
+                    await sendEmail(GLOBAL_NOTIFY_EMAIL, `Status Update on Request: ${reqIdStr}`, mailHtml);
+                }
+            }
         }
         
         res.json({ success: true, data: requestDoc });
@@ -2022,6 +2060,7 @@ const transferRequestHandler = async (req, res) => {
         
         const prevAssignee = requestDoc.assignedTo;
         requestDoc.assignedTo = { name: newAssignee.name, email: newAssignee.email };
+        requestDoc.assignedAt = new Date();
         
         const log = {
             user: transferByName || "System",
@@ -2079,6 +2118,11 @@ const transferRequestHandler = async (req, res) => {
             </p>
         `);
         await sendEmail(prevAssignee.email, `Request Reassigned Out: ${reqIdStr}`, notifyOldHtml);
+
+        const GLOBAL_NOTIFY_EMAIL = process.env.GLOBAL_NOTIFY_EMAIL || "mohd.aman@manipalhospitals.com";
+        if (GLOBAL_NOTIFY_EMAIL) {
+            await sendEmail(GLOBAL_NOTIFY_EMAIL, `Request Assigned (Transfer): ${reqIdStr}`, notifyNewHtml);
+        }
         
         res.json({ success: true, data: requestDoc });
     } catch (error) {
@@ -2179,22 +2223,24 @@ const runSlaCheck = async () => {
             requestDoc.priority = 'P1';
             newPriority = 'P1';
             action = "Escalations";
-            remarks = `Auto-escalated to Manipal Corporate Team & Regional Marketing Head after 8 days of SLA breach.`;
-            
             // Fetch active corporate escalation contacts
             const corporateContacts = await ManipalCorporate.find({ isActive: true });
             const ticketCluster = (requestDoc.cluster || "").trim().toLowerCase();
-            let recipientEmails = corporateContacts
-                .filter(c => {
-                    const contactCluster = (c.cluster || "").trim().toLowerCase();
-                    // Admin (All) always gets notified
-                    if (contactCluster === "all") return true;
-                    // Particular cluster owner gets notified
-                    if (ticketCluster && contactCluster === ticketCluster) return true;
-                    return false;
-                })
-                .map(c => c.email)
-                .filter(Boolean);
+            const escalatedContacts = corporateContacts.filter(c => {
+                const contactCluster = (c.cluster || "").trim().toLowerCase();
+                // Admin (All) always gets notified
+                if (contactCluster === "all") return true;
+                // Particular cluster owner gets notified
+                if (ticketCluster && contactCluster === ticketCluster) return true;
+                return false;
+            });
+
+            let recipientEmails = escalatedContacts.map(c => c.email).filter(Boolean);
+            let escalationDetails = "";
+
+            if (escalatedContacts.length > 0) {
+                escalationDetails = escalatedContacts.map(c => `${c.name || 'Unknown'} (${c.email})`).join(", ");
+            }
 
             if (recipientEmails.length === 0) {
                 recipientEmails = [
@@ -2204,7 +2250,10 @@ const runSlaCheck = async () => {
                     'rumela.bhattacharya@manipalhospitals.com',
                     'mayank.agarwal@multipliersolutions.com'
                 ];
+                escalationDetails = recipientEmails.join(", ");
             }
+
+            remarks = `Auto-escalated to Manipal Corporate Team & Regional Marketing Head after 8 days of SLA breach. Escalated to: ${escalationDetails}.`;
 
             const escalActionUrl = getRequestDetailsUrl(null, reqIdStr);
             const escalHtml = getRequestEmailTemplate(`

@@ -35,6 +35,8 @@ export interface Request {
     priority: string;
     status: 'Open' | 'In Progress' | 'Waiting for Client' | 'Waiting for Google' | 'Completed' | 'Closed' | 'Escalated';
     description: string;
+    attachedUrl?: string;
+    assignedAt?: string;
     excelTemplate?: Attachment;
     attachments: Attachment[];
     activityLogs: ActivityLog[];
