@@ -621,7 +621,7 @@ const Settings = () => {
                                 <div className="flex flex-col">
                                   <span className="font-medium text-foreground">{u.Name || "No Name"}</span>
                                   <span className="text-sm text-muted-foreground">{u.orgEmail || u.mail}</span>
-                                  <span className="text-xs text-muted-foreground italic">Password: {u.psw}</span>
+                                  <span className="text-xs text-muted-foreground">Password: <span className="tracking-widest font-mono text-[10px]">••••••••</span></span>
                                 </div>
                               </TableCell>
                               <TableCell>

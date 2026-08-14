@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { 
   Plus, 
   Search, 
@@ -22,10 +24,14 @@ import {
   Ticket as TicketIcon, 
   ArrowUpRight,
   User,
-  Building
+  Building,
+  Calendar as CalendarIcon,
+  X
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+import { DateRange } from "react-day-picker";
 
 export default function TicketDashboard() {
   const { tickets, loading, refreshTickets } = useTickets();
@@ -42,8 +48,7 @@ export default function TicketDashboard() {
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [clusterFilter, setClusterFilter] = useState("all");
   const [branchFilter, setBranchFilter] = useState("all");
-  const [assignStartDate, setAssignStartDate] = useState("");
-  const [assignEndDate, setAssignEndDate] = useState("");
+  const [assignedDateRange, setAssignedDateRange] = useState<DateRange | undefined>(undefined);
   const [activeTab, setActiveTab] = useState<"my-raised" | "assigned-to-me">("my-raised");
 
   // Filter tickets by active tab (access level/email/branch constraints)
@@ -124,18 +129,31 @@ export default function TicketDashboard() {
 
       // 7. Assigned Date Range Filter
       let matchesAssignDate = true;
-      const assignDate = t.assignedAt ? new Date(t.assignedAt) : new Date(t.createdAt);
-      
-      if (assignStartDate) {
-          const startDate = new Date(assignStartDate);
-          startDate.setHours(0, 0, 0, 0);
-          if (assignDate < startDate) matchesAssignDate = false;
-      }
-      
-      if (assignEndDate) {
-          const endDate = new Date(assignEndDate);
-          endDate.setHours(23, 59, 59, 999);
-          if (assignDate > endDate) matchesAssignDate = false;
+      if (assignedDateRange?.from) {
+        const rawDate = t.assignedAt || t.createdAt;
+        if (!rawDate) {
+          matchesAssignDate = false;
+        } else {
+          const assignDate = new Date(rawDate);
+          if (isNaN(assignDate.getTime())) {
+            matchesAssignDate = false;
+          } else {
+            const fromDate = new Date(assignedDateRange.from);
+            fromDate.setHours(0, 0, 0, 0);
+
+            if (assignDate < fromDate) {
+              matchesAssignDate = false;
+            }
+
+            if (assignedDateRange.to) {
+              const toDate = new Date(assignedDateRange.to);
+              toDate.setHours(23, 59, 59, 999);
+              if (assignDate > toDate) {
+                matchesAssignDate = false;
+              }
+            }
+          }
+        }
       }
 
       return matchesSearch && matchesCategory && matchesStatus && matchesPriority && matchesCluster && matchesBranch && matchesAssignDate;
@@ -164,7 +182,7 @@ export default function TicketDashboard() {
       const timeB = new Date(b.createdAt).getTime();
       return timeA - timeB;
     });
-  }, [tabTickets, searchTerm, categoryFilter, statusFilter, priorityFilter, clusterFilter, branchFilter, assignStartDate, assignEndDate]);
+  }, [tabTickets, searchTerm, categoryFilter, statusFilter, priorityFilter, clusterFilter, branchFilter, assignedDateRange]);
 
   // Quick Summary Box calculation
   const quickSummary = useMemo(() => {
@@ -469,32 +487,56 @@ export default function TicketDashboard() {
                   </SelectContent>
                 </Select>
 
-                <div className="flex items-center gap-2 border border-border rounded-md px-3 h-9 bg-background">
-                  <span className="text-[11px] text-muted-foreground whitespace-nowrap">Assigned:</span>
-                  <Input 
-                    type="date"
-                    className="w-[115px] h-7 border-0 bg-transparent p-0 text-xs focus-visible:ring-0 focus-visible:ring-offset-0" 
-                    value={assignStartDate}
-                    onChange={(e) => setAssignStartDate(e.target.value)}
-                  />
-                  <span className="text-[11px] text-muted-foreground">to</span>
-                  <Input 
-                    type="date"
-                    className="w-[115px] h-7 border-0 bg-transparent p-0 text-xs focus-visible:ring-0 focus-visible:ring-offset-0" 
-                    value={assignEndDate}
-                    onChange={(e) => setAssignEndDate(e.target.value)}
-                  />
-                  {(assignStartDate || assignEndDate) && (
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-6 w-6 text-destructive hover:bg-destructive/10 shrink-0 ml-1"
-                      onClick={() => { setAssignStartDate(""); setAssignEndDate(""); }}
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      id="assigned-date"
+                      variant="outline"
+                      size="sm"
+                      className={cn(
+                        "h-9 justify-start text-left font-normal bg-background border-border text-xs relative pr-7 max-w-[260px]",
+                        !assignedDateRange?.from && "text-muted-foreground"
+                      )}
                     >
-                      ×
+                      <CalendarIcon className="mr-2 h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">
+                        {assignedDateRange?.from ? (
+                          assignedDateRange.to ? (
+                            <>
+                              {format(assignedDateRange.from, "LLL dd, y")} -{" "}
+                              {format(assignedDateRange.to, "LLL dd, y")}
+                            </>
+                          ) : (
+                            format(assignedDateRange.from, "LLL dd, y")
+                          )
+                        ) : (
+                          <span>Assigned Date Range</span>
+                        )}
+                      </span>
+                      {assignedDateRange?.from && (
+                        <div
+                          className="absolute right-1.5 top-1/2 -translate-y-1/2 h-5 w-5 flex items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setAssignedDateRange(undefined);
+                          }}
+                        >
+                          <X className="h-3 w-3" />
+                        </div>
+                      )}
                     </Button>
-                  )}
-                </div>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      initialFocus
+                      mode="range"
+                      defaultMonth={assignedDateRange?.from}
+                      selected={assignedDateRange}
+                      onSelect={setAssignedDateRange}
+                      numberOfMonths={2}
+                    />
+                  </PopoverContent>
+                </Popover>
 
                 <Button variant="outline" size="sm" onClick={handleExportExcel} className="h-9 flex items-center gap-1">
                   <Download className="h-4 w-4" /> Export Excel
