@@ -141,6 +141,11 @@ mongoose.connect(MONGODB_URI)
         console.log('Connected to MongoDB');
         seedMultiplierTeam();
         seedManipalCorporate();
+        
+        // Run SLA check on startup to catch up on any missed days
+        runSlaCheck()
+            .then(count => console.log(`Startup SLA check completed. Updated ${count} requests.`))
+            .catch(err => console.error("Startup SLA check error:", err));
     })
     .catch(err => console.error('MongoDB connection error:', err));
 
@@ -173,31 +178,31 @@ const sendEmail = async (to, subject, html) => {
 };
 
 const getAppBaseUrl = (req) => {
+    let baseUrl = '';
     if (process.env.APP_BASE_URL) {
-        return process.env.APP_BASE_URL.replace(/\/+$/, '');
-    }
+        baseUrl = process.env.APP_BASE_URL.replace(/\/+$/, '');
+    } else {
+        let origin = '';
+        if (req && req.headers) {
+            origin = req.headers.origin || req.headers.referer || '';
+            if (!origin && req.headers.host) {
+                const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+                origin = `${protocol}://${req.headers.host}`;
+            }
+        }
 
-    let origin = '';
-    if (req && req.headers) {
-        origin = req.headers.origin || req.headers.referer || '';
-        if (!origin && req.headers.host) {
-            const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
-            origin = `${protocol}://${req.headers.host}`;
+        if (origin) {
+            baseUrl = origin.split('#')[0].replace(/\/+$/, '');
+        } else {
+            baseUrl = 'http://localhost:8080';
         }
     }
 
-    let cleanOrigin = '';
-    if (origin) {
-        cleanOrigin = origin.split('#')[0].replace(/\/+$/, '');
-    } else {
-        cleanOrigin = 'http://localhost:8080';
-    }
-
-    if (!cleanOrigin.endsWith('/GMB') && !cleanOrigin.includes('/GMB/')) {
-        cleanOrigin = `${cleanOrigin}/GMB`;
+    if (!baseUrl.endsWith('/GMB') && !baseUrl.includes('/GMB/')) {
+        baseUrl = `${baseUrl}/GMB`;
     }
     
-    return cleanOrigin;
+    return baseUrl;
 };
 
 const getRequestDetailsUrl = (req, requestId) => {

@@ -130,7 +130,7 @@ export default function TicketDashboard() {
       // 7. Assigned Date Range Filter
       let matchesAssignDate = true;
       if (assignedDateRange?.from) {
-        const rawDate = t.assignedAt || t.createdAt;
+        const rawDate = t.createdAt;
         if (!rawDate) {
           matchesAssignDate = false;
         } else {
@@ -494,28 +494,28 @@ export default function TicketDashboard() {
                       variant="outline"
                       size="sm"
                       className={cn(
-                        "h-9 justify-start text-left font-normal bg-background border-border text-xs relative pr-7 max-w-[260px]",
+                        "h-9 justify-start text-left font-normal bg-background border-border text-xs relative pr-7 w-auto min-w-[130px] max-w-[190px] shrink-0",
                         !assignedDateRange?.from && "text-muted-foreground"
                       )}
                     >
-                      <CalendarIcon className="mr-2 h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">
+                      <CalendarIcon className="mr-1.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate text-xs font-medium">
                         {assignedDateRange?.from ? (
                           assignedDateRange.to ? (
                             <>
-                              {format(assignedDateRange.from, "LLL dd, y")} -{" "}
-                              {format(assignedDateRange.to, "LLL dd, y")}
+                              {format(assignedDateRange.from, "dd MMM")} -{" "}
+                              {format(assignedDateRange.to, "dd MMM")}
                             </>
                           ) : (
-                            format(assignedDateRange.from, "LLL dd, y")
+                            format(assignedDateRange.from, "dd MMM")
                           )
                         ) : (
-                          <span>Assigned Date Range</span>
+                          <span>Assigned Date</span>
                         )}
                       </span>
                       {assignedDateRange?.from && (
                         <div
-                          className="absolute right-1.5 top-1/2 -translate-y-1/2 h-5 w-5 flex items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                          className="absolute right-1.5 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                           onClick={(e) => {
                             e.stopPropagation();
                             setAssignedDateRange(undefined);
@@ -526,14 +526,14 @@ export default function TicketDashboard() {
                       )}
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
+                  <PopoverContent className="w-auto p-0 shadow-lg border-border" align="start">
                     <Calendar
                       initialFocus
                       mode="range"
                       defaultMonth={assignedDateRange?.from}
                       selected={assignedDateRange}
                       onSelect={setAssignedDateRange}
-                      numberOfMonths={2}
+                      numberOfMonths={1}
                     />
                   </PopoverContent>
                 </Popover>
@@ -596,7 +596,7 @@ export default function TicketDashboard() {
                                 </div>
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground font-medium">
-                                {ticket.assignedAt ? new Date(ticket.assignedAt).toLocaleDateString() : new Date(ticket.createdAt).toLocaleDateString()}
+                                {new Date(ticket.createdAt).toLocaleDateString()}
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground font-medium">
                                 {new Date(ticket.dueDate).toLocaleDateString()}
@@ -685,7 +685,7 @@ export default function TicketDashboard() {
                                 </div>
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground font-medium">
-                                {ticket.assignedAt ? new Date(ticket.assignedAt).toLocaleDateString() : new Date(ticket.createdAt).toLocaleDateString()}
+                                {new Date(ticket.createdAt).toLocaleDateString()}
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground font-medium">
                                 {new Date(ticket.dueDate).toLocaleDateString()}
