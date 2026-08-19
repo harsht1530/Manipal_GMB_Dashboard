@@ -194,7 +194,7 @@ const getAppBaseUrl = (req) => {
         if (origin) {
             baseUrl = origin.split('#')[0].replace(/\/+$/, '');
         } else {
-            baseUrl = 'http://localhost:8080';
+            baseUrl = 'https://multiplierai.co';
         }
     }
 
