@@ -131,7 +131,7 @@ const runCatchup = async () => {
             `);
 
             for (const mailTo of recipientEmails) {
-                await sendEmail(mailTo, `SLA BREACH ESCALATION: ${reqIdStr}`, escalHtml);
+                await sendEmail(mailTo, `SLA BREACH ESCALATION: ${reqIdStr} - ${requestDoc.branch || 'Unit'}`, escalHtml);
             }
             
             escalationLogged = true;

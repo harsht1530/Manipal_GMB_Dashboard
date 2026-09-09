@@ -130,7 +130,7 @@ export const Sidebar = ({
     <aside
       className={cn(
         "fixed left-0 top-0 z-40 h-screen bg-sidebar transition-all duration-300 flex flex-col border-r border-sidebar-border",
-        collapsed ? "w-20" : "w-64"
+        collapsed ? "w-20" : "w-72"
       )}
     >
       {/* Sidebar Header - Logo & Toggle */}
@@ -179,8 +179,7 @@ export const Sidebar = ({
       </div>
 
       {/* Navigation */}
-      {/* Navigation */}
-      <div className="flex-1 overflow-y-auto py-4 scrollbar-hide">
+      <div className="flex-1 overflow-y-auto py-4 scrollbar-thin">
         <nav className="space-y-1 px-3">
           {filteredNavItems.map((item) => {
             if (item.isParent) {
@@ -215,14 +214,14 @@ export const Sidebar = ({
                       "w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 group relative text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                     )}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
                       <item.icon className="h-5 w-5 shrink-0 transition-transform group-hover:scale-110" />
-                      <span>{item.label}</span>
+                      <span className="whitespace-nowrap">{item.label}</span>
                     </div>
                     {ticketsExpanded ? (
-                      <ChevronDown className="h-4 w-4 text-sidebar-foreground/50" />
+                      <ChevronDown className="h-4 w-4 shrink-0 text-sidebar-foreground/50" />
                     ) : (
-                      <ChevronRight className="h-4 w-4 text-sidebar-foreground/50" />
+                      <ChevronRight className="h-4 w-4 shrink-0 text-sidebar-foreground/50" />
                     )}
                   </button>
                   {ticketsExpanded && (
@@ -241,7 +240,7 @@ export const Sidebar = ({
                             )}
                           >
                             <child.icon className={cn("h-4 w-4 shrink-0 transition-transform group-hover:scale-110", isChildActive && "text-sidebar-primary")} />
-                            <span>{child.label}</span>
+                            <span className="whitespace-nowrap">{child.label}</span>
                           </NavLink>
                         );
                       })}
@@ -265,7 +264,7 @@ export const Sidebar = ({
                 )}
               >
                 <item.icon className={cn("h-5 w-5 shrink-0 transition-transform group-hover:scale-110", isActive && "text-sidebar-primary")} />
-                {!collapsed && <span>{item.label}</span>}
+                {!collapsed && <span className="whitespace-nowrap">{item.label}</span>}
                 {collapsed && (
                   <div className="absolute left-full ml-2 px-2 py-1 bg-popover text-popover-foreground text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 border whitespace-nowrap shadow-lg">
                     {item.label}

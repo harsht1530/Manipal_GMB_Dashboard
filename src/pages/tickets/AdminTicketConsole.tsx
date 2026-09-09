@@ -35,6 +35,7 @@ import {
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { DateRange } from "react-day-picker";
+import * as XLSX from "xlsx";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
@@ -166,6 +167,87 @@ export default function AdminTicketConsole() {
     };
   }, [tickets]);
 
+  // Export Table Data to Excel
+  const handleExportExcel = () => {
+    if (!filteredTickets || filteredTickets.length === 0) {
+      toast({
+        title: "No Data to Export",
+        description: "There are no requests matching the current filters.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const exportData = filteredTickets.map(t => {
+      const reqId = t.requestId || t.ticketId || "";
+      const reqType = t.requestType || t.ticketType || "";
+      const raisedBy = t.raisedBy ? `${t.raisedBy.name || ""} (${t.raisedBy.email || ""})`.trim() : "";
+      const assignedTo = t.assignedTo ? `${t.assignedTo.name || ""} (${t.assignedTo.email || ""})`.trim() : "";
+
+      let formattedAssignDate = "";
+      if (t.createdAt) {
+        try {
+          const d = new Date(t.createdAt);
+          formattedAssignDate = isNaN(d.getTime()) ? t.createdAt : format(d, "MMM d, yyyy");
+        } catch {
+          formattedAssignDate = t.createdAt;
+        }
+      }
+
+      let formattedDueDate = "";
+      if (t.dueDate) {
+        try {
+          const d = new Date(t.dueDate);
+          formattedDueDate = isNaN(d.getTime()) ? t.dueDate : format(d, "MMM d, yyyy");
+        } catch {
+          formattedDueDate = t.dueDate;
+        }
+      }
+
+      return {
+        "Request ID": reqId,
+        "Branch": t.branch || "",
+        "Cluster": t.cluster || "",
+        "Category": t.category || "",
+        "Request Type": reqType,
+        "Raised By": raisedBy,
+        "Assigned Owner": assignedTo,
+        "Status": t.status || "",
+        "Priority": t.priority || "",
+        "Assign Date": formattedAssignDate,
+        "Due Date": formattedDueDate,
+        "Description": t.description || ""
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+
+    // Auto-fit column widths for clear presentation
+    const colWidths = Object.keys(exportData[0] || {}).map(key => {
+      const maxLength = Math.max(
+        key.length,
+        ...exportData.map(row => String((row as any)[key] || "").length)
+      );
+      return { wch: Math.min(Math.max(maxLength + 2, 12), 60) };
+    });
+    worksheet["!cols"] = colWidths;
+
+    const workbook = XLSX.utils.book_new();
+    const sheetName = isClusterUser ? "Cluster Requests" : "Admin Requests";
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+
+    const filePrefix = isClusterUser
+      ? `Cluster_Requests_${(user?.cluster || "Console").replace(/[^a-zA-Z0-9_-]/g, "_")}`
+      : "Admin_Requests_Console";
+    const dateStamp = format(new Date(), "yyyy-MM-dd");
+    XLSX.writeFile(workbook, `${filePrefix}_${dateStamp}.xlsx`);
+
+    toast({
+      title: "Export Successful",
+      description: `Exported ${exportData.length} records to Excel.`
+    });
+  };
+
   // Select ticket to open in modal
   const handleOpenTicket = (ticket: Ticket) => {
     setSelectedTicket(ticket);
@@ -280,63 +362,63 @@ export default function AdminTicketConsole() {
       <div className="space-y-6">
         
         {/* KPI Cards Grid */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          <Card className="bg-gradient-to-br from-primary/5 via-transparent to-transparent border-primary/10 shadow-sm">
-            <CardContent className="p-5 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Requests</p>
-                <h3 className="text-3xl font-bold text-foreground mt-1">{metrics.total}</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+          <Card className="bg-gradient-to-br from-primary/5 via-transparent to-transparent border-primary/10 shadow-sm col-span-2 sm:col-span-1">
+            <CardContent className="p-3.5 sm:p-4 md:p-5 flex items-center justify-between">
+              <div className="min-w-0">
+                <p className="text-[10px] sm:text-xs font-semibold text-muted-foreground uppercase tracking-wider truncate">Total Requests</p>
+                <h3 className="text-xl sm:text-2xl lg:text-3xl font-bold text-foreground mt-1">{metrics.total}</h3>
               </div>
-              <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                <Activity className="h-5 w-5" />
+              <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0 ml-2">
+                <Activity className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
             </CardContent>
           </Card>
           
           <Card className="bg-gradient-to-br from-sky-500/5 via-transparent to-transparent border-sky-500/10 shadow-sm">
-            <CardContent className="p-5 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Open (Unresolved)</p>
-                <h3 className="text-3xl font-bold text-sky-500 mt-1">{metrics.open}</h3>
+            <CardContent className="p-3.5 sm:p-4 md:p-5 flex items-center justify-between">
+              <div className="min-w-0">
+                <p className="text-[10px] sm:text-xs font-semibold text-muted-foreground uppercase tracking-wider truncate">Open</p>
+                <h3 className="text-xl sm:text-2xl lg:text-3xl font-bold text-sky-500 mt-1">{metrics.open}</h3>
               </div>
-              <div className="h-10 w-10 rounded-full bg-sky-500/10 flex items-center justify-center text-sky-500">
-                <Clock className="h-5 w-5 animate-spin-slow" />
+              <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-sky-500/10 flex items-center justify-center text-sky-500 shrink-0 ml-2">
+                <Clock className="h-4 w-4 sm:h-5 sm:w-5 animate-spin-slow" />
               </div>
             </CardContent>
           </Card>
 
           <Card className="bg-gradient-to-br from-amber-500/5 via-transparent to-transparent border-amber-500/10 shadow-sm">
-            <CardContent className="p-5 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">In Progress/Waiting</p>
-                <h3 className="text-3xl font-bold text-amber-500 mt-1">{metrics.progress}</h3>
+            <CardContent className="p-3.5 sm:p-4 md:p-5 flex items-center justify-between">
+              <div className="min-w-0">
+                <p className="text-[10px] sm:text-xs font-semibold text-muted-foreground uppercase tracking-wider truncate">In Progress</p>
+                <h3 className="text-xl sm:text-2xl lg:text-3xl font-bold text-amber-500 mt-1">{metrics.progress}</h3>
               </div>
-              <div className="h-10 w-10 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-500">
-                <HelpCircle className="h-5 w-5" />
+              <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-500 shrink-0 ml-2">
+                <HelpCircle className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
             </CardContent>
           </Card>
 
           <Card className="bg-gradient-to-br from-rose-500/5 via-transparent to-transparent border-rose-500/10 shadow-sm">
-            <CardContent className="p-5 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">SLA Escalations</p>
-                <h3 className="text-3xl font-bold text-rose-500 mt-1">{metrics.escalated}</h3>
+            <CardContent className="p-3.5 sm:p-4 md:p-5 flex items-center justify-between">
+              <div className="min-w-0">
+                <p className="text-[10px] sm:text-xs font-semibold text-muted-foreground uppercase tracking-wider truncate">Escalations</p>
+                <h3 className="text-xl sm:text-2xl lg:text-3xl font-bold text-rose-500 mt-1">{metrics.escalated}</h3>
               </div>
-              <div className="h-10 w-10 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-500 animate-pulse">
-                <AlertCircle className="h-5 w-5" />
+              <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-500 shrink-0 ml-2 animate-pulse">
+                <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
             </CardContent>
           </Card>
 
           <Card className="bg-gradient-to-br from-emerald-500/5 via-transparent to-transparent border-emerald-500/10 shadow-sm">
-            <CardContent className="p-5 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Completed / Closed</p>
-                <h3 className="text-3xl font-bold text-emerald-500 mt-1">{metrics.completed}</h3>
+            <CardContent className="p-3.5 sm:p-4 md:p-5 flex items-center justify-between">
+              <div className="min-w-0">
+                <p className="text-[10px] sm:text-xs font-semibold text-muted-foreground uppercase tracking-wider truncate">Completed</p>
+                <h3 className="text-xl sm:text-2xl lg:text-3xl font-bold text-emerald-500 mt-1">{metrics.completed}</h3>
               </div>
-              <div className="h-10 w-10 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-500">
-                <CheckCircle className="h-5 w-5" />
+              <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-500 shrink-0 ml-2">
+                <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
             </CardContent>
           </Card>
@@ -344,140 +426,144 @@ export default function AdminTicketConsole() {
 
         {/* Filter Controls Panel */}
         <Card className="border-primary/10 shadow-sm bg-background/50 backdrop-blur supports-[backdrop-filter]:bg-background/20">
-          <CardContent className="p-4 flex flex-col md:flex-row gap-4 items-center justify-between">
-            <div className="relative w-full md:w-80">
+          <CardContent className="p-3 sm:p-4 flex flex-wrap items-center gap-2.5">
+            {/* Search Bar (flexes to fill available space) */}
+            <div className="relative flex-1 min-w-[200px] sm:min-w-[220px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search by ID, Category, Owner, Branch..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="pl-9 h-9 w-full bg-muted/20 border-primary/5 focus-visible:ring-primary/20"
+                className="pl-9 h-9 w-full bg-muted/20 border-primary/5 focus-visible:ring-primary/20 text-xs"
               />
             </div>
             
-            <div className="flex flex-wrap gap-3 w-full md:w-auto items-center">
-              <div className="flex items-center gap-1.5 shrink-0 text-xs text-muted-foreground font-semibold">
-                <Filter className="h-3.5 w-3.5" />
-                Filters:
-              </div>
-              
-              {/* Cluster Dropdown */}
-              {!isClusterUser && (
-                <Select value={clusterFilter} onValueChange={setClusterFilter}>
-                  <SelectTrigger className="h-9 w-[130px] bg-muted/20 border-primary/5 text-xs font-medium">
-                    <SelectValue placeholder="Cluster" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">All Clusters</SelectItem>
-                    {clusters.map(c => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-
-              {/* Status Dropdown */}
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="h-9 w-[130px] bg-muted/20 border-primary/5 text-xs font-medium">
-                  <SelectValue placeholder="Status" />
+            {/* Cluster Dropdown */}
+            {!isClusterUser && (
+              <Select value={clusterFilter} onValueChange={setClusterFilter}>
+                <SelectTrigger className="h-9 w-[125px] shrink-0 bg-muted/20 border-primary/5 text-xs font-medium">
+                  <SelectValue placeholder="Cluster" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">All Statuses</SelectItem>
-                  <SelectItem value="Open">Open</SelectItem>
-                  <SelectItem value="In Progress">In Progress</SelectItem>
-                  <SelectItem value="Waiting for Client">Waiting for Client</SelectItem>
-                  <SelectItem value="Waiting for Google">Waiting for Google</SelectItem>
-                  <SelectItem value="Escalated">Escalated</SelectItem>
-                  <SelectItem value="Completed">Completed</SelectItem>
-                  <SelectItem value="Closed">Closed</SelectItem>
+                  <SelectItem value="ALL">All Clusters</SelectItem>
+                  {clusters.map(c => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
+            )}
 
-              {/* Priority Dropdown */}
-              <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                <SelectTrigger className="h-9 w-[100px] bg-muted/20 border-primary/5 text-xs font-medium">
-                  <SelectValue placeholder="Priority" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All Priorities</SelectItem>
-                  <SelectItem value="P1">P1 (Critical)</SelectItem>
-                  <SelectItem value="P2">P2 (High)</SelectItem>
-                  <SelectItem value="P3">P3 (Medium)</SelectItem>
-                  <SelectItem value="P4">P4 (Low)</SelectItem>
-                  <SelectItem value="P5">P5 (Lowest)</SelectItem>
-                </SelectContent>
-              </Select>
+            {/* Status Dropdown */}
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="h-9 w-[125px] shrink-0 bg-muted/20 border-primary/5 text-xs font-medium">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All Statuses</SelectItem>
+                <SelectItem value="Open">Open</SelectItem>
+                <SelectItem value="In Progress">In Progress</SelectItem>
+                <SelectItem value="Waiting for Client">Waiting Client</SelectItem>
+                <SelectItem value="Waiting for Google">Waiting Google</SelectItem>
+                <SelectItem value="Escalated">Escalated</SelectItem>
+                <SelectItem value="Completed">Completed</SelectItem>
+                <SelectItem value="Closed">Closed</SelectItem>
+              </SelectContent>
+            </Select>
 
-              {/* Assigned Date Range Filter */}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    id="admin-assigned-date"
-                    variant="outline"
-                    size="sm"
-                    className={cn(
-                      "h-9 justify-start text-left font-normal bg-muted/20 border-primary/5 text-xs relative pr-7 w-auto min-w-[130px] max-w-[190px] shrink-0",
-                      !assignedDateRange?.from && "text-muted-foreground"
-                    )}
-                  >
-                    <CalendarIcon className="mr-1.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="truncate text-xs font-medium">
-                      {assignedDateRange?.from ? (
-                        assignedDateRange.to ? (
-                          <>
-                            {format(assignedDateRange.from, "dd MMM")} -{" "}
-                            {format(assignedDateRange.to, "dd MMM")}
-                          </>
-                        ) : (
-                          format(assignedDateRange.from, "dd MMM")
-                        )
+            {/* Priority Dropdown */}
+            <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+              <SelectTrigger className="h-9 w-[115px] shrink-0 bg-muted/20 border-primary/5 text-xs font-medium">
+                <SelectValue placeholder="Priority" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All Priorities</SelectItem>
+                <SelectItem value="P1">P1 (Critical)</SelectItem>
+                <SelectItem value="P2">P2 (High)</SelectItem>
+                <SelectItem value="P3">P3 (Medium)</SelectItem>
+                <SelectItem value="P4">P4 (Low)</SelectItem>
+                <SelectItem value="P5">P5 (Lowest)</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Assigned Date Range Filter */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  id="admin-assigned-date"
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    "h-9 justify-start text-left font-normal bg-muted/20 border-primary/5 text-xs relative pr-7 w-[130px] shrink-0",
+                    !assignedDateRange?.from && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-1.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate text-xs font-medium">
+                    {assignedDateRange?.from ? (
+                      assignedDateRange.to ? (
+                        <>
+                          {format(assignedDateRange.from, "dd MMM")} - {format(assignedDateRange.to, "dd MMM")}
+                        </>
                       ) : (
-                        <span>Assigned Date</span>
-                      )}
-                    </span>
-                    {assignedDateRange?.from && (
-                      <div
-                        className="absolute right-1.5 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setAssignedDateRange(undefined);
-                        }}
-                      >
-                        <X className="h-3 w-3" />
-                      </div>
+                        format(assignedDateRange.from, "dd MMM")
+                      )
+                    ) : (
+                      <span>Assigned Date</span>
                     )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0 shadow-lg border-border" align="start">
-                  <Calendar
-                    initialFocus
-                    mode="range"
-                    defaultMonth={assignedDateRange?.from}
-                    selected={assignedDateRange}
-                    onSelect={setAssignedDateRange}
-                    numberOfMonths={1}
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
+                  </span>
+                  {assignedDateRange?.from && (
+                    <div
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAssignedDateRange(undefined);
+                      }}
+                    >
+                      <X className="h-3 w-3" />
+                    </div>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0 shadow-lg border-border" align="start">
+                <Calendar
+                  initialFocus
+                  mode="range"
+                  defaultMonth={assignedDateRange?.from}
+                  selected={assignedDateRange}
+                  onSelect={setAssignedDateRange}
+                  numberOfMonths={1}
+                />
+              </PopoverContent>
+            </Popover>
+
+            {/* Export to Excel Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportExcel}
+              className="h-9 flex items-center justify-center gap-1.5 bg-primary/10 hover:bg-primary/20 text-primary border-primary/20 text-xs font-semibold px-3 shrink-0 shadow-sm transition-all duration-200"
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span>Export Excel</span>
+            </Button>
           </CardContent>
         </Card>
 
         {/* Requests Listing Table */}
         <Card className="border-primary/10 shadow-sm overflow-hidden bg-background">
-          <div className="overflow-x-auto">
-            <Table>
+          <div className="overflow-x-auto w-full">
+            <Table className="w-full min-w-[950px]">
               <TableHeader className="bg-muted/30">
                 <TableRow>
-                  <TableHead className="font-bold w-[120px]">Request ID</TableHead>
-                  <TableHead className="font-bold">Branch (Cluster)</TableHead>
-                  <TableHead className="font-bold">Category & Type</TableHead>
-                  <TableHead className="font-bold">Raised By</TableHead>
-                  <TableHead className="font-bold">Assigned To</TableHead>
-                  <TableHead className="font-bold">Status</TableHead>
-                  <TableHead className="font-bold w-[70px]">Priority</TableHead>
-                  <TableHead className="font-bold">Assign Date</TableHead>
-                  <TableHead className="font-bold">Due Date</TableHead>
+                  <TableHead className="font-bold whitespace-nowrap w-[120px]">Request ID</TableHead>
+                  <TableHead className="font-bold whitespace-nowrap min-w-[140px]">Branch (Cluster)</TableHead>
+                  <TableHead className="font-bold whitespace-nowrap min-w-[140px]">Category & Type</TableHead>
+                  <TableHead className="font-bold whitespace-nowrap min-w-[140px]">Raised By</TableHead>
+                  <TableHead className="font-bold whitespace-nowrap min-w-[140px]">Assigned To</TableHead>
+                  <TableHead className="font-bold whitespace-nowrap min-w-[110px]">Status</TableHead>
+                  <TableHead className="font-bold whitespace-nowrap w-[70px]">Priority</TableHead>
+                  <TableHead className="font-bold whitespace-nowrap min-w-[110px]">Assign Date</TableHead>
+                  <TableHead className="font-bold whitespace-nowrap min-w-[110px]">Due Date</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -503,29 +589,29 @@ export default function AdminTicketConsole() {
                         className="cursor-pointer hover:bg-muted/10 transition-colors"
                         onClick={() => handleOpenTicket(ticket)}
                       >
-                        <TableCell className="font-bold text-primary">{reqId}</TableCell>
+                        <TableCell className="font-bold text-primary whitespace-nowrap">{reqId}</TableCell>
                         <TableCell className="text-xs">
-                          <span className="font-semibold block">{ticket.branch}</span>
-                          <span className="text-[10px] text-muted-foreground">{ticket.cluster}</span>
+                          <span className="font-semibold block truncate max-w-[180px]">{ticket.branch}</span>
+                          <span className="text-[10px] text-muted-foreground block truncate max-w-[180px]">{ticket.cluster}</span>
                         </TableCell>
                         <TableCell className="text-xs">
-                          <span className="font-medium block">{ticket.category}</span>
-                          <span className="text-[10px] text-muted-foreground">{reqType}</span>
+                          <span className="font-medium block truncate max-w-[180px]">{ticket.category}</span>
+                          <span className="text-[10px] text-muted-foreground block truncate max-w-[180px]">{reqType}</span>
                         </TableCell>
                         <TableCell className="text-xs">
-                          <span className="font-medium block">{ticket.raisedBy.name}</span>
-                          <span className="text-[10px] text-muted-foreground">{ticket.raisedBy.email}</span>
+                          <span className="font-medium block truncate max-w-[160px]">{ticket.raisedBy.name}</span>
+                          <span className="text-[10px] text-muted-foreground block truncate max-w-[160px]">{ticket.raisedBy.email}</span>
                         </TableCell>
                         <TableCell className="text-xs">
-                          <span className="font-semibold text-teal-600 block">{ticket.assignedTo.name}</span>
-                          <span className="text-[10px] text-muted-foreground">{ticket.assignedTo.email}</span>
+                          <span className="font-semibold text-teal-600 block truncate max-w-[160px]">{ticket.assignedTo.name}</span>
+                          <span className="text-[10px] text-muted-foreground block truncate max-w-[160px]">{ticket.assignedTo.email}</span>
                         </TableCell>
-                        <TableCell>{getStatusBadge(ticket.status)}</TableCell>
-                        <TableCell>{getPriorityBadge(ticket.priority)}</TableCell>
-                        <TableCell className="text-xs font-semibold text-muted-foreground">
+                        <TableCell className="whitespace-nowrap">{getStatusBadge(ticket.status)}</TableCell>
+                        <TableCell className="whitespace-nowrap">{getPriorityBadge(ticket.priority)}</TableCell>
+                        <TableCell className="text-xs font-semibold text-muted-foreground whitespace-nowrap">
                           {format(new Date(ticket.createdAt), 'MMM d, yyyy')}
                         </TableCell>
-                        <TableCell className="text-xs font-semibold text-muted-foreground">
+                        <TableCell className="text-xs font-semibold text-muted-foreground whitespace-nowrap">
                           {format(new Date(ticket.dueDate), 'MMM d, yyyy')}
                         </TableCell>
                       </TableRow>
@@ -540,7 +626,7 @@ export default function AdminTicketConsole() {
         {/* Dynamic Request Inspection & Comments Dialog */}
         {selectedTicket && (
           <Dialog open={!!selectedTicket} onOpenChange={(open) => !open && setSelectedTicket(null)}>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto border-primary/10 shadow-2xl p-6 custom-scrollbar bg-background">
+            <DialogContent className="max-w-4xl w-[95vw] sm:w-full max-h-[90vh] overflow-y-auto border-primary/10 shadow-2xl p-4 sm:p-6 custom-scrollbar bg-background">
               <DialogHeader className="border-b pb-4">
                 <div className="flex items-center justify-between">
                   <div className="space-y-1">
@@ -568,7 +654,7 @@ export default function AdminTicketConsole() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="p-4 space-y-4">
-                      <div className="grid grid-cols-2 gap-4 text-xs">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-xs">
                         <div>
                           <span className="text-muted-foreground block font-medium">Category:</span>
                           <span className="font-semibold">{selectedTicket.category}</span>

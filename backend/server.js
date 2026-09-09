@@ -1408,9 +1408,12 @@ app.post('/api/send-case-email', async (req, res) => {
         `;
 
         // Send emails concurrently
+        const branchTag = (formData.branch || formData.unit || formData.location || user.branch) 
+            ? ` - ${formData.branch || formData.unit || formData.location || user.branch}` 
+            : '';
         await Promise.all([
-            sendEmail(user.email, `Confirmation: Your ${formType} Request`, getEmailTemplate(userContent)),
-            sendEmail('gmb@multipliersolutions.com', `New Request: ${formType} - ${user.name}`, getEmailTemplate(teamContent))
+            sendEmail(user.email, `Confirmation: Your ${formType} Request${branchTag}`, getEmailTemplate(userContent)),
+            sendEmail('gmb@multipliersolutions.com', `New Request: ${formType} - ${user.name}${branchTag}`, getEmailTemplate(teamContent))
         ]);
 
         res.json({ success: true, message: "Emails sent successfully" });
@@ -1615,6 +1618,7 @@ app.post('/api/multiplier/tickets', uploadTicket.fields([
             </p>
             <table style="width: 100%; border-collapse: collapse; margin: 20px 0; text-align: left; font-size: 14px;">
                 <tr><th style="padding: 8px; border-bottom: 1px solid #ddd; width: 130px;">Request ID:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>${ticketId}</strong></td></tr>
+                <tr><th style="padding: 8px; border-bottom: 1px solid #ddd;">Branch:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>${branch}</strong> (${cluster})</td></tr>
                 <tr><th style="padding: 8px; border-bottom: 1px solid #ddd;">Category:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;">${category}</td></tr>
                 <tr><th style="padding: 8px; border-bottom: 1px solid #ddd;">Type:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;">${ticketType}</td></tr>
                 <tr><th style="padding: 8px; border-bottom: 1px solid #ddd;">Due Date:</th><td style="padding: 8px; border-bottom: 1px solid #ddd;">${dueDate.toDateString()}</td></tr>
@@ -1624,7 +1628,7 @@ app.post('/api/multiplier/tickets', uploadTicket.fields([
                 <a href="${getAppBaseUrl(req)}/#/tickets/details/${ticketId}" class="btn" style="background-color: transparent; color: #48BEB9; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; border: 2px solid #48BEB9; transition: all 0.3s ease;">Open Request Details</a>
             </div>
         `);
-        await sendEmail(targetUserEmail, `Action Required: GMB Optimization Request - ${ticketId}`, spocMailHtml);
+        await sendEmail(targetUserEmail, `Action Required: GMB Optimization Request - ${ticketId} - ${branch}`, spocMailHtml);
         
         res.json({ success: true, data: ticket });
     } catch (error) {
@@ -1876,9 +1880,10 @@ const createRequestHandler = async (req, res) => {
             </p>
             <table class="data-table">
                 <tr><th>Request ID:</th><td><strong style="color: #217a74;">${requestId}</strong></td></tr>
+                <tr><th>Branch:</th><td><strong>${branch}</strong> (${cluster})</td></tr>
                 <tr><th>Category:</th><td>${category}</td></tr>
                 <tr><th>Request Type:</th><td>${finalRequestType}</td></tr>
-                <tr><th>Branch:</th><td>${branch} (${cluster})</td></tr>
+                <tr><th>Raised By:</th><td>${raisedByName} (${raisedByEmail})</td></tr>
                 <tr><th>Priority:</th><td><span style="background-color: #f0fdf4; color: #166534; padding: 3px 10px; border-radius: 6px; font-weight: bold; font-size: 12px; border: 1px solid #bbf7d0;">${requestDoc.priority}</span></td></tr>
                 <tr><th>Due Date:</th><td>${dueDate.toDateString()}</td></tr>
                 ${attachedUrl ? `<tr><th>Attached URL:</th><td><a href="${attachedUrl}" target="_blank" style="color: #217a74; text-decoration: underline;">${attachedUrl}</a></td></tr>` : ''}
@@ -1889,31 +1894,34 @@ const createRequestHandler = async (req, res) => {
             </div>
         `);
         
-        await sendEmail(assignee.email, `New GMB Request: ${requestId} - ${finalRequestType}`, assigneeMailHtml);
+        await sendEmail(assignee.email, `New GMB Request: ${requestId} - ${branch} - ${finalRequestType}`, assigneeMailHtml);
         
         const spocActionUrl = getRequestDetailsUrl(req, requestId);
         const spocMailHtml = getRequestEmailTemplate(`
             <h2 style="color: #111827; margin-top: 0; font-size: 20px; font-weight: 700;">Request Raised Successfully</h2>
             <p style="font-size: 15px; color: #4b5563;">
                 Hello <strong>${raisedByName}</strong>,<br/><br/>
-                Your GMB operational request <strong style="color: #217a74;">${requestId}</strong> has been submitted successfully.
+                Your GMB operational request <strong style="color: #217a74;">${requestId}</strong> for branch <strong>${branch}</strong> has been submitted successfully.
             </p>
             <table class="data-table">
                 <tr><th>Request ID:</th><td><strong style="color: #217a74;">${requestId}</strong></td></tr>
+                <tr><th>Branch:</th><td><strong>${branch}</strong> (${cluster})</td></tr>
+                <tr><th>Category:</th><td>${category}</td></tr>
                 <tr><th>Request Type:</th><td>${finalRequestType}</td></tr>
-                <tr><th>Assigned To:</th><td>${assignee.name}</td></tr>
+                <tr><th>Assigned To:</th><td>${assignee.name} (${assignee.email})</td></tr>
                 <tr><th>Target Due Date:</th><td>${dueDate.toDateString()}</td></tr>
                 ${attachedUrl ? `<tr><th>Attached URL:</th><td><a href="${attachedUrl}" target="_blank" style="color: #217a74; text-decoration: underline;">${attachedUrl}</a></td></tr>` : ''}
+                <tr><th>Description:</th><td>${description}</td></tr>
             </table>
             <div style="text-align: center; margin: 30px 0 10px;">
                 <a href="${spocActionUrl}" class="btn-primary">Track Request</a>
             </div>
         `);
-        await sendEmail(raisedByEmail, `Request Raised: ${requestId}`, spocMailHtml);
+        await sendEmail(raisedByEmail, `Request Raised: ${requestId} - ${branch} - ${finalRequestType}`, spocMailHtml);
 
         const GLOBAL_NOTIFY_EMAIL = process.env.GLOBAL_NOTIFY_EMAIL || "mohd.aman@manipalhospitals.com";
         if (GLOBAL_NOTIFY_EMAIL) {
-            await sendEmail(GLOBAL_NOTIFY_EMAIL, `New GMB Request Notification: ${requestId} - ${finalRequestType}`, assigneeMailHtml);
+            await sendEmail(GLOBAL_NOTIFY_EMAIL, `New GMB Request Notification: ${requestId} - ${branch} - ${finalRequestType}`, assigneeMailHtml);
         }
         
         res.json({ success: true, data: requestDoc });
@@ -2004,37 +2012,78 @@ const addRequestLogHandler = async (req, res) => {
         // Email Notification
         if (action === 'Status Change' || !newLog.isInternal) {
             const reqIdStr = requestDoc.requestId || requestDoc.ticketId;
+            const branchName = requestDoc.branch || 'Unit';
             const logActionUrl = getRequestDetailsUrl(req, reqIdStr);
+            const isCompletedOrClosed = (action === 'Status Change' && (newValue === 'Completed' || newValue === 'Closed'));
+
+            let emailSubject = `Update on Request: ${reqIdStr} - ${branchName}`;
+            let emailHeading = "Request Update Notification";
+            if (action === 'Status Change') {
+                if (newValue === 'Completed') {
+                    emailSubject = `Request Completed: ${reqIdStr} - ${branchName}`;
+                    emailHeading = "Request Marked as Completed";
+                } else if (newValue === 'Closed') {
+                    emailSubject = `Request Closed: ${reqIdStr} - ${branchName}`;
+                    emailHeading = "Request Marked as Closed";
+                } else {
+                    emailSubject = `Status Update (${newValue}): ${reqIdStr} - ${branchName}`;
+                    emailHeading = `Request Status Updated: ${newValue}`;
+                }
+            }
+
             const mailMessage = action === 'Status Change' 
-                ? `The status of request <strong style="color: #217a74;">${reqIdStr}</strong> has been updated to <strong style="color: #111827;">${newValue}</strong> by ${user}.`
-                : `A new update has been logged on request <strong style="color: #217a74;">${reqIdStr}</strong> by ${user}:<br/><blockquote style="margin: 12px 0; padding: 10px 14px; background: #f9fafb; border-left: 3px solid #217a74; font-style: italic; color: #4b5563;">${remarks}</blockquote>`;
+                ? `The status of request <strong style="color: #217a74;">${reqIdStr}</strong> for branch <strong>${branchName}</strong> has been updated to <strong style="color: #111827;">${newValue}</strong> by ${user}.`
+                : `A new update has been logged on request <strong style="color: #217a74;">${reqIdStr}</strong> for branch <strong>${branchName}</strong> by ${user}:<br/><blockquote style="margin: 12px 0; padding: 10px 14px; background: #f9fafb; border-left: 3px solid #217a74; font-style: italic; color: #4b5563;">${remarks}</blockquote>`;
             
             const mailHtml = getRequestEmailTemplate(`
-                <h2 style="color: #111827; margin-top: 0; font-size: 20px; font-weight: 700;">Request Update Notification</h2>
+                <h2 style="color: #111827; margin-top: 0; font-size: 20px; font-weight: 700;">${emailHeading}</h2>
                 <p style="font-size: 15px; color: #4b5563;">${mailMessage}</p>
+                <table class="data-table">
+                    <tr><th>Request ID:</th><td><strong style="color: #217a74;">${reqIdStr}</strong></td></tr>
+                    <tr><th>Branch:</th><td><strong>${branchName}</strong> (${requestDoc.cluster || ''})</td></tr>
+                    <tr><th>Category:</th><td>${requestDoc.category || 'Operational'}</td></tr>
+                    <tr><th>Request Type:</th><td>${requestDoc.ticketType || 'N/A'}</td></tr>
+                    <tr><th>Current Status:</th><td><strong style="color: #217a74;">${requestDoc.status}</strong></td></tr>
+                    <tr><th>Assigned To:</th><td>${requestDoc.assignedTo?.name || 'N/A'} (${requestDoc.assignedTo?.email || ''})</td></tr>
+                    <tr><th>Raised By:</th><td>${requestDoc.raisedBy?.name || 'N/A'} (${requestDoc.raisedBy?.email || ''})</td></tr>
+                    ${action !== 'Status Change' && remarks ? `<tr><th>Comment:</th><td>${remarks}</td></tr>` : ''}
+                </table>
                 <div style="text-align: center; margin: 30px 0 10px;">
                     <a href="${logActionUrl}" class="btn-primary">View Request Updates</a>
                 </div>
             `);
             
-            const isRaiser = (email === requestDoc.raisedBy.email);
-            const isAssignee = (email === requestDoc.assignedTo.email);
+            // Build list of recipients who should get this update
+            const recipientEmails = new Set();
 
-            if (isRaiser) {
-                await sendEmail(requestDoc.assignedTo.email, `Update on Request: ${reqIdStr}`, mailHtml);
-            } else if (isAssignee) {
-                await sendEmail(requestDoc.raisedBy.email, `Update on Request: ${reqIdStr}`, mailHtml);
+            if (isCompletedOrClosed) {
+                // Ensure the request assigner/raiser AND assignee always get notified on completion or closure
+                if (requestDoc.raisedBy?.email) recipientEmails.add(requestDoc.raisedBy.email);
+                if (requestDoc.assignedTo?.email) recipientEmails.add(requestDoc.assignedTo.email);
             } else {
-                // Comment added by Admin or Cluster Manager (third party) -> notify both raiser & assignee
-                await sendEmail(requestDoc.raisedBy.email, `Update on Request: ${reqIdStr}`, mailHtml);
-                await sendEmail(requestDoc.assignedTo.email, `Update on Request: ${reqIdStr}`, mailHtml);
+                const isRaiser = (email === requestDoc.raisedBy?.email);
+                const isAssignee = (email === requestDoc.assignedTo?.email);
+
+                if (isRaiser) {
+                    if (requestDoc.assignedTo?.email) recipientEmails.add(requestDoc.assignedTo.email);
+                } else if (isAssignee) {
+                    if (requestDoc.raisedBy?.email) recipientEmails.add(requestDoc.raisedBy.email);
+                } else {
+                    // Update by third party (e.g. Admin or Cluster) -> notify both
+                    if (requestDoc.raisedBy?.email) recipientEmails.add(requestDoc.raisedBy.email);
+                    if (requestDoc.assignedTo?.email) recipientEmails.add(requestDoc.assignedTo.email);
+                }
+            }
+
+            for (const recipient of recipientEmails) {
+                await sendEmail(recipient, emailSubject, mailHtml);
             }
 
             // Global notify email for status updates
             if (action === 'Status Change') {
                 const GLOBAL_NOTIFY_EMAIL = process.env.GLOBAL_NOTIFY_EMAIL || "mohd.aman@manipalhospitals.com";
-                if (GLOBAL_NOTIFY_EMAIL) {
-                    await sendEmail(GLOBAL_NOTIFY_EMAIL, `Status Update on Request: ${reqIdStr}`, mailHtml);
+                if (GLOBAL_NOTIFY_EMAIL && !recipientEmails.has(GLOBAL_NOTIFY_EMAIL)) {
+                    await sendEmail(GLOBAL_NOTIFY_EMAIL, emailSubject, mailHtml);
                 }
             }
         }
@@ -2098,6 +2147,7 @@ const transferRequestHandler = async (req, res) => {
         }
         
         const reqIdStr = requestDoc.requestId || requestDoc.ticketId;
+        const branchName = requestDoc.branch || 'Unit';
         const transferActionUrl = getRequestDetailsUrl(req, reqIdStr);
         const notifyNewHtml = getRequestEmailTemplate(`
             <h2 style="color: #111827; margin-top: 0; font-size: 20px; font-weight: 700;">GMB Request Transferred to You</h2>
@@ -2106,7 +2156,7 @@ const transferRequestHandler = async (req, res) => {
             </p>
             <table class="data-table">
                 <tr><th>Request ID:</th><td><strong style="color: #217a74;">${reqIdStr}</strong></td></tr>
-                <tr><th>Branch:</th><td>${requestDoc.branch} (${requestDoc.cluster})</td></tr>
+                <tr><th>Branch:</th><td><strong>${branchName}</strong> (${requestDoc.cluster})</td></tr>
                 <tr><th>Request Type:</th><td>${requestDoc.ticketType}</td></tr>
                 <tr><th>Priority:</th><td><span style="background-color: #f0fdf4; color: #166534; padding: 3px 10px; border-radius: 6px; font-weight: bold; font-size: 12px; border: 1px solid #bbf7d0;">${requestDoc.priority}</span></td></tr>
             </table>
@@ -2114,19 +2164,42 @@ const transferRequestHandler = async (req, res) => {
                 <a href="${transferActionUrl}" class="btn-primary">View Request Details</a>
             </div>
         `);
-        await sendEmail(newAssignee.email, `Request Assigned (Transfer): ${reqIdStr}`, notifyNewHtml);
+        await sendEmail(newAssignee.email, `Request Assigned (Transfer): ${reqIdStr} - ${branchName}`, notifyNewHtml);
         
         const notifyOldHtml = getRequestEmailTemplate(`
             <h2 style="color: #111827; margin-top: 0; font-size: 20px; font-weight: 700;">Request Transferred Out</h2>
             <p style="font-size: 15px; color: #4b5563;">
-                Request <strong style="color: #217a74;">${reqIdStr}</strong> has been reassigned from you to <strong>${newAssignee.name}</strong> by ${transferByName}.
+                Request <strong style="color: #217a74;">${reqIdStr}</strong> for branch <strong>${branchName}</strong> has been reassigned from you to <strong>${newAssignee.name}</strong> by ${transferByName}.
             </p>
         `);
-        await sendEmail(prevAssignee.email, `Request Reassigned Out: ${reqIdStr}`, notifyOldHtml);
+        await sendEmail(prevAssignee.email, `Request Reassigned Out: ${reqIdStr} - ${branchName}`, notifyOldHtml);
+
+        // Notify Request Assigner / Raiser about the transfer to another person
+        if (requestDoc.raisedBy?.email && requestDoc.raisedBy.email !== newAssignee.email && requestDoc.raisedBy.email !== prevAssignee.email) {
+            const notifyRaiserHtml = getRequestEmailTemplate(`
+                <h2 style="color: #111827; margin-top: 0; font-size: 20px; font-weight: 700;">Request Assignee Updated</h2>
+                <p style="font-size: 15px; color: #4b5563;">
+                    Hello <strong>${requestDoc.raisedBy.name || 'User'}</strong>,<br/><br/>
+                    Your GMB operational request <strong style="color: #217a74;">${reqIdStr}</strong> for branch <strong>${branchName}</strong> has been reassigned to a new owner by <strong>${transferByName}</strong>.
+                </p>
+                <table class="data-table">
+                    <tr><th>Request ID:</th><td><strong style="color: #217a74;">${reqIdStr}</strong></td></tr>
+                    <tr><th>Branch:</th><td><strong>${branchName}</strong> (${requestDoc.cluster})</td></tr>
+                    <tr><th>Request Type:</th><td>${requestDoc.ticketType}</td></tr>
+                    <tr><th>Previous Assignee:</th><td>${prevAssignee.name} (${prevAssignee.email})</td></tr>
+                    <tr><th>New Assignee:</th><td><strong style="color: #217a74;">${newAssignee.name}</strong> (${newAssignee.email})</td></tr>
+                    ${remarks ? `<tr><th>Reason/Remarks:</th><td>${remarks}</td></tr>` : ''}
+                </table>
+                <div style="text-align: center; margin: 30px 0 10px;">
+                    <a href="${transferActionUrl}" class="btn-primary">View Request Details</a>
+                </div>
+            `);
+            await sendEmail(requestDoc.raisedBy.email, `Request Reassigned: ${reqIdStr} - ${branchName}`, notifyRaiserHtml);
+        }
 
         const GLOBAL_NOTIFY_EMAIL = process.env.GLOBAL_NOTIFY_EMAIL || "mohd.aman@manipalhospitals.com";
         if (GLOBAL_NOTIFY_EMAIL) {
-            await sendEmail(GLOBAL_NOTIFY_EMAIL, `Request Assigned (Transfer): ${reqIdStr}`, notifyNewHtml);
+            await sendEmail(GLOBAL_NOTIFY_EMAIL, `Request Assigned (Transfer): ${reqIdStr} - ${branchName}`, notifyNewHtml);
         }
         
         res.json({ success: true, data: requestDoc });
@@ -2166,19 +2239,26 @@ const remindRequestHandler = async (req, res) => {
         }
 
         // Send Email notification to the assignee
+        const branchName = requestDoc.branch || 'Unit';
         const reminderActionUrl = getRequestDetailsUrl(req, reqIdStr);
         const mailHtml = getRequestEmailTemplate(`
             <h2 style="color: #111827; margin-top: 0; font-size: 20px; font-weight: 700;">Manual SLA Reminder</h2>
             <p style="font-size: 15px; color: #4b5563;">
                 Hello <strong>${requestDoc.assignedTo.name}</strong>,<br/><br/>
-                A manual SLA reminder has been triggered by <strong>${senderName || 'system'}</strong> for request <strong style="color: #217a74;">${reqIdStr}</strong>.
+                A manual SLA reminder has been triggered by <strong>${senderName || 'system'}</strong> for request <strong style="color: #217a74;">${reqIdStr}</strong> (Branch: <strong>${branchName}</strong>).
             </p>
-            <p style="font-size: 14px; color: #6b7280;">Please review and resolve the request as soon as possible.</p>
+            <table class="data-table">
+                <tr><th>Request ID:</th><td><strong style="color: #217a74;">${reqIdStr}</strong></td></tr>
+                <tr><th>Branch:</th><td><strong>${branchName}</strong> (${requestDoc.cluster || ''})</td></tr>
+                <tr><th>Request Type:</th><td>${requestDoc.ticketType || 'N/A'}</td></tr>
+                <tr><th>Current Status:</th><td>${requestDoc.status}</td></tr>
+            </table>
+            <p style="font-size: 14px; color: #6b7280; margin-top: 15px;">Please review and resolve the request as soon as possible.</p>
             <div style="text-align: center; margin: 30px 0 10px;">
                 <a href="${reminderActionUrl}" class="btn-primary">View Request Details</a>
             </div>
         `);
-        await sendEmail(requestDoc.assignedTo.email, `SLA Reminder Alert: ${reqIdStr}`, mailHtml);
+        await sendEmail(requestDoc.assignedTo.email, `SLA Reminder Alert: ${reqIdStr} - ${branchName}`, mailHtml);
 
         // Record reminder event in the activity logs
         requestDoc.activityLogs.push({
@@ -2278,7 +2358,7 @@ const runSlaCheck = async () => {
             `);
 
             for (const mailTo of recipientEmails) {
-                await sendEmail(mailTo, `SLA BREACH ESCALATION: ${reqIdStr}`, escalHtml);
+                await sendEmail(mailTo, `SLA BREACH ESCALATION: ${reqIdStr} - ${requestDoc.branch || 'Unit'}`, escalHtml);
             }
             
             escalationLogged = true;

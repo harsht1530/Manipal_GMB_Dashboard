@@ -66,10 +66,10 @@ export const DashboardLayout = ({
       {/* Main Content */}
       <main className={cn(
         "min-h-screen transition-all duration-300",
-        collapsed ? "lg:ml-20" : "lg:ml-64"
+        collapsed ? "lg:ml-20" : "lg:ml-72"
       )}>
         <Header title={title} subtitle={subtitle} />
-        <div className="p-6">
+        <div className="p-3 sm:p-4 md:p-6">
           {children}
         </div>
       </main>

@@ -115,13 +115,13 @@ export const Header = ({ title, subtitle }: HeaderProps) => {
   };
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-6">
-      <div>
-        <h1 className="text-xl font-semibold text-foreground">{title}</h1>
-        {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
+    <header className="sticky top-0 z-30 flex min-h-16 py-2 items-center justify-between border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pl-14 sm:pl-6 pr-4 sm:pr-6 gap-3">
+      <div className="min-w-0 flex-1">
+        <h1 className="text-lg sm:text-xl font-semibold text-foreground truncate">{title}</h1>
+        {subtitle && <p className="text-xs sm:text-sm text-muted-foreground line-clamp-1">{subtitle}</p>}
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 sm:gap-4 shrink-0">
         {canSeeAlerts && (
           <DropdownMenu onOpenChange={(open) => open && markAsRead()}>
             <DropdownMenuTrigger asChild>

@@ -22,7 +22,8 @@ import {
   CheckCircle,
   Paperclip,
   Info,
-  PlayCircle
+  PlayCircle,
+  FileText
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -447,6 +448,40 @@ export default function RaiseTicket() {
     return { name: "Harsh (Default Owner)", email: "harsh@multipliersolutions.com" };
   }, [derivedCluster, team]);
 
+  const sopDocument = useMemo(() => {
+    const baseUrl = import.meta.env.BASE_URL || "/";
+    const cleanBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+
+    if (category === "Profile Creation" || category === "Profile Updates") {
+      return {
+        fileName: "Profile Creation & Updation.docx",
+        filePath: `${cleanBase}Documents/Profile_Creation_and_Updation.docx`,
+        title: "Profile Creation & Updation SOP",
+        description: "Official SOP document with guidelines & mandatory checklist for Profile Creation & Profile Updates."
+      };
+    }
+
+    if (category === "Content") {
+      return {
+        fileName: "Google Posting.docx",
+        filePath: `${cleanBase}Documents/Google_Posting.docx`,
+        title: "Google Posting SOP",
+        description: "Official SOP document with standard operating procedure & guidelines for Content and Google Postings."
+      };
+    }
+
+    if (category === "Suspensions") {
+      return {
+        fileName: "Supporting Documents Required for Suspended Profiles.docx",
+        filePath: `${cleanBase}Documents/Supporting_Documents_Required_for_Suspended_Profiles.docx`,
+        title: "Suspended Profiles SOP & Supporting Documents",
+        description: "Official SOP document listing required proofs, guidelines & checklist to appeal suspended profiles."
+      };
+    }
+
+    return null;
+  }, [category]);
+
   const handleDownloadTemplate = () => {
     if (!category || !ticketType) {
       toast({
@@ -500,15 +535,6 @@ export default function RaiseTicket() {
     }
     if (!description.trim()) {
       toast({ title: "Validation Error", description: "Please provide a Description for the request.", variant: "destructive" });
-      return;
-    }
-
-    if (category !== "Others" && !excelFile) {
-      toast({
-        title: "Excel File Required",
-        description: `Please upload the filled Excel template for category "${category}".`,
-        variant: "destructive"
-      });
       return;
     }
 
@@ -694,8 +720,8 @@ export default function RaiseTicket() {
                     <div className="flex items-center gap-3">
                       <FileSpreadsheet className="h-8 w-8 text-primary shrink-0" />
                       <div>
-                        <h4 className="text-sm font-semibold text-primary">Mandatory Excel Template</h4>
-                        <p className="text-xs text-muted-foreground">Download, fill offline, and upload below.</p>
+                        <h4 className="text-sm font-semibold text-primary">Excel Template (Optional)</h4>
+                        <p className="text-xs text-muted-foreground">Download template offline if needed, and attach below.</p>
                       </div>
                     </div>
                     <Button type="button" variant="outline" size="sm" onClick={handleDownloadTemplate} className="flex items-center gap-1">
@@ -706,7 +732,7 @@ export default function RaiseTicket() {
 
                 {/* 5. Upload Excel */}
                 <div className="space-y-1.5">
-                  <Label htmlFor="excelFile" className="font-semibold text-sm">Upload Completed Excel Sheet {category !== "Others" && <span className="text-destructive">*</span>}</Label>
+                  <Label htmlFor="excelFile" className="font-semibold text-sm">Upload Completed Excel Sheet <span className="text-muted-foreground font-normal text-xs">(Optional)</span></Label>
                   <div className="flex items-center gap-2">
                     <Input 
                       id="excelFile" 
@@ -770,6 +796,63 @@ export default function RaiseTicket() {
 
           {/* Right Info Column */}
           <div className="space-y-6">
+            {/* SOP Reference Document Card (Conditionally shown for Profile Creation, Profile Updates, and Content) */}
+            {sopDocument && (
+              <Card className="border-primary/20 bg-gradient-to-br from-primary/5 via-background to-background shadow-sm overflow-hidden animate-in fade-in-50 slide-in-from-top-2 duration-300">
+                <CardHeader className="bg-primary/5 border-b pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2 text-primary">
+                      <FileText className="h-4 w-4 text-primary" />
+                      Standard Operating Procedure (SOP)
+                    </CardTitle>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                      DOCX Guide
+                    </span>
+                  </div>
+                  <CardDescription className="text-xs">
+                    {sopDocument.description}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3 p-3 rounded-lg border border-primary/10 bg-background/80 hover:bg-muted/40 transition-colors">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="h-9 w-9 rounded-lg bg-blue-500/10 text-blue-600 flex items-center justify-center shrink-0">
+                        <FileText className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-foreground truncate" title={sopDocument.fileName}>
+                          {sopDocument.fileName}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {sopDocument.title}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2.5 text-xs font-semibold gap-1.5 bg-primary/10 hover:bg-primary/20 text-primary border-primary/20 transition-all shadow-xs"
+                      asChild
+                    >
+                      <a
+                        href={sopDocument.filePath}
+                        download={sopDocument.fileName}
+                        className="shrink-0 flex items-center gap-1.5"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        <span>Download</span>
+                      </a>
+                    </Button>
+                  </div>
+                  <div className="flex items-start gap-2 text-[11px] text-muted-foreground bg-muted/30 p-2.5 rounded border border-border/40">
+                    <Info className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+                    <span>Please review the SOP instructions before submitting your request.</span>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <Card>
               <CardHeader className="bg-muted/15 border-b pb-3">
                 <CardTitle className="text-sm font-semibold">Request Routing</CardTitle>
