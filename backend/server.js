@@ -2112,7 +2112,10 @@ const transferRequestHandler = async (req, res) => {
         const newAssignee = await MultiplierTeam.findOne({ email: { $regex: new RegExp(`^${newAssigneeEmail}$`, 'i') } });
         if (!newAssignee) return res.status(404).json({ success: false, error: "Assignee not found in Multiplier Team" });
         
-        const prevAssignee = requestDoc.assignedTo;
+        const prevAssignee = {
+            name: requestDoc.assignedTo?.name || "Unassigned",
+            email: requestDoc.assignedTo?.email || ""
+        };
         requestDoc.assignedTo = { name: newAssignee.name, email: newAssignee.email };
         requestDoc.assignedAt = new Date();
         
