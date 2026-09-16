@@ -38,7 +38,7 @@ const navItems = [
   { icon: Search, label: "Search Perf.", path: "/search-performance" },
   // { icon: Target, label: "Monthly Optimisation", path: "/optimizations" },
   // { icon: FileText, label: "GBP Postings", path: "/postings" },
-  { icon: Ticket, label: "Case Management", path: "/raising-case" },
+  { icon: FileText, label: "Postings", path: "/raising-case" },
   {
     label: "Request Management",
     icon: ClipboardList,

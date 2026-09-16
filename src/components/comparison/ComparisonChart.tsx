@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
-import { InsightData } from "@/hooks/useMongoData";
+import { InsightData, parseDateString } from "@/hooks/useMongoData";
 
 interface ComparisonChartProps {
     entity1Name: string;
@@ -31,8 +31,9 @@ export const ComparisonChart = ({ entity1Name, entity2Name, entity1Data, entity2
 
         const processData = (data: InsightData[], isEntity1: boolean) => {
             data.forEach(item => {
-                const year = new Date(item.date).getFullYear();
-                const month = item.month?.substring(0, 3) || "";
+                const year = item.year || (item.date ? String(parseDateString(item.date).getFullYear()) : "");
+                const rawMonth = item.month?.trim() || "";
+                const month = rawMonth.length >= 3 ? rawMonth.charAt(0).toUpperCase() + rawMonth.slice(1, 3).toLowerCase() : rawMonth;
                 if (!month || !year) return;
                 const key = `${year}-${String(MONTH_ORDER.indexOf(month)).padStart(2, "0")}`; // sortable key
                 const label = `${month} '${String(year).slice(2)}`;

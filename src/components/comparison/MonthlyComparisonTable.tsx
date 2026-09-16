@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { InsightData } from "@/hooks/useMongoData";
+import { InsightData, parseDateString } from "@/hooks/useMongoData";
 import {
     TrendingUp,
     TrendingDown,
@@ -71,8 +71,9 @@ export const MonthlyComparisonTable = ({
     const allMonthlyMetrics: MonthMetrics[] = useMemo(() => {
         const map: Record<string, MonthMetrics> = {};
         entityData.forEach(item => {
-            const year = new Date(item.date).getFullYear() || "";
-            const m = item.month?.substring(0, 3) || "";
+            const year = item.year || (item.date ? String(parseDateString(item.date).getFullYear()) : "");
+            const rawMonth = item.month?.trim() || "";
+            const m = rawMonth.length >= 3 ? rawMonth.charAt(0).toUpperCase() + rawMonth.slice(1, 3).toLowerCase() : rawMonth;
             if (!m) return;
             const key = `${year}-${m}`;
             if (!map[key]) {

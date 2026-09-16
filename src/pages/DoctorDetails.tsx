@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
-import { InsightData, DoctorData, LabelData, useMongoData, transformDoctor } from "@/hooks/useMongoData";
+import { InsightData, DoctorData, LabelData, useMongoData, transformDoctor, parseDateString } from "@/hooks/useMongoData";
 import {
     Star,
     TrendingUp,
@@ -230,7 +230,7 @@ const DoctorDetails = () => {
 
     // Prepare chart data (filtered by year)
     const filteredInsights = monthlyInsights.filter((item) => {
-        const itemYear = item.date ? new Date(item.date).getFullYear().toString() : "2024";
+        const itemYear = item.year || (item.date ? String(parseDateString(item.date).getFullYear()) : "2024");
         return itemYear === selectedYear;
     });
 

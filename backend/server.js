@@ -598,21 +598,7 @@ app.get('/api/insights', async (req, res) => {
 
         const insights = await Insight.find({}, projection).lean();
 
-        // De-duplicate insights by Business name + Month + Year to solve duplicate data seeding issue
-        const uniqueMap = new Map();
-        for (const item of insights) {
-            const bName = (item["Business name"] || "").trim().toLowerCase();
-            const month = (item.Month || "").trim().toLowerCase();
-            const year = item.Year ? String(item.Year) : "";
-            const key = `${bName}_${month}_${year}`;
-            
-            if (!uniqueMap.has(key)) {
-                uniqueMap.set(key, item);
-            }
-        }
-        const deDuplicated = Array.from(uniqueMap.values());
-
-        res.json({ success: true, data: deDuplicated });
+        res.json({ success: true, data: insights });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }

@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
-import { InsightData } from "@/hooks/useMongoData";
+import { InsightData, parseDateString } from "@/hooks/useMongoData";
 
 interface PerformanceChartProps {
   data: InsightData[];
@@ -143,9 +143,9 @@ export const PerformanceChart = ({ data }: PerformanceChartProps) => {
     }>> = {};
 
     data.forEach((item) => {
-      const month = item.month.substring(0, 3);
-      const d = item.date ? new Date(item.date) : new Date();
-      const year = !isNaN(d.getFullYear()) ? d.getFullYear().toString() : "2024";
+      const rawMonth = (item.month || "").trim();
+      const month = rawMonth.length >= 3 ? rawMonth.charAt(0).toUpperCase() + rawMonth.slice(1, 3).toLowerCase() : rawMonth;
+      const year = item.year || (item.date ? String(parseDateString(item.date).getFullYear()) : "2024");
 
       if (!groupedData[year]) {
         groupedData[year] = {};

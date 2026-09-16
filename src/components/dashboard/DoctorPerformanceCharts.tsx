@@ -29,26 +29,50 @@ const CHART_CONFIG = [
 
 export const DoctorPerformanceCharts = ({ data, doctorName }: DoctorPerformanceChartsProps) => {
   const chartData = useMemo(() => {
-    const doctorData = data.filter((d) => d.businessName === doctorName);
+    const targetName = (doctorName || "").trim().toLowerCase();
+    const doctorData = data.filter((d) => (d.businessName || "").trim().toLowerCase() === targetName);
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     
     return months.map((month) => {
-      const monthData = doctorData.find((d) => d.month === month);
-      if (!monthData) {
-        return { month, value: 0 };
+      const monthRecords = doctorData.filter((d) => {
+        const m = (d.month || "").trim().substring(0, 3).toLowerCase();
+        return m === month.toLowerCase();
+      });
+
+      if (monthRecords.length === 0) {
+        return {
+          month,
+          googleSearchMobile: 0,
+          googleSearchDesktop: 0,
+          googleMapsMobile: 0,
+          googleMapsDesktop: 0,
+          calls: 0,
+          directions: 0,
+          websiteClicks: 0,
+          overall: 0,
+        };
       }
+
+      const googleSearchMobile = monthRecords.reduce((sum, d) => sum + (d.googleSearchMobile || 0), 0);
+      const googleSearchDesktop = monthRecords.reduce((sum, d) => sum + (d.googleSearchDesktop || 0), 0);
+      const googleMapsMobile = monthRecords.reduce((sum, d) => sum + (d.googleMapsMobile || 0), 0);
+      const googleMapsDesktop = monthRecords.reduce((sum, d) => sum + (d.googleMapsDesktop || 0), 0);
+      const calls = monthRecords.reduce((sum, d) => sum + (d.calls || 0), 0);
+      const directions = monthRecords.reduce((sum, d) => sum + (d.directions || 0), 0);
+      const websiteClicks = monthRecords.reduce((sum, d) => sum + (d.websiteClicks || 0), 0);
+
       return {
         month,
-        googleSearchMobile: monthData.googleSearchMobile,
-        googleSearchDesktop: monthData.googleSearchDesktop,
-        googleMapsMobile: monthData.googleMapsMobile,
-        googleMapsDesktop: monthData.googleMapsDesktop,
-        calls: monthData.calls,
-        directions: monthData.directions,
-        websiteClicks: monthData.websiteClicks,
-        overall: monthData.googleSearchMobile + monthData.googleSearchDesktop + monthData.googleMapsMobile + monthData.googleMapsDesktop,
+        googleSearchMobile,
+        googleSearchDesktop,
+        googleMapsMobile,
+        googleMapsDesktop,
+        calls,
+        directions,
+        websiteClicks,
+        overall: googleSearchMobile + googleSearchDesktop + googleMapsMobile + googleMapsDesktop,
       };
-    }).filter((d) => d.googleSearchMobile || d.googleSearchDesktop);
+    });
   }, [data, doctorName]);
 
   return (

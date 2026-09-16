@@ -746,33 +746,13 @@ const Index = () => {
       "Verification %": item.totalProfiles > 0 ? `${Math.round((item.verifiedProfiles / item.totalProfiles) * 100)}%` : "0%"
     }));
 
-    // Sum of verified profiles across all locations in the selected period/filter
-    // If more than 1 month is selected, targetCount is the sum of counts in the Profile Counts sheet verified column.
-    // If 0 or 1 month is selected, it matches the dashboard verified card count exactly.
-    const targetCount = selectedMonth.length > 1
-      ? profileCountsSheetData.reduce((sum, row) => sum + (row["Verified"] || 0), 0)
-      : dashboardVerifiedCount;
+    // 2. Prepare Insights Data Sheet directly from filteredData
+    const exportInsights = filteredData;
 
-    // 2. Prepare Insights Data Sheet
-    let exportInsights = filteredData;
-    if (selectedMonth.length === 0) {
-      exportInsights = insights.filter(item => {
-        const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(item.cluster);
-        const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(item.branch);
-        const specialityMatch = selectedSpeciality.length === 0 || selectedSpeciality.includes(item.speciality);
-        const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(item.department);
-        const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(item.rating) === r);
-
-        const itemYear = item.year;
-        const yearMatch = selectedYear.length > 0 ? selectedYear.includes(itemYear) : itemYear === latestDataYear;
-
-        return item.month === latestDataMonth && clusterMatch && branchMatch && specialityMatch && departmentMatch && ratingMatch && yearMatch;
-      });
-    }
-
-    let insightsSheetData = exportInsights.map(item => ({
+    const insightsSheetData = exportInsights.map(item => ({
       "Business Name": item.businessName,
       "Month": item.month,
+      "Year": item.year,
       "Cluster": item.cluster,
       "Branch": item.branch,
       "Speciality": item.speciality,
@@ -788,60 +768,6 @@ const Index = () => {
       "Profile Type": item.department
     }));
 
-    // Adjust rows to match the targetCount exactly under all filters/selections
-    if (insightsSheetData.length > targetCount) {
-      // Randomly cut off rows to match targetCount
-      const adjustedData = [...insightsSheetData];
-      while (adjustedData.length > targetCount) {
-        const randomIdx = Math.floor(Math.random() * adjustedData.length);
-        adjustedData.splice(randomIdx, 1);
-      }
-      insightsSheetData = adjustedData;
-    } else if (insightsSheetData.length > 0 && insightsSheetData.length < targetCount) {
-      // Duplicate and randomly insert rows to match targetCount
-      const adjustedData = [...insightsSheetData];
-      const originalLength = insightsSheetData.length;
-      const diff = targetCount - originalLength;
-      
-      for (let i = 0; i < diff; i++) {
-        const randomSrcIdx = Math.floor(Math.random() * originalLength);
-        const rowToCopy = { ...insightsSheetData[randomSrcIdx] };
-        
-        // Insert at a random position in the array
-        const randomDestIdx = Math.floor(Math.random() * adjustedData.length);
-        adjustedData.splice(randomDestIdx, 0, rowToCopy);
-      }
-      insightsSheetData = adjustedData;
-    } else if (insightsSheetData.length === 0 && targetCount > 0) {
-      // Fallback row generation: use real entries from manipalinsightsdatas (insights) instead of creating dummy names
-      const fallbackRows = [];
-      const sourcePool = insights.length > 0 ? insights : [];
-      
-      if (sourcePool.length > 0) {
-        for (let i = 0; i < targetCount; i++) {
-          const item = sourcePool[i % sourcePool.length];
-          fallbackRows.push({
-            "Business Name": item.businessName,
-            "Month": item.month,
-            "Cluster": item.cluster,
-            "Branch": item.branch,
-            "Speciality": item.speciality,
-            "Rating": item.rating,
-            "Reviews": item.review,
-            "Search Mobile": item.googleSearchMobile,
-            "Search Desktop": item.googleSearchDesktop,
-            "Maps Mobile": item.googleMapsMobile,
-            "Maps Desktop": item.googleMapsDesktop,
-            "Directions": item.directions,
-            "Website Clicks": item.websiteClicks,
-            "Calls": item.calls,
-            "Profile Type": item.department
-          });
-        }
-      }
-      insightsSheetData = fallbackRows;
-    }
-
     // Generate Excel
     const wb = XLSX.utils.book_new();
     const ws1 = XLSX.utils.json_to_sheet(insightsSheetData);
@@ -849,6 +775,47 @@ const Index = () => {
     XLSX.utils.book_append_sheet(wb, ws1, "Insights Data");
     XLSX.utils.book_append_sheet(wb, ws2, "Profile counts");
     XLSX.writeFile(wb, `Manipal_Insights_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  const handleExportCSV = () => {
+    const exportInsights = filteredData;
+    const headers = [
+      "Business Name", "Month", "Year", "Cluster", "Branch", "Speciality",
+      "Rating", "Reviews", "Search Mobile", "Search Desktop", "Maps Mobile",
+      "Maps Desktop", "Directions", "Website Clicks", "Calls", "Profile Type"
+    ];
+
+    const csvRows = [
+      headers.join(","),
+      ...exportInsights.map(item => [
+        `"${(item.businessName || "").replace(/"/g, '""')}"`,
+        `"${item.month || ""}"`,
+        `"${item.year || ""}"`,
+        `"${(item.cluster || "").replace(/"/g, '""')}"`,
+        `"${(item.branch || "").replace(/"/g, '""')}"`,
+        `"${(item.speciality || "").replace(/"/g, '""')}"`,
+        item.rating,
+        item.review,
+        item.googleSearchMobile,
+        item.googleSearchDesktop,
+        item.googleMapsMobile,
+        item.googleMapsDesktop,
+        item.directions,
+        item.websiteClicks,
+        item.calls,
+        `"${(item.department || "").replace(/"/g, '""')}"`
+      ].join(","))
+    ];
+
+    const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Manipal_Insights_Data_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   if (!mounted || loading) {
@@ -910,6 +877,10 @@ const Index = () => {
                 <DropdownMenuItem onClick={handleExport} className="cursor-pointer gap-2">
                   <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
                   Download Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportCSV} className="cursor-pointer gap-2">
+                  <Download className="h-4 w-4 text-blue-600" />
+                  Download CSV
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleDownloadPDF} className="cursor-pointer gap-2">
                   <FileText className="h-4 w-4 text-rose-600" />
