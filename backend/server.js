@@ -247,7 +247,38 @@ const getRequestEmailTemplate = (content, title = "GMB Request Management") => `
         <title>${title}</title>
         <style>
             .btn-primary:hover {
-                background: #217a74 !important;
+                background: #19615c !important;
+            }
+            .data-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin: 16px 0;
+                font-size: 14px;
+            }
+            .data-table th {
+                text-align: left;
+                padding: 9px 12px;
+                color: #4b5563;
+                background-color: #f9fafb;
+                border-bottom: 1px solid #e5e7eb;
+                width: 140px;
+                font-weight: 600;
+            }
+            .data-table td {
+                padding: 9px 12px;
+                border-bottom: 1px solid #e5e7eb;
+                color: #1f2937;
+            }
+            .btn-primary {
+                display: inline-block;
+                background-color: #217a74;
+                color: #ffffff !important;
+                padding: 12px 28px;
+                font-size: 14px;
+                font-weight: 600;
+                text-decoration: none;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(33, 122, 116, 0.2);
             }
         </style>
     </head>
@@ -293,6 +324,285 @@ const getRequestEmailTemplate = (content, title = "GMB Request Management") => `
     </body>
     </html>
 `;
+
+// ==========================================
+// CLUSTER LEVEL ACCESS & NOTIFICATION HELPERS
+// ==========================================
+
+/**
+ * Resolves the parent cluster name for a given branch and cluster input.
+ * If cluster is missing or empty, looks up the branch in the manipalLocations collection.
+ */
+const resolveClusterForBranch = async (cluster, branch) => {
+    if (cluster && typeof cluster === 'string' && cluster.trim()) {
+        return cluster.trim();
+    }
+    if (branch && typeof branch === 'string' && branch.trim()) {
+        try {
+            const branchRegex = new RegExp(`^${branch.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+            // Try User first as User.Branch -> User.Cluster is the most accurate current access mapping
+            const userBranch = await User.findOne({ Branch: branchRegex, Cluster: { $exists: true, $ne: '' } });
+            if (userBranch && userBranch.Cluster) {
+                return userBranch.Cluster.trim();
+            }
+            // Fallback to latest Location record
+            const loc = await Location.findOne({ "Unit Name": branchRegex }).sort({ Date: -1 });
+            if (loc && loc.Cluster) {
+                return loc.Cluster.trim();
+            }
+        } catch (e) {
+            console.warn(`[CLUSTER_NOTIFY] Failed to lookup cluster for branch "${branch}":`, e.message);
+        }
+    }
+    return null;
+};
+
+/**
+ * Retrieves all active users who possess Cluster-level access for a specific cluster.
+ * STRICT CLUSTER ISOLATION:
+ * - Only queries users with user: "Cluster" in `users` collection or role/accessScope: "Cluster" in `manipalcorporate`.
+ * - Matches the specific cluster name (case-insensitive).
+ * - Strictly excludes users from any other clusters or non-cluster roles.
+ *
+ * @param {string} clusterName - e.g. "South", "North", "East", "West", "South-East"
+ * @returns {Promise<Array<{ name: string, email: string }>>}
+ */
+const getClusterAccessUsers = async (clusterName) => {
+    if (!clusterName || typeof clusterName !== 'string' || !clusterName.trim()) {
+        return [];
+    }
+
+    const cleanCluster = clusterName.trim();
+    const clusterRegex = new RegExp(`^${cleanCluster.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+    const recipientsMap = new Map();
+
+    try {
+        // 1. Query dashboard users in 'users' collection with role 'Cluster' and matching Cluster
+        const clusterUsers = await User.find({
+            user: { $regex: /^cluster$/i },
+            Cluster: clusterRegex
+        }, { Name: 1, user: 1, mail: 1, orgEmail: 1, Cluster: 1 });
+
+        for (const u of clusterUsers) {
+            const email = (u.orgEmail || u.mail || '').trim().toLowerCase();
+            if (email && email.includes('@')) {
+                if (!recipientsMap.has(email)) {
+                    recipientsMap.set(email, {
+                        name: u.Name || u.user || 'Cluster Manager',
+                        email: email
+                    });
+                }
+            }
+        }
+
+        // 2. Query corporate contacts in 'manipalcorporate' collection with role/accessScope 'Cluster'
+        const corporateUsers = await ManipalCorporate.find({
+            isActive: { $ne: false },
+            $or: [
+                { role: { $regex: /^cluster$/i } },
+                { accessScope: { $regex: /^cluster$/i } }
+            ],
+            cluster: clusterRegex
+        });
+
+        for (const c of corporateUsers) {
+            const email = (c.email || '').trim().toLowerCase();
+            if (email && email.includes('@')) {
+                if (!recipientsMap.has(email)) {
+                    recipientsMap.set(email, {
+                        name: c.name || 'Cluster Head',
+                        email: email
+                    });
+                }
+            }
+        }
+    } catch (err) {
+        console.error(`[CLUSTER_NOTIFY] Error querying cluster users for cluster "${cleanCluster}":`, err);
+    }
+
+    return Array.from(recipientsMap.values());
+};
+
+/**
+ * Sends email notifications to users holding Cluster-level access for the parent cluster
+ * of the branch where a request event occurred.
+ *
+ * Supported event types:
+ * - 'RAISED': New request created for branch
+ * - 'TRANSFERRED': Request reassigned/transferred to another owner
+ * - 'STATUS_CHANGED': Request status changed (e.g. In Progress, Completed, Closed, etc.)
+ * - 'ACTIVITY': Any comments, remarks, or notes logged on the request
+ *
+ * @param {Object} options
+ * @param {Object} options.requestDoc - Mongoose document of the request/ticket
+ * @param {'RAISED'|'TRANSFERRED'|'STATUS_CHANGED'|'ACTIVITY'} options.eventType
+ * @param {string} [options.actorName] - Name of user who performed the action
+ * @param {string} [options.actorEmail] - Email of user who performed the action (filtered out to avoid self-spam)
+ * @param {Object} [options.details] - Extra details (e.g. newStatus, prevAssignee, newAssignee, remarks)
+ * @param {Object} [options.req] - Express request object for building base URLs
+ */
+const notifyClusterMembers = async ({ requestDoc, eventType, actorName = 'System', actorEmail = null, details = {}, req = null }) => {
+    try {
+        if (!requestDoc) return;
+
+        const branchName = requestDoc.branch || 'Unit';
+        const targetCluster = await resolveClusterForBranch(requestDoc.cluster, branchName);
+
+        if (!targetCluster) {
+            console.warn(`[CLUSTER_NOTIFY] Skipping notification: No valid cluster resolved for request ${requestDoc.requestId || requestDoc.ticketId} (Branch: "${branchName}")`);
+            return;
+        }
+
+        // Fetch strictly only cluster-level users for targetCluster
+        const clusterMembers = await getClusterAccessUsers(targetCluster);
+        if (!clusterMembers || clusterMembers.length === 0) {
+            console.log(`[CLUSTER_NOTIFY] No cluster-level recipients found for cluster "${targetCluster}"`);
+            return;
+        }
+
+        const reqId = requestDoc.requestId || requestDoc.ticketId || 'REQ';
+        const actionUrl = getRequestDetailsUrl(req, reqId);
+        const normalizedActorEmail = (actorEmail || '').trim().toLowerCase();
+
+        // Exclude actor to avoid unnecessary duplicate self-notifications
+        const targetRecipients = clusterMembers.filter(m => {
+            if (normalizedActorEmail && m.email.toLowerCase() === normalizedActorEmail) {
+                return false;
+            }
+            return true;
+        });
+
+        if (targetRecipients.length === 0) {
+            return;
+        }
+
+        let emailSubject = '';
+        let emailHeading = '';
+        let emailHtml = '';
+
+        if (eventType === 'RAISED') {
+            emailSubject = `[Cluster Alert] New Request Raised: ${reqId} - ${branchName} (${targetCluster})`;
+            emailHeading = `New GMB Request Raised - ${branchName}`;
+            const content = `
+                <div style="margin-bottom: 16px;">
+                    <span style="background-color: #e6fffa; color: #217a74; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #b2f5ea;">Cluster Level Alert (${targetCluster})</span>
+                </div>
+                <h2 style="color: #111827; margin-top: 0; font-size: 20px; font-weight: 700;">${emailHeading}</h2>
+                <p style="font-size: 15px; color: #4b5563;">
+                    Hello Cluster Team,<br/><br/>
+                    A new GMB operational request <strong style="color: #217a74;">${reqId}</strong> has been raised for branch <strong>${branchName}</strong> under your <strong>${targetCluster} Cluster</strong>.
+                </p>
+                <table class="data-table" style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px;">
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb; width: 140px;">Request ID:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;"><strong style="color: #217a74;">${reqId}</strong></td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Branch:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;"><strong>${branchName}</strong></td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Cluster:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;"><strong>${targetCluster}</strong></td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Category:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;">${requestDoc.category || 'Operational'}</td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Request Type:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;">${requestDoc.ticketType || requestDoc.requestType || 'N/A'}</td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Raised By:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;">${requestDoc.raisedBy?.name || actorName} (${requestDoc.raisedBy?.email || ''})</td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Assigned To:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;">${requestDoc.assignedTo?.name || 'Unassigned'} (${requestDoc.assignedTo?.email || ''})</td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Status:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;"><strong style="color: #217a74;">${requestDoc.status || 'Open'}</strong></td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Target Due Date:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;">${requestDoc.dueDate ? new Date(requestDoc.dueDate).toDateString() : 'N/A'}</td></tr>
+                    ${requestDoc.description ? `<tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Description:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;">${requestDoc.description}</td></tr>` : ''}
+                </table>
+                <div style="text-align: center; margin: 30px 0 10px;">
+                    <a href="${actionUrl}" class="btn-primary" style="display: inline-block; background-color: #217a74; color: #ffffff; padding: 12px 28px; font-size: 14px; font-weight: 600; text-decoration: none; border-radius: 8px;">View Request in Dashboard</a>
+                </div>
+            `;
+            emailHtml = getRequestEmailTemplate(content, `[Cluster Alert] New Request: ${reqId}`);
+        } else if (eventType === 'TRANSFERRED') {
+            emailSubject = `[Cluster Alert] Request Reassigned: ${reqId} - ${branchName} (${targetCluster})`;
+            emailHeading = `Request Reassigned / Transferred - ${branchName}`;
+            const prevAssigneeStr = details.prevAssignee?.name ? `${details.prevAssignee.name} (${details.prevAssignee.email || ''})` : 'Previous Assignee';
+            const newAssigneeStr = details.newAssignee?.name ? `${details.newAssignee.name} (${details.newAssignee.email || ''})` : 'New Assignee';
+            const content = `
+                <div style="margin-bottom: 16px;">
+                    <span style="background-color: #e6fffa; color: #217a74; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #b2f5ea;">Cluster Level Alert (${targetCluster})</span>
+                </div>
+                <h2 style="color: #111827; margin-top: 0; font-size: 20px; font-weight: 700;">${emailHeading}</h2>
+                <p style="font-size: 15px; color: #4b5563;">
+                    Hello Cluster Team,<br/><br/>
+                    GMB operational request <strong style="color: #217a74;">${reqId}</strong> for branch <strong>${branchName}</strong> under your <strong>${targetCluster} Cluster</strong> has been reassigned to a new owner by <strong>${actorName}</strong>.
+                </p>
+                <table class="data-table" style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px;">
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb; width: 140px;">Request ID:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;"><strong style="color: #217a74;">${reqId}</strong></td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Branch:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;"><strong>${branchName}</strong></td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Cluster:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;"><strong>${targetCluster}</strong></td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Previous Assignee:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;">${prevAssigneeStr}</td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">New Assignee:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;"><strong style="color: #217a74;">${newAssigneeStr}</strong></td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Current Status:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;"><strong style="color: #217a74;">${requestDoc.status}</strong></td></tr>
+                    ${details.remarks ? `<tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Remarks:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;">${details.remarks}</td></tr>` : ''}
+                </table>
+                <div style="text-align: center; margin: 30px 0 10px;">
+                    <a href="${actionUrl}" class="btn-primary" style="display: inline-block; background-color: #217a74; color: #ffffff; padding: 12px 28px; font-size: 14px; font-weight: 600; text-decoration: none; border-radius: 8px;">View Request in Dashboard</a>
+                </div>
+            `;
+            emailHtml = getRequestEmailTemplate(content, `[Cluster Alert] Request Reassigned: ${reqId}`);
+        } else if (eventType === 'STATUS_CHANGED') {
+            const newStatusStr = details.newStatus || requestDoc.status;
+            emailSubject = `[Cluster Alert] Status Update (${newStatusStr}): ${reqId} - ${branchName} (${targetCluster})`;
+            emailHeading = `Request Status Changed to ${newStatusStr} - ${branchName}`;
+            const content = `
+                <div style="margin-bottom: 16px;">
+                    <span style="background-color: #e6fffa; color: #217a74; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #b2f5ea;">Cluster Level Alert (${targetCluster})</span>
+                </div>
+                <h2 style="color: #111827; margin-top: 0; font-size: 20px; font-weight: 700;">${emailHeading}</h2>
+                <p style="font-size: 15px; color: #4b5563;">
+                    Hello Cluster Team,<br/><br/>
+                    The status of GMB request <strong style="color: #217a74;">${reqId}</strong> for branch <strong>${branchName}</strong> under your <strong>${targetCluster} Cluster</strong> has been updated to <strong style="color: #111827;">${newStatusStr}</strong> by <strong>${actorName}</strong>.
+                </p>
+                <table class="data-table" style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px;">
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb; width: 140px;">Request ID:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;"><strong style="color: #217a74;">${reqId}</strong></td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Branch:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;"><strong>${branchName}</strong></td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Cluster:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;"><strong>${targetCluster}</strong></td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Updated Status:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;"><strong style="color: #217a74;">${newStatusStr}</strong></td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Assigned To:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;">${requestDoc.assignedTo?.name || 'N/A'} (${requestDoc.assignedTo?.email || ''})</td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Updated By:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;">${actorName}</td></tr>
+                    ${details.remarks ? `<tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Remarks:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;">${details.remarks}</td></tr>` : ''}
+                </table>
+                <div style="text-align: center; margin: 30px 0 10px;">
+                    <a href="${actionUrl}" class="btn-primary" style="display: inline-block; background-color: #217a74; color: #ffffff; padding: 12px 28px; font-size: 14px; font-weight: 600; text-decoration: none; border-radius: 8px;">View Request in Dashboard</a>
+                </div>
+            `;
+            emailHtml = getRequestEmailTemplate(content, `[Cluster Alert] Status Update: ${reqId}`);
+        } else {
+            // General ACTIVITY / COMMENT
+            emailSubject = `[Cluster Alert] New Activity: ${reqId} - ${branchName} (${targetCluster})`;
+            emailHeading = `New Activity on Request - ${branchName}`;
+            const actionLabel = details.action || 'Comment/Log';
+            const content = `
+                <div style="margin-bottom: 16px;">
+                    <span style="background-color: #e6fffa; color: #217a74; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #b2f5ea;">Cluster Level Alert (${targetCluster})</span>
+                </div>
+                <h2 style="color: #111827; margin-top: 0; font-size: 20px; font-weight: 700;">${emailHeading}</h2>
+                <p style="font-size: 15px; color: #4b5563;">
+                    Hello Cluster Team,<br/><br/>
+                    New activity has been logged on GMB request <strong style="color: #217a74;">${reqId}</strong> for branch <strong>${branchName}</strong> under your <strong>${targetCluster} Cluster</strong> by <strong>${actorName}</strong>:
+                </p>
+                ${details.remarks ? `<blockquote style="margin: 14px 0; padding: 12px 16px; background: #f9fafb; border-left: 4px solid #217a74; font-style: italic; color: #374151; font-size: 14px;">${details.remarks}</blockquote>` : ''}
+                <table class="data-table" style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px;">
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb; width: 140px;">Request ID:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;"><strong style="color: #217a74;">${reqId}</strong></td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Branch:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;"><strong>${branchName}</strong></td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Cluster:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;"><strong>${targetCluster}</strong></td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Action:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;">${actionLabel}</td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Performed By:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;">${actorName}</td></tr>
+                    <tr><th style="text-align: left; padding: 9px 12px; color: #4b5563; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">Current Status:</th><td style="padding: 9px 12px; border-bottom: 1px solid #e5e7eb;"><strong style="color: #217a74;">${requestDoc.status}</strong></td></tr>
+                </table>
+                <div style="text-align: center; margin: 30px 0 10px;">
+                    <a href="${actionUrl}" class="btn-primary" style="display: inline-block; background-color: #217a74; color: #ffffff; padding: 12px 28px; font-size: 14px; font-weight: 600; text-decoration: none; border-radius: 8px;">View Request Updates</a>
+                </div>
+            `;
+            emailHtml = getRequestEmailTemplate(content, `[Cluster Alert] Request Activity: ${reqId}`);
+        }
+
+        for (const recipient of targetRecipients) {
+            await sendEmail(recipient.email, emailSubject, emailHtml);
+        }
+
+        console.log(`[CLUSTER_NOTIFY] Successfully sent ${eventType} notification to ${targetRecipients.length} member(s) in "${targetCluster}" cluster for request ${reqId} (${branchName})`);
+    } catch (err) {
+        console.error(`[CLUSTER_NOTIFY] Error dispatching cluster notification for event "${eventType}":`, err);
+    }
+};
 
 // Routes
 
@@ -1616,6 +1926,21 @@ app.post('/api/multiplier/tickets', uploadTicket.fields([
         `);
         await sendEmail(targetUserEmail, `Action Required: GMB Optimization Request - ${ticketId} - ${branch}`, spocMailHtml);
         
+        // Notify Cluster-level users for this branch's cluster
+        notifyClusterMembers({
+            requestDoc: ticket,
+            eventType: 'RAISED',
+            actorName: multiplierName,
+            actorEmail: multiplierEmail,
+            details: {
+                category,
+                requestType: ticketType,
+                description,
+                dueDate
+            },
+            req
+        }).catch(err => console.error("[CLUSTER_NOTIFY] Failed in multiplier ticket:", err));
+
         res.json({ success: true, data: ticket });
     } catch (error) {
         console.error("Error creating multiplier ticket:", error);
@@ -1909,6 +2234,21 @@ const createRequestHandler = async (req, res) => {
         if (GLOBAL_NOTIFY_EMAIL) {
             await sendEmail(GLOBAL_NOTIFY_EMAIL, `New GMB Request Notification: ${requestId} - ${branch} - ${finalRequestType}`, assigneeMailHtml);
         }
+
+        // Notify Cluster-level users for this branch's cluster
+        notifyClusterMembers({
+            requestDoc,
+            eventType: 'RAISED',
+            actorName: raisedByName,
+            actorEmail: raisedByEmail,
+            details: {
+                category,
+                requestType: finalRequestType,
+                description,
+                dueDate
+            },
+            req
+        }).catch(err => console.error("[CLUSTER_NOTIFY] Failed in createRequestHandler:", err));
         
         res.json({ success: true, data: requestDoc });
     } catch (error) {
@@ -2074,6 +2414,23 @@ const addRequestLogHandler = async (req, res) => {
             }
         }
         
+        // Notify Cluster-level users for this branch's cluster
+        const isStatusChange = (action === 'Status Change' && newValue);
+        notifyClusterMembers({
+            requestDoc,
+            eventType: isStatusChange ? 'STATUS_CHANGED' : 'ACTIVITY',
+            actorName: user || 'User',
+            actorEmail: email,
+            details: {
+                action: action || 'Activity',
+                prevStatus: prevValue || requestDoc.status,
+                newStatus: newValue,
+                remarks,
+                isInternal: isInternal === 'true' || isInternal === true
+            },
+            req
+        }).catch(err => console.error("[CLUSTER_NOTIFY] Failed in addRequestLogHandler:", err));
+
         res.json({ success: true, data: requestDoc });
     } catch (error) {
         console.error("Error adding request log:", error);
@@ -2190,6 +2547,21 @@ const transferRequestHandler = async (req, res) => {
         if (GLOBAL_NOTIFY_EMAIL) {
             await sendEmail(GLOBAL_NOTIFY_EMAIL, `Request Assigned (Transfer): ${reqIdStr} - ${branchName}`, notifyNewHtml);
         }
+
+        // Notify Cluster-level users for this branch's cluster
+        notifyClusterMembers({
+            requestDoc,
+            eventType: 'TRANSFERRED',
+            actorName: transferByName || "System",
+            actorEmail: null,
+            details: {
+                prevAssignee,
+                newAssignee: { name: newAssignee.name, email: newAssignee.email },
+                remarks: remarks || `Request transferred from ${prevAssignee.name} to ${newAssignee.name}.`,
+                transferByName: transferByName || "System"
+            },
+            req
+        }).catch(err => console.error("[CLUSTER_NOTIFY] Failed in transferRequestHandler:", err));
         
         res.json({ success: true, data: requestDoc });
     } catch (error) {
@@ -2258,6 +2630,20 @@ const remindRequestHandler = async (req, res) => {
             timestamp: new Date()
         });
         await requestDoc.save();
+
+        // Notify Cluster-level users for this branch's cluster
+        notifyClusterMembers({
+            requestDoc,
+            eventType: 'ACTIVITY',
+            actorName: senderName || "System",
+            actorEmail: null,
+            details: {
+                action: "SLA Reminder",
+                remarks: `Manual SLA Reminder triggered. Email and dashboard notification sent to assignee: ${requestDoc.assignedTo.name}.`,
+                isInternal: false
+            },
+            req
+        }).catch(err => console.error("[CLUSTER_NOTIFY] Failed in remindRequestHandler:", err));
 
         res.json({ success: true, data: requestDoc });
     } catch (error) {
