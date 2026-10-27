@@ -84,11 +84,14 @@ const DoctorDetails = () => {
     const params = useParams();
     const businessName = params['*'] || params.businessName;
     const navigate = useNavigate();
-    const { doctors, insights, loading: globalLoading } = useMongoData();
+    const { doctors, insights, loading: globalLoading, fetchDoctorDetails } = useMongoData();
     const [profile, setProfile] = useState<DoctorData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [mounted, setMounted] = useState(false);
     const [monthlyInsights, setMonthlyInsights] = useState<InsightData[]>([]);
+    // Rows straight from /api/doctor-details, where the last 6 months are live Google data.
+    // They win over the ones derived from the global monthly collection below.
+    const [serverInsights, setServerInsights] = useState<InsightData[] | null>(null);
     const [keywords, setKeywords] = useState<LabelData[]>([]);
     const [competitors, setCompetitors] = useState<string[]>([]);
     const [reviewData, setReviewData] = useState<ReviewData | null>(null);
@@ -228,8 +231,34 @@ const DoctorDetails = () => {
         }
     }, [businessName, doctors, insights, globalLoading, user, navigate, selectedYear]);
 
+    // Monthly insights for this one profile, fetched from the server so the last 6 months
+    // come from the live Google data rather than the monthly upload.
+    useEffect(() => {
+        if (!businessName) return;
+        let cancelled = false;
+        setServerInsights(null);
+        fetchDoctorDetails(decodeURIComponent(businessName).trim())
+            .then((res) => {
+                if (cancelled || !res?.monthlyInsights?.length) return;
+                const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                const rows = [...res.monthlyInsights].sort((a, b) => months.indexOf(a.month) - months.indexOf(b.month));
+                setServerInsights(rows);
+
+                const years = [...new Set(rows.map((r) => r.year).filter(Boolean))].sort((a, b) => parseInt(b) - parseInt(a));
+                if (years.length) {
+                    setAvailableYears(years);
+                    setSelectedYear((current) => (years.includes(current) ? current : years[0]));
+                }
+            })
+            .catch((err) => console.error("Error loading monthly insights:", err));
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [businessName]);
+
+    const displayedInsights = serverInsights ?? monthlyInsights;
+
     // Prepare chart data (filtered by year)
-    const filteredInsights = monthlyInsights.filter((item) => {
+    const filteredInsights = displayedInsights.filter((item) => {
         const itemYear = item.year || (item.date ? String(parseDateString(item.date).getFullYear()) : "2024");
         return itemYear === selectedYear;
     });
@@ -393,9 +422,9 @@ const DoctorDetails = () => {
     };
 
     const handleDownloadExcel = () => {
-        if (!monthlyInsights.length) return;
+        if (!displayedInsights.length) return;
 
-        const worksheet = XLSX.utils.json_to_sheet(monthlyInsights.map(item => ({
+        const worksheet = XLSX.utils.json_to_sheet(displayedInsights.map(item => ({
             Month: item.month,
             "Search Mobile": item.googleSearchMobile,
             "Search Desktop": item.googleSearchDesktop,
@@ -1015,7 +1044,7 @@ const DoctorDetails = () => {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {monthlyInsights.map((item, idx) => (
+                                    {displayedInsights.map((item, idx) => (
                                         <TableRow key={idx}>
                                             <TableCell className="font-medium">{item.month}</TableCell>
                                             <TableCell className="text-center">{item.googleSearchMobile}</TableCell>

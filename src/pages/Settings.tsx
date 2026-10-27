@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { GoogleConnectionCard } from "@/components/settings/GoogleConnectionCard";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -326,6 +327,10 @@ const Settings = () => {
             </div>
           </CardContent>
         </Card>
+
+        {/* Google connection for the realtime dashboard. Not gated on role: the same person can
+            hold several role rows in `users`, and Google's own consent screen is the real control. */}
+        <GoogleConnectionCard userEmail={currentUser.email} />
 
         <div className="grid md:grid-cols-2 gap-8">
           {/* Personalization Section */}

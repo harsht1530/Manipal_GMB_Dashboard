@@ -619,9 +619,9 @@ export const LocationsOverview = ({ data, apiInsights = [], selectedMonths, sele
           </div>
         </CardHeader>
         <CardContent>
-          <div className="max-h-[300px] overflow-auto scrollbar-hide">
+          <div className="overflow-auto scrollbar-hide min-h-[320px] max-h-[55vh] sm:max-h-[60vh] lg:max-h-[calc(100vh_-_380px)] 2xl:max-h-[calc(100vh_-_340px)]">
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-10 bg-card">
                 <TableRow>
                   <TableHead>Unit Name</TableHead>
                   <TableHead>Cluster</TableHead>

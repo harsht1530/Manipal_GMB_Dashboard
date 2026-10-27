@@ -24,6 +24,9 @@ const path = require('path');
 const fs = require('fs');
 const cron = require('node-cron');
 const axios = require('axios');
+const { router: realtimeRouter } = require('./realtime/routes');
+const { runSync } = require('./realtime/sync');
+const { overlayRealtimeMonths } = require('./realtime/profile-insights');
 
 dotenv.config();
 
@@ -1086,7 +1089,10 @@ app.get('/api/doctor-details/:name', async (req, res) => {
             "Business name": { $regex: new RegExp(`^${escapedTargetName}$`, 'i') }
         });
         const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        const monthlyInsights = insights.sort((a, b) => months.indexOf(a.Month) - months.indexOf(b.Month));
+        const sorted = insights.sort((a, b) => months.indexOf(a.Month) - months.indexOf(b.Month));
+        // Last 6 months come from the live Google data, matched on the profile's location id;
+        // older months are left exactly as loaded.
+        const monthlyInsights = await overlayRealtimeMonths(profile, sorted);
         res.json({
             success: true, data: {
                 profile,
@@ -2826,6 +2832,22 @@ cron.schedule('0 0 * * *', async () => {
         console.error("Cron SLA Checker Error:", error);
     }
 });
+
+// ──────────────── Realtime (live Google Business Profile data) ────────────────
+app.use('/api/realtime', realtimeRouter);
+
+// Twice a day: 07:00 and 19:00 India time. Each run re-reads the trailing days of
+// performance data and refreshes every profile's verification status.
+const REALTIME_TZ = process.env.REALTIME_SYNC_TZ || 'Asia/Kolkata';
+cron.schedule('0 7,19 * * *', async () => {
+    console.log(`[realtime] scheduled sync starting (${new Date().toISOString()})`);
+    try {
+        const result = await runSync({ mode: 'incremental', trigger: 'schedule' });
+        if (!result.started) console.log(`[realtime] scheduled sync skipped: ${result.reason}`);
+    } catch (error) {
+        console.error('[realtime] scheduled sync error:', error);
+    }
+}, { timezone: REALTIME_TZ });
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

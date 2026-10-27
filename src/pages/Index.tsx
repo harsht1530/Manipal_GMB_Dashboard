@@ -21,6 +21,10 @@ import html2canvas from "html2canvas";
 
 import { useAuth } from "@/contexts/AuthContext";
 
+// Only Profile Verification Status is shown for now; flip this to true to bring the rest of
+// the analytics dashboard (metrics, charts, tables, export) back.
+const SHOW_FULL_DASHBOARD = false;
+
 const Index = () => {
   const { user } = useAuth();
   const [selectedCluster, setSelectedCluster] = useState<string[]>([]);
@@ -866,6 +870,7 @@ const Index = () => {
               {showFilters ? 'Hide Filters' : 'Show Filters'}
             </Button>
             
+            {SHOW_FULL_DASHBOARD && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button disabled={isGeneratingPDF} className="gap-2 bg-primary hover:bg-primary/90">
@@ -888,6 +893,7 @@ const Index = () => {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            )}
           </div>
         </div>
 
@@ -923,6 +929,8 @@ const Index = () => {
           />
         </div>
 
+        {SHOW_FULL_DASHBOARD && (
+        <>
         {/* Metrics Grid - 2 rows of 4 cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
           <MetricCard title="Search Mobile" value={metrics.googleSearchMobile} change={dynamicMetrics.changes.googleSearchMobile} icon={Smartphone} delay={0} />
@@ -963,6 +971,8 @@ const Index = () => {
             ratingDistribution={reviewStats.ratingDistribution}
           />
         </div>
+        </>
+        )}
       </div>
     </DashboardLayout>
   );

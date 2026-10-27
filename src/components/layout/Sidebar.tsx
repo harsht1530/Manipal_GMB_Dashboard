@@ -22,6 +22,7 @@ import {
   PlusCircle,
   ShieldAlert,
   Clock,
+  RadioTower,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SidebarFilters } from "@/components/dashboard/SidebarFilters";
@@ -29,13 +30,14 @@ import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/contexts/AuthContext";
 
 const navItems = [
+  { icon: RadioTower, label: "Realtime", path: "/realtime" },
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
-  { icon: GitCompare, label: "Comparison", path: "/comparison" },
+  // { icon: GitCompare, label: "Comparison", path: "/comparison" },
   { icon: Users, label: "Profiles", path: "/doctors" },
   { icon: Building2, label: "Units", path: "/branches" },
   { icon: Phone, label: "Phone", path: "/phone" },
   { icon: Target, label: "Keywords", path: "/keywords" },
-  { icon: Search, label: "Search Perf.", path: "/search-performance" },
+  // { icon: Search, label: "Search Perf.", path: "/search-performance" },
   // { icon: Target, label: "Monthly Optimisation", path: "/optimizations" },
   // { icon: FileText, label: "GBP Postings", path: "/postings" },
   { icon: FileText, label: "Postings", path: "/raising-case" },
