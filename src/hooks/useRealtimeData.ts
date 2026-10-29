@@ -163,16 +163,21 @@ export interface ExportRow extends ProfileRow {
   googleUpdateFields?: string[];
   googleOpenStatus?: string | null;
   lastSyncedAt?: string;
-  performance: MetricTotals;
-  monthsCovered: number;
-  months: ExportMonth[];
+  /** Absent on a business-details-only export. */
+  performance?: MetricTotals;
+  monthsCovered?: number;
+  months?: ExportMonth[];
 }
 
 export interface ExportPayload {
-  /** True when no date range was given and the whole stored history was summed. */
+  /** False for a business-details-only export: rows then carry no performance. */
+  insights: boolean;
+  /** True when no period was given and the whole stored history was summed. */
   overall: boolean;
   range: { from: string; to: string } | null;
   monthsCovered: { first: string; last: string } | null;
+  /** Every month the window spans, so month columns line up across profiles. */
+  window?: { ym: string; label: string }[];
   generatedAt: string;
   rows: ExportRow[];
 }
@@ -296,15 +301,18 @@ export const fetchRealtimeProfiles = (
  * limit the performance to that range; leave them out for the whole stored history.
  */
 export const fetchRealtimeExport = (
-  filters: RealtimeFilters & { status?: string } = {}
+  filters: RealtimeFilters & { status?: string; insights?: boolean } = {}
 ) => {
   const params = new URLSearchParams();
   if (filters.clusters?.length) params.set("cluster", filters.clusters.join(","));
   if (filters.units?.length) params.set("unit", filters.units.join(","));
   if (filters.status) params.set("status", filters.status);
-  if (filters.from && filters.to) {
+  if (filters.insights === false) params.set("insights", "0");
+  else if (filters.from && filters.to) {
     params.set("from", filters.from);
     params.set("to", filters.to);
+  } else if (filters.months) {
+    params.set("months", String(filters.months));
   }
   const qs = params.toString();
   return get<ExportPayload>(`/export${qs ? `?${qs}` : ""}`);

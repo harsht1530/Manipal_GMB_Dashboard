@@ -629,20 +629,45 @@ router.get('/profiles', async (req, res) => {
 });
 
 /**
- * Everything the realtime collections hold about the selected profiles, in one payload: the
- * full profile record plus its performance. With no `from`/`to` the whole stored history is
- * summed ("overall"); with a range, only the days inside it - the same day-level filtering the
- * charts use, so an export can always be reconciled against what is on screen.
+ * Everything the realtime collections hold about the selected profiles.
+ *
+ * `insights=0` returns the profile records alone - what the tiles with no performance of their
+ * own (duplicates, closed, missing store codes) export. Otherwise performance is included for
+ * `months=1|3|6`, or for an explicit `from`/`to` range, or - with neither - the whole stored
+ * history. Day-level filtering is the same the charts use, so an export can always be
+ * reconciled against what is on screen.
  */
 router.get('/export', async (req, res) => {
   try {
     const match = withStatus(profileMatch(req), req.query.status);
-    const hasRange = !!(req.query.from && req.query.to);
-    const range = hasRange ? rangeOf(req) : null;
+    const wantsInsights = String(req.query.insights ?? '1') !== '0';
+    const hasRange = !!((req.query.from && req.query.to) || req.query.months);
+    const range = wantsInsights && hasRange ? rangeOf(req) : null;
 
     const profiles = await RealtimeProfile.find(match).sort({ unitName: 1, title: 1 }).lean();
-    if (!profiles.length) {
-      return res.json({ success: true, data: { range: null, overall: !hasRange, generatedAt: new Date(), rows: [] } });
+    const emptyPayload = {
+      insights: wantsInsights,
+      overall: wantsInsights && !hasRange,
+      range: range ? { from: range.fromIso, to: range.toIso } : null,
+      monthsCovered: null,
+      generatedAt: new Date(),
+      rows: [],
+    };
+    if (!profiles.length) return res.json({ success: true, data: emptyPayload });
+
+    // Business details only: no month aggregation at all, so these exports stay instant.
+    if (!wantsInsights) {
+      return res.json({
+        success: true,
+        data: {
+          ...emptyPayload,
+          rows: profiles.map((profile) => ({
+            ...profile,
+            verificationStatus: verificationLabel(profile),
+            tiles: tileFlags(profile),
+          })),
+        },
+      });
     }
 
     const locationIds = profiles.map((p) => p.locationId);
@@ -709,10 +734,25 @@ router.get('/export', async (req, res) => {
       };
     });
 
+    // Every month the window spans, so month-by-month columns line up across profiles even
+    // where one of them has no data for a month.
     const covered = monthRows.map((r) => r._id.ym).sort();
+    const spanned = new Set(covered);
+    if (range) {
+      const cursor = new Date(range.from.getFullYear(), range.from.getMonth(), 1);
+      const last = new Date(range.to.getFullYear(), range.to.getMonth(), 1);
+      while (cursor <= last) {
+        spanned.add(`${cursor.getFullYear()}-${pad(cursor.getMonth() + 1)}`);
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+    }
+    const window = [...spanned].sort().map((ym) => ({ ym, label: labelFor(ym) }));
+
     res.json({
       success: true,
       data: {
+        insights: true,
+        window,
         overall: !hasRange,
         range: range ? { from: range.fromIso, to: range.toIso } : null,
         monthsCovered: covered.length ? { first: covered[0], last: covered[covered.length - 1] } : null,
