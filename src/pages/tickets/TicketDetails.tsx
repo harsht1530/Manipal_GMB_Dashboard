@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/use-toast";
+import { MAX_ATTACHMENTS, capAttachments, attachmentLimitMessage } from "@/lib/attachments";
 import { 
   ArrowLeft, 
   Download, 
@@ -142,7 +143,12 @@ export default function TicketDetails() {
   // Log attachments helper
   const handleAttachmentsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      setLogAttachments(Array.from(e.target.files));
+      const { files, dropped } = capAttachments(e.target.files);
+      setLogAttachments(files);
+      const message = attachmentLimitMessage(dropped);
+      if (message) {
+        toast({ title: "Attachment limit", description: message, variant: "destructive" });
+      }
     }
   };
 
@@ -538,7 +544,7 @@ export default function TicketDetails() {
 
                   {/* Attach files to log */}
                   <div className="space-y-1.5">
-                    <Label htmlFor="log-files" className="font-semibold text-xs">Add File Attachments</Label>
+                    <Label htmlFor="log-files" className="font-semibold text-xs">Add File Attachments (up to {MAX_ATTACHMENTS})</Label>
                     <Input 
                       id="log-files" 
                       type="file" 

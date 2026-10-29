@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/components/ui/use-toast";
+import { MAX_ATTACHMENTS, capAttachments, attachmentLimitMessage } from "@/lib/attachments";
 import { 
   Download, 
   Upload, 
@@ -514,7 +515,12 @@ export default function RaiseTicket() {
 
   const handleAttachmentsUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      setAttachments(Array.from(e.target.files));
+      const { files, dropped } = capAttachments(e.target.files);
+      setAttachments(files);
+      const message = attachmentLimitMessage(dropped);
+      if (message) {
+        toast({ title: "Attachment limit", description: message, variant: "destructive" });
+      }
     }
   };
 
@@ -770,7 +776,7 @@ export default function RaiseTicket() {
 
                 {/* 7. Optional Attachments */}
                 <div className="space-y-1.5">
-                  <Label htmlFor="attachments" className="font-semibold text-sm">Additional Attachments (Screenshots, PDFs)</Label>
+                  <Label htmlFor="attachments" className="font-semibold text-sm">Additional Attachments (Screenshots, PDFs) <span className="font-normal text-muted-foreground">- up to {MAX_ATTACHMENTS}</span></Label>
                   <Input 
                     id="attachments" 
                     type="file" 

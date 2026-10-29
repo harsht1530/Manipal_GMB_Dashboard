@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/use-toast";
+import { MAX_ATTACHMENTS, capAttachments, attachmentLimitMessage } from "@/lib/attachments";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -63,7 +64,7 @@ export default function AdminTicketConsole() {
   const [comment, setComment] = useState("");
   const [isInternal, setIsInternal] = useState(false);
   const [sendEmail, setSendEmail] = useState(true);
-  const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[] | null>(null);
   const [submittingComment, setSubmittingComment] = useState(false);
   const [statusTransition, setStatusTransition] = useState<string>("");
 
@@ -256,6 +257,16 @@ export default function AdminTicketConsole() {
     setIsInternal(false);
     setSendEmail(true);
     setSelectedFiles(null);
+  };
+
+  // Trim the picked files to what the endpoint accepts before they are sent.
+  const handleFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { files, dropped } = capAttachments(e.target.files);
+    setSelectedFiles(files);
+    const message = attachmentLimitMessage(dropped);
+    if (message) {
+      toast({ title: "Attachment limit", description: message, variant: "destructive" });
+    }
   };
 
   // Submit comment / status change
@@ -791,12 +802,12 @@ export default function AdminTicketConsole() {
                         </div>
 
                         <div className="space-y-1.5">
-                          <Label htmlFor="files" className="text-xs font-semibold">Upload Supporting Files (Optional)</Label>
+                          <Label htmlFor="files" className="text-xs font-semibold">Upload Supporting Files (Optional, up to {MAX_ATTACHMENTS})</Label>
                           <Input
                             id="files"
                             type="file"
                             multiple
-                            onChange={e => setSelectedFiles(e.target.files)}
+                            onChange={handleFilesChange}
                             className="text-xs h-9 cursor-pointer"
                           />
                         </div>

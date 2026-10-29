@@ -2849,6 +2849,30 @@ cron.schedule('0 7,19 * * *', async () => {
     }
 }, { timezone: REALTIME_TZ });
 
+// ── Upload and error handling ───────────────────────────────────────────────
+// A multipart request carrying a file field a route does not declare - or more files than it
+// allows - used to reach Express's default handler: a bare "MulterError: Unexpected field"
+// stack in the log that named neither the route nor the field, and an HTML 500 on the wire
+// that the frontend could not parse. Now the log names both and the client gets the
+// { success, error } shape it already expects everywhere else.
+app.use((err, req, res, next) => {
+    if (err instanceof multer.MulterError) {
+        console.error(
+            `[upload] ${err.code} on ${req.method} ${req.originalUrl}` +
+            (err.field ? ` - field "${err.field}"` : '')
+        );
+        const message = err.code === 'LIMIT_UNEXPECTED_FILE'
+            ? `This route does not accept a file field named "${err.field}", or more than its limit were sent. Use "attachments" (up to 10), plus a single "excelTemplate" on the request forms that offer one.`
+            : err.message;
+        if (res.headersSent) return next(err);
+        return res.status(400).json({ success: false, error: message, code: err.code, field: err.field });
+    }
+
+    console.error(`[error] ${req.method} ${req.originalUrl}:`, err.stack || err.message || err);
+    if (res.headersSent) return next(err);
+    res.status(500).json({ success: false, error: err.message || 'Internal server error' });
+});
+
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });

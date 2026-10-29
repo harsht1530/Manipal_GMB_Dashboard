@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/components/ui/use-toast";
+import { MAX_ATTACHMENTS, capAttachments, attachmentLimitMessage } from "@/lib/attachments";
 import { useTickets } from "@/contexts/TicketContext";
 import { 
   Upload, 
@@ -129,7 +130,12 @@ export default function MultiplierRaiseRequest() {
   // Handle files
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      setAttachments(Array.from(e.target.files));
+      const { files, dropped } = capAttachments(e.target.files);
+      setAttachments(files);
+      const message = attachmentLimitMessage(dropped);
+      if (message) {
+        toast({ title: "Attachment limit", description: message, variant: "destructive" });
+      }
     }
   };
 
@@ -339,7 +345,7 @@ export default function MultiplierRaiseRequest() {
               <div className="space-y-2 text-left">
                 <Label htmlFor="attachments" className="text-xs font-bold flex items-center gap-1.5">
                   <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
-                  Supporting Files / Guidelines (Optional)
+                  Supporting Files / Guidelines (Optional, up to {MAX_ATTACHMENTS})
                 </Label>
                 <Input
                   id="attachments"
