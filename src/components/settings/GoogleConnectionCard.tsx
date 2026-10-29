@@ -107,10 +107,20 @@ export const GoogleConnectionCard = ({ userEmail }: { userEmail?: string }) => {
         {!connection.isLoading && data?.configured === false && (
           <div className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-700">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>
-              Google OAuth is not configured on the server. Set <code>GOOGLE_OAUTH_CLIENT_ID</code> and{" "}
-              <code>GOOGLE_OAUTH_CLIENT_SECRET</code> in the backend environment.
-            </span>
+            <div className="space-y-1.5">
+              <p>
+                Google OAuth is not configured on the server. Set <code>GOOGLE_OAUTH_CLIENT_ID</code> and{" "}
+                <code>GOOGLE_OAUTH_CLIENT_SECRET</code> in the backend <code>.env</code>, then restart it. Adding a
+                redirect URI in the Google Cloud console does not set these - they are read from the server itself.
+              </p>
+              {data?.redirectUri && (
+                <p className="text-xs">
+                  This server will use the redirect URI{" "}
+                  <code className="break-all">{data.redirectUri}</code> - it must be listed, exactly, under
+                  "Authorised redirect URIs" in the same Google Cloud OAuth client.
+                </p>
+              )}
+            </div>
           </div>
         )}
 
@@ -203,6 +213,16 @@ export const GoogleConnectionCard = ({ userEmail }: { userEmail?: string }) => {
               <div className="flex items-start gap-2 rounded-lg border border-rose-500/20 bg-rose-500/5 p-3 text-sm text-rose-600">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>Last sync failed: {data.sync.error}</span>
+              </div>
+            )}
+
+            {data.sync.status === "partial" && (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-700">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  {data.sync.error ||
+                    "The last sync finished, but Google was unavailable for some folders. They kept their previous data."}
+                </span>
               </div>
             )}
 

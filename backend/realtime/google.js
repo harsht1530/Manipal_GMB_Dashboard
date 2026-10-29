@@ -237,12 +237,19 @@ class GoogleClient {
       return data;
     } catch (err) {
       const status = err.response?.status;
-      const retriable = status === 429 || status === 500 || status === 503 || !status;
-      // Quota rejections get more patience than transient errors: the window is a full minute.
-      const maxAttempts = status === 429 ? 7 : 4;
+      const serverError = status === 500 || status === 502 || status === 503 || status === 504;
+      const retriable = status === 429 || serverError || !status;
+      // Quota rejections get a full minute's window. A 503 from the Business Information API is
+      // usually a brief outage on Google's side, but four tries inside 30s was not enough to
+      // ride it out - and one unlucky account used to fail the whole sync.
+      const maxAttempts = status === 429 ? 7 : serverError ? 8 : 4;
       if (retriable && attempt < maxAttempts) {
         const retryAfter = Number(err.response?.headers?.['retry-after']) * 1000;
-        const backoff = status === 429 ? Math.min(90000, 15000 * 2 ** attempt) : Math.min(30000, 2000 * 2 ** attempt);
+        const backoff = status === 429
+          ? Math.min(90000, 15000 * 2 ** attempt)
+          : serverError
+            ? Math.min(60000, 5000 * 2 ** attempt)
+            : Math.min(30000, 2000 * 2 ** attempt);
         await sleep((Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : backoff) + Math.floor(Math.random() * 1000));
         return this.request(url, params, attempt + 1);
       }

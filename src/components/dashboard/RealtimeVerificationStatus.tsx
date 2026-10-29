@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
-import { VerificationData, fetchRealtimeProfiles, RealtimeFilters } from "@/hooks/useRealtimeData";
+import { VerificationData, fetchRealtimeExport, RealtimeFilters } from "@/hooks/useRealtimeData";
 
 interface Props {
   data?: VerificationData;
@@ -151,30 +151,123 @@ export const RealtimeVerificationStatus = ({ data, loading, filters }: Props) =>
     [units, safePage]
   );
 
+  const yesNo = (value?: boolean) => (value ? "Yes" : "No");
+
+  /**
+   * Everything the realtime collections hold for the selected tile: the full profile record
+   * plus its performance. Performance covers the dashboard's date range when one is picked,
+   * and the whole stored history otherwise.
+   */
   const exportProfiles = async (status: string, label: string) => {
     try {
       setExporting(status || "all");
-      const { items } = await fetchRealtimeProfiles({ ...filters, status, limit: 5000 });
-      if (!items.length) {
+      const data = await fetchRealtimeExport({
+        clusters: filters?.clusters,
+        units: filters?.units,
+        from: filters?.from,
+        to: filters?.to,
+        status,
+      });
+      if (!data.rows.length) {
         toast.info(`No profiles to export for ${label}.`);
         return;
       }
-      const sheet = XLSX.utils.json_to_sheet(
-        items.map((item) => ({
-          "Business Name": item.title,
-          "Store Code": item.storeCode || "",
-          "Unit Name": item.unitName,
-          Cluster: item.cluster,
-          Status: item.statusType,
-          "Open Status": item.openStatus,
-          Phone: item.phone || "",
-          Website: item.website || "",
-          Address: item.address || "",
-          "Location ID": item.locationId,
+
+      const profileSheet = XLSX.utils.json_to_sheet(
+        data.rows.map((row) => ({
+          "Business Name": row.title || "",
+          "Store Code": row.storeCode || "",
+          "Primary Folder": row.unitName || "",
+          "All Folders": (row.folders || []).join(" | "),
+          Cluster: row.cluster || "",
+          Department: row.department || "",
+          "Primary Category": row.primaryCategory || "",
+          Labels: (row.labels || []).join(" | "),
+          // The single answer to "what is this profile's status", then one column per tile so
+          // any export can be reconciled against the numbers on screen.
+          "Verification Status": row.verificationStatus || row.statusType || "",
+          Verified: yesNo(row.tiles?.verified),
+          Unverified: yesNo(row.tiles?.unverified),
+          Duplicate: yesNo(row.tiles?.duplicate),
+          Suspended: yesNo(row.tiles?.suspended),
+          "Pending Review": yesNo(row.tiles?.pendingReview),
+          "Google Updates": yesNo(row.tiles?.googleUpdates),
+          "Temporarily Closed": yesNo(row.tiles?.temporarilyClosed),
+          "Permanently Closed": yesNo(row.tiles?.permanentlyClosed),
+          "Missing Store Code": yesNo(row.tiles?.missingStoreCode),
+          "Verification State": row.verificationState || "",
+          "Publish Status": row.publishStatus || "",
+          "Duplicate Of": row.duplicateOf || "",
+          "Open Status (Owner)": row.openStatus || "",
+          "Open Status (Google)": row.googleOpenStatus || "",
+          "Google Update Fields": (row.googleUpdateFields || []).join(" | "),
+          Phone: row.phone || "",
+          Website: row.website || "",
+          Address: row.address || "",
+          "Maps URL": row.mapsUri || "",
+          Account: row.accountName || "",
+          "Search Mobile": row.performance.mobileSearch,
+          "Search Desktop": row.performance.desktopSearch,
+          "Maps Mobile": row.performance.mobileMaps,
+          "Maps Desktop": row.performance.desktopMaps,
+          "Total Searches": row.performance.totalSearches,
+          "Total Maps": row.performance.totalMaps,
+          "Total Impressions": row.performance.totalImpressions,
+          Calls: row.performance.callClicks,
+          "Website Clicks": row.performance.websiteClicks,
+          Directions: row.performance.directionRequests,
+          "Total Interactions": row.performance.totalInteractions,
+          "Months With Data": row.monthsCovered,
+          "Location ID": row.locationId,
+          "Last Synced": row.lastSyncedAt ? new Date(row.lastSyncedAt).toLocaleString("en-IN") : "",
         }))
       );
+
+      // Month by month, so the totals on the first sheet can always be traced back.
+      const monthlySheet = XLSX.utils.json_to_sheet(
+        data.rows.flatMap((row) =>
+          row.months.map((month) => ({
+            "Business Name": row.title || "",
+            "Store Code": row.storeCode || "",
+            "Primary Folder": row.unitName || "",
+            Cluster: row.cluster || "",
+            "Verification Status": row.verificationStatus || row.statusType || "",
+            Month: month.label,
+            "Search Mobile": month.mobileSearch,
+            "Search Desktop": month.desktopSearch,
+            "Maps Mobile": month.mobileMaps,
+            "Maps Desktop": month.desktopMaps,
+            "Total Searches": month.totalSearches,
+            "Total Maps": month.totalMaps,
+            "Total Impressions": month.totalImpressions,
+            Calls: month.callClicks,
+            "Website Clicks": month.websiteClicks,
+            Directions: month.directionRequests,
+            "Total Interactions": month.totalInteractions,
+            "Location ID": row.locationId,
+          }))
+        )
+      );
+
+      const period = data.overall
+        ? data.monthsCovered
+          ? `Overall (${data.monthsCovered.first} to ${data.monthsCovered.last})`
+          : "Overall"
+        : `${data.range?.from} to ${data.range?.to}`;
+
+      const infoSheet = XLSX.utils.json_to_sheet([
+        { Field: "Export", Value: label },
+        { Field: "Performance period", Value: period },
+        { Field: "Folder filter", Value: filters?.units?.length ? filters.units.join(", ") : "All folders" },
+        { Field: "Profiles", Value: data.rows.length },
+        { Field: "Generated", Value: new Date(data.generatedAt).toLocaleString("en-IN") },
+        { Field: "Source", Value: "Google Business Profile API (realtime collections)" },
+      ]);
+
       const book = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(book, sheet, label.slice(0, 28));
+      XLSX.utils.book_append_sheet(book, profileSheet, label.slice(0, 28) || "Profiles");
+      if (monthlySheet["!ref"]) XLSX.utils.book_append_sheet(book, monthlySheet, "Monthly Performance");
+      XLSX.utils.book_append_sheet(book, infoSheet, "About");
       XLSX.writeFile(book, `Realtime_${label.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.xlsx`);
     } catch (error) {
       toast.error((error as Error).message);

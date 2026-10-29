@@ -158,8 +158,10 @@ const RealtimeSettingSchema = new mongoose.Schema(
     accounts: [new mongoose.Schema({ name: String, accountName: String, type: { type: String } }, { _id: false })],
 
     sync: {
-      status: { type: String, default: 'idle' }, // idle | running | error
+      status: { type: String, default: 'idle' }, // idle | running | partial | error
       mode: String, // full | incremental
+      // Folders Google could not list on the last run; their listings kept the previous data.
+      failedAccounts: { type: [String], default: [] },
       phase: String, // profiles | performance | done
       startedAt: Date,
       finishedAt: Date,

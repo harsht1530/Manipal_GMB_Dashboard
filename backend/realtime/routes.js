@@ -114,6 +114,54 @@ const profileMatch = (req) => {
   return match;
 };
 
+/**
+ * Which verification tiles a listing belongs to, using the SAME conditions as the counters in
+ * /verification - so an export can always be reconciled against the tiles on screen. A
+ * listing can be in several at once (a verified profile with Google updates, say), which is
+ * why these are flags and not one value.
+ */
+const tileFlags = (p) => ({
+  verified: p.hasVoiceOfMerchant === true,
+  // Google's own Unverified filter: everything without Voice of Merchant, duplicates and
+  // suspended listings included. The single label below splits those out.
+  unverified: p.hasVoiceOfMerchant !== true,
+  duplicate: p.duplicateOf != null,
+  suspended: p.statusType === 'Suspended' || p.statusType === 'Disabled',
+  pendingReview: p.statusType === 'Pending Verification',
+  googleUpdates: p.hasGoogleUpdates === true,
+  temporarilyClosed: p.openStatus === 'CLOSED_TEMPORARILY' || p.googleOpenStatus === 'CLOSED_TEMPORARILY',
+  permanentlyClosed: p.openStatus === 'CLOSED_PERMANENTLY' || p.googleOpenStatus === 'CLOSED_PERMANENTLY',
+  missingStoreCode: p.missingStoreCode === true,
+});
+
+/**
+ * One verification status per listing, in the vocabulary the dashboard note uses: the five
+ * unverified labels add up to the Unverified tile, and with Verified they add up to Total.
+ */
+const verificationLabel = (p) => {
+  if (p.duplicateOf != null) return 'Duplicate';
+  if (p.hasVoiceOfMerchant === true) return 'Verified';
+  if (p.statusType === 'Suspended' || p.statusType === 'Disabled') return p.statusType;
+  if (p.statusType === 'Pending Verification') return 'Pending Review';
+  if (p.statusType === 'Ownership Conflict') return 'Ownership Conflict';
+  return 'Need to verify';
+};
+
+/** The tile filters, shared by /profiles and /export so both always agree. */
+const withStatus = (match, value) => {
+  const status = String(value || '').trim();
+  if (status === 'verified') match.hasVoiceOfMerchant = true;
+  else if (status === 'unverified') match.hasVoiceOfMerchant = false;
+  else if (status === 'duplicate') match.duplicateOf = { $ne: null };
+  else if (status === 'suspended') match.statusType = { $in: ['Suspended', 'Disabled'] };
+  else if (status === 'closed') match.$or = [{ openStatus: 'CLOSED_PERMANENTLY' }, { googleOpenStatus: 'CLOSED_PERMANENTLY' }];
+  else if (status === 'temporarily-closed') match.$or = [{ openStatus: 'CLOSED_TEMPORARILY' }, { googleOpenStatus: 'CLOSED_TEMPORARILY' }];
+  else if (status === 'pending-review') match.statusType = 'Pending Verification';
+  else if (status === 'google-updates') match.hasGoogleUpdates = true;
+  else if (status === 'missing-store-code') match.missingStoreCode = true;
+  return match;
+};
+
 const publicSettings = (doc) => ({
   connected: !!doc.connected,
   email: doc.email || null,
@@ -126,6 +174,7 @@ const publicSettings = (doc) => ({
   redirectUri: google.redirectUri(),
   sync: {
     status: isRunning() ? 'running' : doc.sync?.status || 'idle',
+    failedAccounts: doc.sync?.failedAccounts || [],
     mode: doc.sync?.mode || null,
     phase: doc.sync?.phase || null,
     startedAt: doc.sync?.startedAt || null,
@@ -538,17 +587,7 @@ router.get('/verification', async (req, res) => {
 /** The profile list behind the status tiles - paged, and used for the Excel export. */
 router.get('/profiles', async (req, res) => {
   try {
-    const match = profileMatch(req);
-    const status = String(req.query.status || '').trim();
-    if (status === 'verified') match.hasVoiceOfMerchant = true;
-    else if (status === 'unverified') match.hasVoiceOfMerchant = false;
-    else if (status === 'duplicate') match.duplicateOf = { $ne: null };
-    else if (status === 'suspended') match.statusType = { $in: ['Suspended', 'Disabled'] };
-    else if (status === 'closed') match.$or = [{ openStatus: 'CLOSED_PERMANENTLY' }, { googleOpenStatus: 'CLOSED_PERMANENTLY' }];
-    else if (status === 'temporarily-closed') match.$or = [{ openStatus: 'CLOSED_TEMPORARILY' }, { googleOpenStatus: 'CLOSED_TEMPORARILY' }];
-    else if (status === 'pending-review') match.statusType = 'Pending Verification';
-    else if (status === 'google-updates') match.hasGoogleUpdates = true;
-    else if (status === 'missing-store-code') match.missingStoreCode = true;
+    const match = withStatus(profileMatch(req), req.query.status);
 
     const search = String(req.query.q || '').trim();
     if (search) match.title = { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
@@ -584,6 +623,103 @@ router.get('/profiles', async (req, res) => {
     ]);
 
     res.json({ success: true, data: { items, total, page, limit } });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Everything the realtime collections hold about the selected profiles, in one payload: the
+ * full profile record plus its performance. With no `from`/`to` the whole stored history is
+ * summed ("overall"); with a range, only the days inside it - the same day-level filtering the
+ * charts use, so an export can always be reconciled against what is on screen.
+ */
+router.get('/export', async (req, res) => {
+  try {
+    const match = withStatus(profileMatch(req), req.query.status);
+    const hasRange = !!(req.query.from && req.query.to);
+    const range = hasRange ? rangeOf(req) : null;
+
+    const profiles = await RealtimeProfile.find(match).sort({ unitName: 1, title: 1 }).lean();
+    if (!profiles.length) {
+      return res.json({ success: true, data: { range: null, overall: !hasRange, generatedAt: new Date(), rows: [] } });
+    }
+
+    const locationIds = profiles.map((p) => p.locationId);
+    const metricMatchStage = { locationId: { $in: locationIds } };
+    if (range) {
+      metricMatchStage.ym = {
+        $gte: `${range.from.getFullYear()}-${pad(range.from.getMonth() + 1)}`,
+        $lte: `${range.to.getFullYear()}-${pad(range.to.getMonth() + 1)}`,
+      };
+    }
+
+    const daySum = (key) => ({ $sum: `$days.${key}` });
+    const sumDays = () => METRIC_KEYS.reduce((acc, k) => ({ ...acc, [k]: daySum(k) }), {});
+
+    const pipeline = [
+      { $match: metricMatchStage },
+      { $unwind: '$days' },
+    ];
+    if (range) {
+      pipeline.push(
+        {
+          $addFields: {
+            dateKey: {
+              $concat: [
+                { $toString: '$year' },
+                '-',
+                { $cond: [{ $lt: ['$month', 10] }, { $concat: ['0', { $toString: '$month' }] }, { $toString: '$month' }] },
+                '-',
+                { $cond: [{ $lt: ['$days.day', 10] }, { $concat: ['0', { $toString: '$days.day' }] }, { $toString: '$days.day' }] },
+              ],
+            },
+          },
+        },
+        { $match: { dateKey: { $gte: range.fromIso, $lte: range.toIso } } }
+      );
+    }
+    pipeline.push(
+      { $group: { _id: { locationId: '$locationId', ym: '$ym' }, ...sumDays() } },
+      { $sort: { '_id.ym': 1 } }
+    );
+
+    const monthRows = await RealtimeMetric.aggregate(pipeline).allowDiskUse(true);
+
+    const byLocation = new Map();
+    for (const row of monthRows) {
+      const list = byLocation.get(row._id.locationId) || [];
+      list.push({ ym: row._id.ym, label: labelFor(row._id.ym), ...withDerived(row) });
+      byLocation.set(row._id.locationId, list);
+    }
+
+    const rows = profiles.map((profile) => {
+      const months = byLocation.get(profile.locationId) || [];
+      const summed = months.reduce((acc, month) => {
+        METRIC_KEYS.forEach((k) => { acc[k] = (acc[k] || 0) + (month[k] || 0); });
+        return acc;
+      }, {});
+      return {
+        ...profile,
+        verificationStatus: verificationLabel(profile),
+        tiles: tileFlags(profile),
+        performance: withDerived(summed),
+        monthsCovered: months.length,
+        months,
+      };
+    });
+
+    const covered = monthRows.map((r) => r._id.ym).sort();
+    res.json({
+      success: true,
+      data: {
+        overall: !hasRange,
+        range: range ? { from: range.fromIso, to: range.toIso } : null,
+        monthsCovered: covered.length ? { first: covered[0], last: covered[covered.length - 1] } : null,
+        generatedAt: new Date(),
+        rows,
+      },
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

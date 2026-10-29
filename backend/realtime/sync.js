@@ -235,10 +235,29 @@ const syncProfiles = async (client, settings, { fetchUpdates = true } = {}) => {
     } while (pageToken);
   };
 
-  for (const account of ordered) await collect(account, true);
+  // Google's Business Information API returns a transient 503 often enough that one folder
+  // used to abort the entire sync. A folder that cannot be listed after all retries is
+  // recorded instead, and its listings keep the data from the previous run.
+  const failedAccounts = [];
+  const tryCollect = async (account, membership) => {
+    try {
+      await collect(account, membership);
+    } catch (err) {
+      console.error(`[realtime] listing failed for ${account.accountName}: ${err.message}`);
+      if (!failedAccounts.some((f) => f.accountName === account.accountName)) {
+        failedAccounts.push({ accountName: account.accountName, error: err.message });
+      }
+    }
+  };
+
+  for (const account of ordered) await tryCollect(account, true);
   // Second pass: anything no folder claims as a member still gets recorded, so the total
   // stays complete.
-  for (const account of ordered) await collect(account, false);
+  for (const account of ordered) await tryCollect(account, false);
+
+  if (failedAccounts.length) {
+    await progress({ 'sync.failedAccounts': failedAccounts.map((f) => f.accountName) });
+  }
 
   for (const { base, folders } of byLocation.values()) {
     const status = deriveStatus(base, null);
@@ -247,7 +266,11 @@ const syncProfiles = async (client, settings, { fetchUpdates = true } = {}) => {
     ops.push({
       updateOne: {
         filter: { locationId: base.locationId },
-        update: { $set: { ...base, ...status, folders: [...folders] } },
+        // A listing can sit in a folder that failed to list this run. Replacing `folders`
+        // would drop it from that folder's count, so a partial run only adds.
+        update: failedAccounts.length
+          ? { $set: { ...base, ...status }, $addToSet: { folders: { $each: [...folders] } } }
+          : { $set: { ...base, ...status, folders: [...folders] } },
         upsert: true,
       },
     });
@@ -311,10 +334,14 @@ const syncProfiles = async (client, settings, { fetchUpdates = true } = {}) => {
     );
   }
 
-  // Listings that disappeared from Google (removed or access lost).
-  if (seen.length) await RealtimeProfile.deleteMany({ locationId: { $nin: seen } });
+  // Listings that disappeared from Google (removed or access lost). Skipped when a folder
+  // failed to list: its listings are missing from `seen` only because Google was unavailable,
+  // and deleting them would empty that folder until the next successful run.
+  if (seen.length && !failedAccounts.length) {
+    await RealtimeProfile.deleteMany({ locationId: { $nin: seen } });
+  }
 
-  return seen.length;
+  return { count: seen.length, failedAccounts };
 };
 
 /* ──────────────────────── performance sync ──────────────────────── */
@@ -442,6 +469,7 @@ const runSync = async ({ mode = 'incremental', trigger = 'manual' } = {}) => {
     'sync.total': 0,
     'sync.profilesSynced': 0,
     'sync.error': null,
+    'sync.failedAccounts': [],
   });
 
   // Deliberately not awaited by the caller: a full run takes minutes.
@@ -453,15 +481,20 @@ const runSync = async ({ mode = 'incremental', trigger = 'manual' } = {}) => {
       //   profiles - listing + verification status only, the quick re-check (~5 min)
       //   counts    - the above plus Google's suggested edits, so every status count is current
       const profilesOnly = mode === 'profiles' || mode === 'counts';
-      const profilesSynced = await syncProfiles(client, settings, { fetchUpdates: mode !== 'profiles' });
+      const { count: profilesSynced, failedAccounts } = await syncProfiles(client, settings, { fetchUpdates: mode !== 'profiles' });
+      const partial = failedAccounts.length > 0;
+      const partialNote = partial
+        ? `Google was unavailable for ${failedAccounts.length} folder(s): ${failedAccounts.map((f) => f.accountName).join(', ')}. Their previous data was kept - run the sync again to refresh them.`
+        : null;
       await progress({ 'sync.profilesSynced': profilesSynced, 'sync.phase': profilesOnly ? 'done' : 'performance' });
 
       if (profilesOnly) {
         await progress({
-          'sync.status': 'idle',
+          'sync.status': partial ? 'partial' : 'idle',
           'sync.phase': 'done',
           'sync.finishedAt': new Date(),
           'sync.lastSuccessAt': new Date(),
+          'sync.error': partialNote,
         });
         console.log(`[realtime] profiles sync finished: ${profilesSynced} profiles.`);
         running = false;
@@ -477,10 +510,11 @@ const runSync = async ({ mode = 'incremental', trigger = 'manual' } = {}) => {
       // would then leave the run looking stuck at "running" forever.
       await progress({
         'sync.metricsSynced': metricsSynced,
-        'sync.status': 'idle',
+        'sync.status': partial ? 'partial' : 'idle',
         'sync.phase': 'done',
         'sync.finishedAt': new Date(),
         'sync.lastSuccessAt': new Date(),
+        'sync.error': partialNote,
         ...(mode === 'full' ? { 'sync.lastFullSyncAt': new Date() } : {}),
       });
       console.log(`[realtime] ${mode} sync finished: ${profilesSynced} profiles, ${metricsSynced} metric documents.`);

@@ -81,7 +81,8 @@ export interface RealtimeMeta {
 }
 
 export interface SyncState {
-  status: "idle" | "running" | "error";
+  /** "partial": the run finished, but Google was unavailable for one or more folders. */
+  status: "idle" | "running" | "partial" | "error";
   mode: string | null;
   phase: string | null;
   startedAt: string | null;
@@ -92,6 +93,8 @@ export interface SyncState {
   lastSuccessAt: string | null;
   lastFullSyncAt: string | null;
   error: string | null;
+  /** Folders Google could not list on the last run; they kept their previous data. */
+  failedAccounts?: string[];
 }
 
 export interface GoogleConnection {
@@ -123,6 +126,55 @@ export interface ProfileRow {
   duplicateOf: string | null;
   missingStoreCode: boolean;
   mapsUri: string;
+}
+
+/** One month of a profile's performance, as the export returns it. */
+export interface ExportMonth extends MetricTotals {
+  ym: string;
+  label: string;
+}
+
+/** Which verification tiles a listing falls into; the same rules the tiles count by. */
+export interface TileFlags {
+  verified: boolean;
+  unverified: boolean;
+  duplicate: boolean;
+  suspended: boolean;
+  pendingReview: boolean;
+  googleUpdates: boolean;
+  temporarilyClosed: boolean;
+  permanentlyClosed: boolean;
+  missingStoreCode: boolean;
+}
+
+/** A profile with every stored field plus its performance for the exported window. */
+export interface ExportRow extends ProfileRow {
+  /** Verified | Duplicate | Suspended | Disabled | Pending Review | Ownership Conflict | Need to verify */
+  verificationStatus: string;
+  tiles: TileFlags;
+  accountName?: string;
+  department?: string;
+  primaryCategory?: string;
+  labels?: string[];
+  folders?: string[];
+  verificationState?: string;
+  publishStatus?: string;
+  hasGoogleUpdates?: boolean;
+  googleUpdateFields?: string[];
+  googleOpenStatus?: string | null;
+  lastSyncedAt?: string;
+  performance: MetricTotals;
+  monthsCovered: number;
+  months: ExportMonth[];
+}
+
+export interface ExportPayload {
+  /** True when no date range was given and the whole stored history was summed. */
+  overall: boolean;
+  range: { from: string; to: string } | null;
+  monthsCovered: { first: string; last: string } | null;
+  generatedAt: string;
+  rows: ExportRow[];
 }
 
 const get = async <T>(path: string): Promise<T> => {
@@ -237,4 +289,23 @@ export const fetchRealtimeProfiles = (
   if (filters.status) params.set("status", filters.status);
   params.set("limit", String(filters.limit || 5000));
   return get<{ items: ProfileRow[]; total: number }>(`/profiles?${params.toString()}`);
+};
+
+/**
+ * Every stored detail for the matching profiles, performance included. Pass `from`/`to` to
+ * limit the performance to that range; leave them out for the whole stored history.
+ */
+export const fetchRealtimeExport = (
+  filters: RealtimeFilters & { status?: string } = {}
+) => {
+  const params = new URLSearchParams();
+  if (filters.clusters?.length) params.set("cluster", filters.clusters.join(","));
+  if (filters.units?.length) params.set("unit", filters.units.join(","));
+  if (filters.status) params.set("status", filters.status);
+  if (filters.from && filters.to) {
+    params.set("from", filters.from);
+    params.set("to", filters.to);
+  }
+  const qs = params.toString();
+  return get<ExportPayload>(`/export${qs ? `?${qs}` : ""}`);
 };
