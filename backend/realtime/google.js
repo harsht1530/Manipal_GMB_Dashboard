@@ -189,12 +189,22 @@ class GoogleClient {
     this.settings = settingsDoc;
     this.accessToken = decrypt(settingsDoc.accessTokenEnc);
     this.refreshToken = decrypt(settingsDoc.refreshTokenEnc);
+    // A stored token that will not decrypt means this process has a different encryption key
+    // than the one that saved it - almost always a missing GOOGLE_OAUTH_CLIENT_SECRET, since
+    // the key is derived from it. Worth separating from "nothing was ever connected".
+    this.tokenUndecryptable = !!settingsDoc.refreshTokenEnc && !this.refreshToken;
     this.expiresAt = settingsDoc.accessTokenExpiresAt ? new Date(settingsDoc.accessTokenExpiresAt).getTime() : 0;
   }
 
   async getToken() {
     if (this.accessToken && Date.now() < this.expiresAt - 60000) return this.accessToken;
-    if (!this.refreshToken) throw new Error('Google account is not connected (no refresh token).');
+    if (!this.refreshToken) {
+      throw new Error(
+        this.tokenUndecryptable
+          ? 'The stored Google token could not be decrypted on this server. Set GOOGLE_OAUTH_CLIENT_SECRET (the same value used when the account was connected) in the backend environment and restart, or reconnect the account.'
+          : 'Google account is not connected (no refresh token).'
+      );
+    }
     // Single-flight: a sync run has many calls in parallel, but only one may refresh.
     if (!this.refreshing) {
       this.refreshing = (async () => {

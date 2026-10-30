@@ -4,6 +4,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
+const zlib = require('zlib');
 
 // Models
 const Insight = require('./models/Insight');
@@ -52,6 +53,41 @@ app.use(cors({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     credentials: true
 }));
+
+// Compress JSON responses.
+//
+// Several of these feeds are large - /api/insights alone serialises every row of
+// manipalinsightsdatas - and the hosted box has a slow uplink, so an uncompressed body never
+// finishes downloading: the browser aborts the request, and because the aborted response
+// carries no headers at all the console reports it as a CORS failure ("No
+// 'Access-Control-Allow-Origin' header is present"). The CORS config above is fine; the
+// response simply never arrived. This JSON is highly repetitive, so gzip shrinks it enough to
+// arrive in time. Wrapping res.json keeps every existing route untouched.
+app.use((req, res, next) => {
+    const sendJson = res.json.bind(res);
+    res.json = (body) => {
+        const payload = Buffer.from(JSON.stringify(body));
+        const acceptsGzip = /\bgzip\b/i.test(String(req.headers['accept-encoding'] || ''));
+        res.vary('Accept-Encoding');
+        // Below a few KB the gzip header costs more than it saves.
+        if (!acceptsGzip || payload.length < 2048 || res.getHeader('Content-Encoding')) {
+            return sendJson(body);
+        }
+        zlib.gzip(payload, (err, gzipped) => {
+            if (err || res.headersSent) {
+                if (err) console.error(`[gzip] ${req.originalUrl}: ${err.message}`);
+                return err ? sendJson(body) : undefined;
+            }
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.setHeader('Content-Encoding', 'gzip');
+            res.setHeader('Content-Length', gzipped.length);
+            res.end(gzipped);
+        });
+        return res;
+    };
+    next();
+});
+
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
