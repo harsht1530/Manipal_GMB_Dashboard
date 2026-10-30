@@ -88,6 +88,98 @@ app.use((req, res, next) => {
     next();
 });
 
+// Snapshot cache for the whole-collection feeds.
+//
+// MongoDB is on another host, so reading a big collection end to end takes minutes:
+// /api/insights pulls ~37k documents (~17 MB) and the reverse proxy in front of this server
+// gives up long before the query returns. The aborted response carries no headers at all, so
+// the browser reports it as a missing CORS header - the CORS config above is fine, the
+// response simply never arrived. Nothing in this server writes to these collections (the
+// import jobs fill them), so holding a short-lived snapshot is safe.
+//
+// A stale snapshot always beats a request that times out, so once one is in hand it is served
+// straight away and the refresh runs in the background. Mirrors the cache in
+// realtime/routes.js.
+const FEED_TTL_MS = 10 * 60 * 1000;
+const feeds = new Map();
+
+const feed = (key, producer) => {
+    const entry = feeds.get(key) || { value: null, at: 0, inflight: null };
+    feeds.set(key, entry);
+
+    if (!entry.inflight && Date.now() - entry.at >= FEED_TTL_MS) {
+        const started = Date.now();
+        entry.inflight = Promise.resolve()
+            .then(producer)
+            .then((value) => {
+                entry.value = value;
+                entry.at = Date.now();
+                console.log(`[feed] ${key} loaded in ${Date.now() - started} ms`);
+                return value;
+            })
+            .catch((err) => {
+                console.error(`[feed] ${key} load failed: ${err.message}`);
+                throw err;
+            })
+            .finally(() => { entry.inflight = null; });
+    }
+
+    if (entry.value) {
+        if (entry.inflight) entry.inflight.catch(() => {}); // refreshing behind this response
+        return Promise.resolve(entry.value);
+    }
+    return entry.inflight;
+};
+
+// The queries behind those feeds, kept here so a warm-up and a request run the same one.
+const loadInsights = () => Insight.find({}, {
+    "Business name": 1,
+    "Google Search - Mobile": 1,
+    "Google Search - Desktop": 1,
+    "Google Maps - Mobile": 1,
+    "Google Maps - Desktop": 1,
+    Directions: 1,
+    "Website clicks": 1,
+    Calls: 1,
+    Cluster: 1,
+    Month: 1,
+    Branch: 1,
+    Date: 1,
+    Speciality: 1,
+    Review: 1,
+    Rating: 1,
+    Department: 1,
+    Phone: 1,
+    status_type: 1,
+    Year: 1
+}).lean();
+
+const loadDoctors = () => Doctor.find({}, {
+    business_name: 1,
+    name: 1,
+    phone: 1,
+    placeId: 1,
+    newReviewUri: 1,
+    mapsUri: 1,
+    websiteUrl: 1,
+    primaryCategory: 1,
+    address: 1,
+    averageRating: 1,
+    totalReviewCount: 1,
+    mail_id: 1,
+    Cluster: 1,
+    Branch: 1,
+    profile_screenshot: 1,
+    account: 1,
+    "labels.rank": 1,
+    "labels.label": 1
+});
+
+const warmFeeds = () => {
+    feed('insights', loadInsights).catch(() => {});
+    feed('doctors', loadDoctors).catch(() => {});
+};
+
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -181,6 +273,10 @@ mongoose.connect(MONGODB_URI)
         seedMultiplierTeam();
         seedManipalCorporate();
         
+        // Fill the snapshots now, so the first dashboard request is served from memory
+        // instead of waiting out a multi-minute query.
+        warmFeeds();
+
         // Run SLA check on startup to catch up on any missed days
         runSlaCheck()
             .then(count => console.log(`Startup SLA check completed. Updated ${count} requests.`))
@@ -923,29 +1019,7 @@ app.post('/api/search-keywords-impressions', async (req, res) => {
 // 5. Insights Route
 app.get('/api/insights', async (req, res) => {
     try {
-        const projection = {
-            "Business name": 1,
-            "Google Search - Mobile": 1,
-            "Google Search - Desktop": 1,
-            "Google Maps - Mobile": 1,
-            "Google Maps - Desktop": 1,
-            Directions: 1,
-            "Website clicks": 1,
-            Calls: 1,
-            Cluster: 1,
-            Month: 1,
-            Branch: 1,
-            Date: 1,
-            Speciality: 1,
-            Review: 1,
-            Rating: 1,
-            Department: 1,
-            Phone: 1,
-            status_type: 1,
-            Year: 1
-        };
-
-        const insights = await Insight.find({}, projection).lean();
+        const insights = await feed('insights', loadInsights);
 
         res.json({ success: true, data: insights });
     } catch (error) {
@@ -956,26 +1030,7 @@ app.get('/api/insights', async (req, res) => {
 // 6. Doctors Route
 app.get('/api/doctors', async (req, res) => {
     try {
-        const doctors = await Doctor.find({}, {
-            business_name: 1,
-            name: 1,
-            phone: 1,
-            placeId: 1,
-            newReviewUri: 1,
-            mapsUri: 1,
-            websiteUrl: 1,
-            primaryCategory: 1,
-            address: 1,
-            averageRating: 1,
-            totalReviewCount: 1,
-            mail_id: 1,
-            Cluster: 1,
-            Branch: 1,
-            profile_screenshot: 1,
-            account: 1,
-            "labels.rank": 1,
-            "labels.label": 1
-        });
+        const doctors = await feed('doctors', loadDoctors);
         res.json({ success: true, data: doctors });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
