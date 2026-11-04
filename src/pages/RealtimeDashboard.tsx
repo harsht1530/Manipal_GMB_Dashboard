@@ -23,7 +23,9 @@ import {
   Search,
   Calendar as CalendarIcon,
   X,
+  Info,
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { format } from "date-fns";
 import { DateRange } from "react-day-picker";
 import { cn } from "@/lib/utils";
@@ -81,19 +83,40 @@ const relativeTime = (iso?: string | null) => {
  */
 const RealtimeDashboard = () => {
   const [folder, setFolder] = useState("ALL");
+  const [cluster, setCluster] = useState("ALL");
   const [range, setRange] = useState<DateRange | undefined>(undefined);
 
   const iso = (d: Date) => format(d, "yyyy-MM-dd");
 
+  /**
+   * Only the last six months can be picked. Google's performance API itself stops there, and
+   * the realtime collections hold nothing older - anything earlier lives in the historical
+   * dashboard. Recomputed per render so the window follows the clock across midnight.
+   */
+  const today = new Date();
+  const earliest = useMemo(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 6);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+  const previousMonth = useMemo(() => {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - 1);
+    return d;
+  }, []);
+
   const filters = useMemo(
     () => ({
+      clusters: cluster === "ALL" ? [] : [cluster],
       units: folder === "ALL" ? [] : [folder],
       months: 6,
       // Only a complete range narrows the window; otherwise the default 6 months applies.
       from: range?.from && range?.to ? iso(range.from) : undefined,
       to: range?.from && range?.to ? iso(range.to) : undefined,
     }),
-    [folder, range]
+    [cluster, folder, range]
   );
 
   const meta = useRealtimeMeta();
@@ -127,9 +150,30 @@ const RealtimeDashboard = () => {
       subtitle="Live Google Business Profile data"
     >
       <div className="space-y-6">
-        {/* Filters: folder + date range */}
+        {/* Filters: cluster + folder + date range */}
         <Card>
           <CardContent className="flex flex-wrap items-center gap-2 p-3">
+            <Select
+              value={cluster}
+              onValueChange={(value) => {
+                setCluster(value);
+                // A folder chosen under the previous cluster would filter everything away.
+                setFolder("ALL");
+              }}
+            >
+              <SelectTrigger className="h-9 w-[200px] shrink-0 bg-muted/20 border-primary/5 text-xs font-medium">
+                <SelectValue placeholder="Cluster" />
+              </SelectTrigger>
+              <SelectContent className="max-h-[320px]">
+                <SelectItem value="ALL">All clusters</SelectItem>
+                {(meta.data?.clusters ?? []).map((name) => (
+                  <SelectItem key={name} value={name}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             <Select value={folder} onValueChange={setFolder}>
               <SelectTrigger className="h-9 w-[220px] shrink-0 bg-muted/20 border-primary/5 text-xs font-medium">
                 <SelectValue placeholder="Folder" />
@@ -186,14 +230,36 @@ const RealtimeDashboard = () => {
                 <Calendar
                   initialFocus
                   mode="range"
-                  defaultMonth={range?.from ?? new Date()}
+                  // Two months are shown, so start one back and the pair ends on this month
+                  // rather than opening on a future month with every day disabled.
+                  defaultMonth={range?.from ?? previousMonth}
                   selected={range}
                   onSelect={setRange}
                   numberOfMonths={2}
-                  disabled={{ after: new Date() }}
+                  // Six months back at most: both the days and the month arrows are capped, so
+                  // an earlier date cannot be reached by paging either.
+                  fromDate={earliest}
+                  toDate={today}
+                  disabled={{ before: earliest, after: today }}
                 />
               </PopoverContent>
             </Popover>
+
+            {/* Hover only - no click target, so it never competes with the filters beside it. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className="flex h-9 w-7 shrink-0 cursor-default items-center justify-center text-muted-foreground hover:text-foreground"
+                  aria-label="About the available date range"
+                >
+                  <Info className="h-4 w-4" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[280px] text-xs leading-relaxed">
+                Data is available to download only for the last 6 months. For any previous data,
+                please refer to the Historical dashboard/reports.
+              </TooltipContent>
+            </Tooltip>
 
             <span className="ml-auto text-xs text-muted-foreground">
               {data?.range

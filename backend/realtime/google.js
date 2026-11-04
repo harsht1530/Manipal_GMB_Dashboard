@@ -27,6 +27,8 @@ const API = {
   business: 'https://mybusinessbusinessinformation.googleapis.com/v1',
   verifications: 'https://mybusinessverifications.googleapis.com/v1',
   performance: 'https://businessprofileperformance.googleapis.com/v1',
+  // Photos never moved to v1; the cover photo and logo can only be read from v4.
+  media: 'https://mybusiness.googleapis.com/v4',
 };
 
 const LOCATION_READ_MASK = [
@@ -40,6 +42,25 @@ const LOCATION_READ_MASK = [
   'labels',
   'openInfo',
   'metadata',
+].join(',');
+
+/**
+ * The listing mask, widened for the optimization report.
+ *
+ * `profile`, `regularHours` and `serviceItems` come back in the same bulk listing, so the
+ * description / working-hours / services checks cost no extra calls. Only the cover photo,
+ * logo, WhatsApp and appointment-link checks need a request of their own per listing - see
+ * locationAttributes() and locationMedia().
+ *
+ * Kept apart from LOCATION_READ_MASK, which :getGoogleUpdated still uses: that endpoint only
+ * ever reports the fields Google itself suggests edits for, and a wider mask there would ask
+ * it for fields it has nothing to say about.
+ */
+const LOCATION_LIST_READ_MASK = [
+  LOCATION_READ_MASK,
+  'profile',
+  'regularHours',
+  'serviceItems',
 ].join(',');
 
 const DAILY_METRICS = {
@@ -298,11 +319,31 @@ class GoogleClient {
    */
   listLocationsPage(accountName, pageToken, { membership = true } = {}) {
     return this.request(`${API.business}/${accountName}/locations`, {
-      readMask: LOCATION_READ_MASK,
+      readMask: LOCATION_LIST_READ_MASK,
       pageSize: 100,
       ...(membership ? {} : { filter: 'title:*' }),
       pageToken,
     });
+  }
+
+  /**
+   * The attributes actually set on a listing. The WhatsApp and appointment links are stored
+   * here, not on the location itself: attributes/url_whatsapp and attributes/url_appointment.
+   */
+  locationAttributes(locationId) {
+    return this.request(`${API.business}/${locationId}/attributes`);
+  }
+
+  /**
+   * Photos for a listing, so the cover photo and logo can be told apart by
+   * locationAssociation.category (COVER / LOGO / PROFILE / ADDITIONAL / ...).
+   *
+   * Media has no v1 equivalent - it only exists on the older v4 surface, which needs
+   * "My Business Business Information API" plus the legacy "Google My Business API" enabled on
+   * the Cloud project. locationId already carries its "locations/" prefix.
+   */
+  locationMedia(accountId, locationId) {
+    return this.request(`${API.media}/${accountId}/${locationId}/media`, { pageSize: 100 });
   }
 
   /** Verification detail - only needed for locations Google does not report as verified. */

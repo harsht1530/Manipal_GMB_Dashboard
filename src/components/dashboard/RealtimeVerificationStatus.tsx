@@ -78,9 +78,19 @@ const TILES = [
     insights: true,
   },
   {
+    key: "needToVerify" as const,
+    label: "Unverified",
+    hint: "excl. duplicates + suspended",
+    icon: Clock,
+    tone: "bg-amber-500/10 border-amber-500/20",
+    value: "text-amber-600",
+    iconTone: "text-amber-600",
+    export: "need-to-verify",
+  },
+  {
     key: "duplicates" as const,
     label: "Duplicates",
-    hint: "also counted in Unverified",
+    hint: "unverified, shown on its own",
     icon: Copy,
     tone: "bg-violet-500/10 border-violet-500/20",
     value: "text-violet-600",
@@ -88,19 +98,9 @@ const TILES = [
     export: "duplicate",
   },
   {
-    key: "unverified" as const,
-    label: "Unverified",
-    hint: "incl. suspended + duplicates",
-    icon: Clock,
-    tone: "bg-amber-500/10 border-amber-500/20",
-    value: "text-amber-600",
-    iconTone: "text-amber-600",
-    export: "unverified",
-  },
-  {
     key: "suspended" as const,
     label: "Suspended",
-    hint: "also counted in Unverified",
+    hint: "unverified, shown on its own",
     icon: Ban,
     tone: "bg-rose-500/10 border-rose-500/20",
     value: "text-rose-600",
@@ -432,15 +432,15 @@ export const RealtimeVerificationStatus = ({ data, loading, filters }: Props) =>
         </div>
 
         <div className="mt-4 rounded-lg border border-sky-500/20 bg-sky-500/5 p-3 text-xs leading-relaxed text-muted-foreground">
-          <strong className="text-foreground">How to read these numbers:</strong> Total = Verified + Unverified,
-          exactly like Google shows. Suspended and Duplicate profiles are already included inside Unverified here.
+          <strong className="text-foreground">How to read these numbers:</strong> Google counts every profile as
+          either Verified or Unverified.{" "}
           <strong className="text-foreground">
-            {" "}
-            In the Excel export the same profiles are split into separate columns (Need to verify + Suspended +
-            Duplicate) so teams can act on each group
+            The Unverified tile above excludes Duplicates and Suspended
           </strong>{" "}
-          — add those three Excel columns together and it matches Unverified above. Nothing is missing or
-          double-counted.
+          — each of those has a tile of its own, so the three lists can be worked on separately and no profile
+          is counted twice. Unverified + Duplicates + Suspended comes back to Google's own Unverified figure,
+          apart from the few profiles that are both a duplicate and suspended, which show on both tiles. The
+          Excel export uses exactly the same split.
         </div>
       </CardHeader>
 

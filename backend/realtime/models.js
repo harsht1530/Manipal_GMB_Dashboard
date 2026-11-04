@@ -24,6 +24,48 @@ const METRIC_KEYS = [
 
 const zeroTotals = () => METRIC_KEYS.reduce((acc, k) => ({ ...acc, [k]: 0 }), {});
 
+/**
+ * The nine completeness checks behind the optimization report. Phone and website are not
+ * repeated here - the report reads those from the profile's own fields.
+ *
+ * Everything is stored as what Google returned, not as a pass/fail: the thresholds belong to
+ * the report, so they can be changed without a resync. Mongoose would silently drop any of
+ * these that the schema did not declare, which is why they are spelled out.
+ */
+const OptimizationSchema = new mongoose.Schema(
+  {
+    // From the listing itself - no extra API call.
+    description: { type: String, default: '' },
+    // Stored alongside the text so the report can project the length without pulling every
+    // description: 3k descriptions are most of this collection's bulk, and all the report
+    // shows is how long each one is.
+    descriptionLength: { type: Number, default: 0 },
+    hourPeriods: { type: Number, default: 0 },
+    serviceCount: { type: Number, default: 0 },
+    reviewLink: { type: String, default: '' },
+
+    // From locations/*/attributes - one call per listing.
+    whatsapp: { type: String, default: '' },
+    appointment: { type: String, default: '' },
+
+    // From the v4 media list - one call per listing.
+    coverPhoto: { type: Boolean, default: false },
+    // True when the listing has the image the Business Profile UI calls the logo. Google stores
+    // that image under the PROFILE category; LOGO is a legacy category almost no listing uses,
+    // so both count (see readMediaOptimization in sync.js).
+    logo: { type: Boolean, default: false },
+    // Which of the two categories actually supplied it, kept so the report can say so.
+    profilePhoto: { type: Boolean, default: false },
+    legacyLogo: { type: Boolean, default: false },
+    photoCount: { type: Number, default: 0 },
+
+    // When the two per-listing calls last succeeded, and why they did not.
+    checkedAt: Date,
+    error: { type: String, default: '' },
+  },
+  { _id: false }
+);
+
 const RealtimeProfileSchema = new mongoose.Schema(
   {
     // "locations/12345678901234567890"
@@ -71,6 +113,9 @@ const RealtimeProfileSchema = new mongoose.Schema(
     // filters follow this, not the owner-set openInfo, which can still say OPEN.
     googleOpenStatus: { type: String, default: null },
 
+    // Completeness of the listing's content, for the optimization report.
+    optimization: { type: OptimizationSchema, default: () => ({}) },
+
     lastSyncedAt: Date,
   },
   { collection: 'realtimeProfiles', timestamps: true }
@@ -82,6 +127,8 @@ RealtimeProfileSchema.index({ statusType: 1 });
 RealtimeProfileSchema.index({ unitName: 1, statusType: 1 });
 RealtimeProfileSchema.index({ unitName: 1, openStatus: 1 });
 RealtimeProfileSchema.index({ folders: 1 });
+// The optimization phase picks up whatever was checked least recently.
+RealtimeProfileSchema.index({ 'optimization.checkedAt': 1 });
 
 const DaySchema = new mongoose.Schema(
   {

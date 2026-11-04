@@ -23,14 +23,17 @@ import {
   ShieldAlert,
   Clock,
   RadioTower,
+  ClipboardCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SidebarFilters } from "@/components/dashboard/SidebarFilters";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/contexts/AuthContext";
+import { canSeeOptimization } from "@/lib/optimizationAccess";
 
 const navItems = [
   { icon: RadioTower, label: "Realtime", path: "/realtime" },
+  { icon: ClipboardCheck, label: "Profile Optimization", path: "/profile-optimization" },
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   // { icon: GitCompare, label: "Comparison", path: "/comparison" },
   { icon: Users, label: "Profiles", path: "/doctors" },
@@ -123,6 +126,10 @@ export const Sidebar = ({
     return item;
   }).filter(item => {
     if (item.label === "Settings" && !["Admin", "Cluster", "Branch"].includes(user?.role || "")) {
+      return false;
+    }
+    // The optimization report is limited to one mailbox; everyone else never sees the entry.
+    if (item.path === "/profile-optimization" && !canSeeOptimization(user?.email)) {
       return false;
     }
     return true;

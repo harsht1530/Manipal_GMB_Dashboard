@@ -56,6 +56,8 @@ export interface VerificationUnit {
   total: number;
   verified: number;
   unverified: number;
+  /** Unverified with duplicates and suspended taken out - the three add back up to unverified. */
+  needToVerify: number;
   duplicates: number;
   suspended: number;
   permanentlyClosed: number;
@@ -182,8 +184,69 @@ export interface ExportPayload {
   rows: ExportRow[];
 }
 
+/** The nine content checks, keyed by the ids the backend sends. */
+export type OptimizationCheckId =
+  | "coverLogo"
+  | "description"
+  | "hours"
+  | "services"
+  | "phone"
+  | "website"
+  | "whatsapp"
+  | "appointment"
+  | "review";
+
+export interface OptimizationRow {
+  locationId: string;
+  title: string;
+  storeCode: string;
+  unitName: string;
+  cluster: string;
+  department: string;
+  primaryCategory: string;
+  folders: string[];
+  mapsUri: string;
+  verificationStatus: string;
+  checks: Record<OptimizationCheckId, boolean>;
+  /** What is actually there, per check - the character count, the URL, "Not set". */
+  details: Record<OptimizationCheckId, string>;
+  score: number;
+  total: number;
+  /** When the photo and link checks were last read from Google; null until the first pass. */
+  checkedAt: string | null;
+  error: string;
+}
+
+export interface OptimizationData {
+  total: number;
+  checks: { id: OptimizationCheckId; label: string; complete: number; missing: number; percent: number }[];
+  averageScore: number;
+  maxScore: number;
+  fullyOptimized: number;
+  /** Listings the sync has not yet read photos and links for. */
+  awaitingFirstCheck: number;
+  generatedAt: string;
+  rows: OptimizationRow[];
+}
+
+/**
+ * The signed-in mailbox, read from the same localStorage entry AuthContext owns. Sent with every
+ * realtime request so the backend can gate the restricted optimization report on it.
+ */
+const signedInEmail = (): string => {
+  try {
+    const raw = localStorage.getItem("user");
+    return raw ? JSON.parse(raw).email || "" : "";
+  } catch {
+    return "";
+  }
+};
+
 const get = async <T>(path: string): Promise<T> => {
-  const res = await fetch(`${REALTIME_API}${path}`);
+  const email = signedInEmail();
+  const res = await fetch(`${REALTIME_API}${path}`, {
+    headers: email ? { "x-user-email": email } : undefined,
+  });
   const body = await res.json();
   if (!res.ok || !body.success) throw new Error(body.error || `Request failed (${res.status})`);
   return body.data as T;
@@ -229,6 +292,17 @@ export const useRealtimeVerification = (filters: RealtimeFilters) =>
   useQuery({
     queryKey: ["realtime", "verification", filters],
     queryFn: () => get<VerificationData>(`/verification${toQuery(filters)}`),
+    ...SLOW,
+  });
+
+/**
+ * The optimization report. One request carries both the per-check totals the card shows and
+ * every row the download needs, so pressing Download never waits on the network.
+ */
+export const useRealtimeOptimization = (filters: RealtimeFilters) =>
+  useQuery({
+    queryKey: ["realtime", "optimization", filters],
+    queryFn: () => get<OptimizationData>(`/optimization${toQuery(filters)}`),
     ...SLOW,
   });
 

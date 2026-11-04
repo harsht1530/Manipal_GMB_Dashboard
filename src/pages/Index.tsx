@@ -7,7 +7,8 @@ import { TopPerformers } from "@/components/dashboard/TopPerformers";
 import { PerformanceChart } from "@/components/dashboard/PerformanceChart";
 import { LocationsOverview } from "@/components/dashboard/LocationsOverview";
 import { useMongoData, getAggregatedMetrics, parseDateString } from "@/hooks/useMongoData";
-import { Search, Map, Navigation, Globe, Phone, Star, Smartphone, Monitor, MapPin, Loader2, Download, Filter, FileSpreadsheet, FileText } from "lucide-react";
+import { Search, Map, Navigation, Globe, Phone, Star, Smartphone, Monitor, MapPin, Loader2, Download, Filter, FileSpreadsheet, FileText, Info } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -688,8 +689,12 @@ const Index = () => {
     }
   };
 
-  const handleExport = () => {
-    // 1. Prepare Profile counts sheet data
+  /**
+   * The profile counts behind LocationsOverview, filtered to whatever months are selected and
+   * rolled up per unit. Shared by the full export and the counts-only export so the two can
+   * never drift apart.
+   */
+  const buildCountsRows = () => {
     let locationFiltered = processedLocations;
 
     if (selectedMonth.length === 0) {
@@ -737,7 +742,7 @@ const Index = () => {
       return acc;
     }, [] as any[]);
 
-    const profileCountsSheetData = aggregatedLocationData.map(item => ({
+    return aggregatedLocationData.map(item => ({
       "Unit Name": item.unitName,
       "Month": item.month,
       "Cluster": item.cluster,
@@ -749,6 +754,19 @@ const Index = () => {
       "Out of Organization": item.outOfOrganization,
       "Verification %": item.totalProfiles > 0 ? `${Math.round((item.verifiedProfiles / item.totalProfiles) * 100)}%` : "0%"
     }));
+  };
+
+  /** Counts only - the figures on screen, with nothing else attached. */
+  const handleExportCounts = () => {
+    const rows = buildCountsRows();
+    if (!rows.length) return;
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Profile counts");
+    XLSX.writeFile(wb, `Manipal_Profile_Counts_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  const handleExport = () => {
+    const profileCountsSheetData = buildCountsRows();
 
     // 2. Prepare Insights Data Sheet directly from filteredData
     const exportInsights = filteredData;
@@ -857,7 +875,23 @@ const Index = () => {
         )}
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-xl font-bold text-foreground">Analytics Overview {user?.branch || user?.cluster ? `(${user?.branch || user?.cluster})` : ''}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-foreground">Analytics Overview {user?.branch || user?.cluster ? `(${user?.branch || user?.cluster})` : ''}</h2>
+              {/* Hover only, so it never gets in the way of the heading. */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="flex h-5 w-5 cursor-default items-center justify-center text-muted-foreground hover:text-foreground"
+                    aria-label="When this data is refreshed"
+                  >
+                    <Info className="h-4 w-4" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="max-w-[260px] text-xs leading-relaxed">
+                  The data will be updated by 5th of every month.
+                </TooltipContent>
+              </Tooltip>
+            </div>
             <p className="text-sm text-muted-foreground">Detailed metrics and performance trends</p>
           </div>
           <div className="flex items-center gap-3" data-html2canvas-ignore>
@@ -868,6 +902,11 @@ const Index = () => {
             >
               <Filter className="h-4 w-4" />
               {showFilters ? 'Hide Filters' : 'Show Filters'}
+            </Button>
+
+            <Button variant="outline" onClick={handleExportCounts} className="gap-2">
+              <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+              Export Counts
             </Button>
             
             {SHOW_FULL_DASHBOARD && (

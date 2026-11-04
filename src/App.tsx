@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, HashRouter } from "react-router-dom";
 import Index from "./pages/Index";
 import RealtimeDashboard from "./pages/RealtimeDashboard";
+import ProfileOptimization from "./pages/ProfileOptimization";
 import Comparison from "./pages/Comparison";
 import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -66,6 +67,7 @@ const App = () => (
 
             {/* Protected Routes */}
             <Route path="/realtime" element={<ProtectedRoute><RealtimeDashboard /></ProtectedRoute>} />
+            <Route path="/profile-optimization" element={<ProtectedRoute><ProfileOptimization /></ProtectedRoute>} />
             <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
             <Route path="/comparison" element={<ProtectedRoute><Comparison /></ProtectedRoute>} />
             <Route path="/doctors" element={<ProtectedRoute><Doctors /></ProtectedRoute>} />

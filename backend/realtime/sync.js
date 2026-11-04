@@ -19,6 +19,10 @@ const CONCURRENCY = Number(process.env.REALTIME_SYNC_CONCURRENCY || 8);
 // One extra call per listing; set to false to shorten each run at the cost of the
 // "Google updates" count going stale.
 const FETCH_GOOGLE_UPDATES = process.env.REALTIME_FETCH_GOOGLE_UPDATES !== 'false';
+// The optimization phase costs two extra calls per listing, so each one is re-read at most
+// once a day. Set REALTIME_FETCH_OPTIMIZATION=false to skip it entirely.
+const FETCH_OPTIMIZATION = process.env.REALTIME_FETCH_OPTIMIZATION !== 'false';
+const OPTIMIZATION_TTL_HOURS = Number(process.env.REALTIME_OPTIMIZATION_TTL_HOURS || 24);
 // Keep listings that no folder lists as a member (there is normally about one).
 const ALLOW_REACHABLE_FALLBACK = true;
 
@@ -208,6 +212,19 @@ const syncProfiles = async (client, settings, { fetchUpdates = true } = {}) => {
     };
   };
 
+  /**
+   * The optimization checks the bulk listing already answers. Written with dotted paths so
+   * they never overwrite the cover photo / logo / link fields, which the optimization phase
+   * fills from calls of their own.
+   */
+  const readListingOptimization = (loc) => ({
+    'optimization.description': loc.profile?.description || '',
+    'optimization.descriptionLength': (loc.profile?.description || '').trim().length,
+    'optimization.hourPeriods': (loc.regularHours?.periods || []).length,
+    'optimization.serviceCount': (loc.serviceItems || []).length,
+    'optimization.reviewLink': loc.metadata?.newReviewUri || '',
+  });
+
   const collect = async (account, membership) => {
     let pageToken;
     do {
@@ -225,10 +242,10 @@ const syncProfiles = async (client, settings, { fetchUpdates = true } = {}) => {
           // No folder lists this one as a member, so it must not be added to any folder's
           // count - it goes to its own bucket and still counts in the headline total.
           base.unitName = 'Unassigned';
-          byLocation.set(loc.name, { base, folders: new Set(['Unassigned']) });
+          byLocation.set(loc.name, { base, opt: readListingOptimization(loc), folders: new Set(['Unassigned']) });
           continue;
         }
-        byLocation.set(loc.name, { base, folders: new Set([account.accountName]) });
+        byLocation.set(loc.name, { base, opt: readListingOptimization(loc), folders: new Set([account.accountName]) });
       }
       await progress({ 'sync.profilesSynced': byLocation.size });
       pageToken = page.nextPageToken;
@@ -259,7 +276,7 @@ const syncProfiles = async (client, settings, { fetchUpdates = true } = {}) => {
     await progress({ 'sync.failedAccounts': failedAccounts.map((f) => f.accountName) });
   }
 
-  for (const { base, folders } of byLocation.values()) {
+  for (const { base, opt, folders } of byLocation.values()) {
     const status = deriveStatus(base, null);
     if (!base.hasVoiceOfMerchant && !base.duplicateOf) needsVom.push(base.locationId);
     seen.push(base.locationId);
@@ -269,8 +286,8 @@ const syncProfiles = async (client, settings, { fetchUpdates = true } = {}) => {
         // A listing can sit in a folder that failed to list this run. Replacing `folders`
         // would drop it from that folder's count, so a partial run only adds.
         update: failedAccounts.length
-          ? { $set: { ...base, ...status }, $addToSet: { folders: { $each: [...folders] } } }
-          : { $set: { ...base, ...status, folders: [...folders] } },
+          ? { $set: { ...base, ...status, ...opt }, $addToSet: { folders: { $each: [...folders] } } }
+          : { $set: { ...base, ...status, ...opt, folders: [...folders] } },
         upsert: true,
       },
     });
@@ -328,6 +345,84 @@ const syncProfiles = async (client, settings, { fetchUpdates = true } = {}) => {
             },
           }
         );
+      },
+      CONCURRENCY,
+      (done) => progress({ 'sync.processed': done })
+    );
+  }
+
+  // Cover photo, logo, WhatsApp and appointment link: two calls per listing, so each listing
+  // is refreshed at most once a day. The listing-level checks above are already current on
+  // every run; only these four can go stale, and content like a logo rarely changes within a
+  // day. Without the guard a six-hourly sync would make ~13k extra calls a day.
+  if (FETCH_OPTIMIZATION) {
+    const cutoff = new Date(Date.now() - OPTIMIZATION_TTL_HOURS * 3600 * 1000);
+    const stale = await RealtimeProfile.find(
+      {
+        locationId: { $in: seen },
+        $or: [{ 'optimization.checkedAt': { $lt: cutoff } }, { 'optimization.checkedAt': null }],
+      },
+      { locationId: 1, accountId: 1, _id: 0 }
+    ).lean();
+
+    await progress({ 'sync.phase': 'optimization', 'sync.total': stale.length, 'sync.processed': 0 });
+    await runPool(
+      stale,
+      async ({ locationId, accountId }) => {
+        const set = { 'optimization.checkedAt': new Date(), 'optimization.error': '' };
+        const failures = [];
+
+        try {
+          const attrs = (await client.locationAttributes(locationId)).attributes || [];
+          const uriOf = (name) => {
+            const hit = attrs.find((a) => a.name === name);
+            return hit?.uriValues?.[0]?.uri || '';
+          };
+          set['optimization.whatsapp'] = uriOf('attributes/url_whatsapp');
+          set['optimization.appointment'] = uriOf('attributes/url_appointment');
+        } catch (err) {
+          // 403/404 means no access or nothing set, which is a legitimate "not configured".
+          if (err.status === 403 || err.status === 404) {
+            set['optimization.whatsapp'] = '';
+            set['optimization.appointment'] = '';
+          } else {
+            failures.push(`attributes: ${err.message}`);
+          }
+        }
+
+        try {
+          const items = (await client.locationMedia(accountId, locationId)).mediaItems || [];
+          const categoryOf = (m) => m.locationAssociation?.category || '';
+          const has = (cat) => items.some((m) => categoryOf(m) === cat);
+          // What the Business Profile UI calls the logo is stored as PROFILE. LOGO is the legacy
+          // category and is set on barely any listing, so reading only LOGO reports a missing
+          // logo for almost every profile that in fact has one.
+          const profilePhoto = has('PROFILE');
+          const legacyLogo = has('LOGO');
+          set['optimization.coverPhoto'] = has('COVER');
+          set['optimization.profilePhoto'] = profilePhoto;
+          set['optimization.legacyLogo'] = legacyLogo;
+          set['optimization.logo'] = profilePhoto || legacyLogo;
+          set['optimization.photoCount'] = items.length;
+        } catch (err) {
+          if (err.status === 403 || err.status === 404) {
+            set['optimization.coverPhoto'] = false;
+            set['optimization.logo'] = false;
+            set['optimization.profilePhoto'] = false;
+            set['optimization.legacyLogo'] = false;
+            set['optimization.photoCount'] = 0;
+          } else {
+            failures.push(`media: ${err.message}`);
+          }
+        }
+
+        // Whatever did come back is kept, but a listing with a failed call is left without a
+        // checkedAt so the next run picks it up again rather than reporting a gap it never read.
+        if (failures.length) {
+          delete set['optimization.checkedAt'];
+          set['optimization.error'] = failures.join('; ');
+        }
+        await RealtimeProfile.updateOne({ locationId }, { $set: set });
       },
       CONCURRENCY,
       (done) => progress({ 'sync.processed': done })

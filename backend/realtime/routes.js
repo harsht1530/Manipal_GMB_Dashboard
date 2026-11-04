@@ -152,6 +152,13 @@ const withStatus = (match, value) => {
   const status = String(value || '').trim();
   if (status === 'verified') match.hasVoiceOfMerchant = true;
   else if (status === 'unverified') match.hasVoiceOfMerchant = false;
+  // Unverified with the two groups that have their own tiles taken out, so the three lists
+  // add back up to Unverified without a profile appearing twice.
+  else if (status === 'need-to-verify') {
+    match.hasVoiceOfMerchant = false;
+    match.duplicateOf = null;
+    match.statusType = { $nin: ['Suspended', 'Disabled'] };
+  }
   else if (status === 'duplicate') match.duplicateOf = { $ne: null };
   else if (status === 'suspended') match.statusType = { $in: ['Suspended', 'Disabled'] };
   else if (status === 'closed') match.$or = [{ openStatus: 'CLOSED_PERMANENTLY' }, { googleOpenStatus: 'CLOSED_PERMANENTLY' }];
@@ -506,6 +513,23 @@ router.get('/verification', async (req, res) => {
             verified: { $sum: { $cond: ['$hasVoiceOfMerchant', 1, 0] } },
             duplicates: { $sum: { $cond: [{ $ne: ['$duplicateOf', null] }, 1, 0] } },
             suspended: { $sum: { $cond: [{ $in: ['$statusType', ['Suspended', 'Disabled']] }, 1, 0] } },
+            // Unverified minus the duplicates and suspended listings, counted in one pass so a
+            // profile that is both is removed once rather than subtracted twice.
+            needToVerify: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $not: ['$hasVoiceOfMerchant'] },
+                      { $eq: ['$duplicateOf', null] },
+                      { $not: [{ $in: ['$statusType', ['Suspended', 'Disabled']] }] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
             // Either the owner-set status or the one Google reports - the UI counts both.
             permanentlyClosed: {
               $sum: { $cond: [{ $or: [{ $eq: ['$openStatus', 'CLOSED_PERMANENTLY'] }, { $eq: ['$googleOpenStatus', 'CLOSED_PERMANENTLY'] }] }, 1, 0] },
@@ -545,6 +569,7 @@ router.get('/verification', async (req, res) => {
         total: row.total,
         verified: row.verified,
         unverified: row.total - row.verified,
+        needToVerify: row.needToVerify,
         duplicates: row.duplicates,
         suspended: row.suspended,
         permanentlyClosed: row.permanentlyClosed,
@@ -559,6 +584,7 @@ router.get('/verification', async (req, res) => {
         'total',
         'verified',
         'unverified',
+        'needToVerify',
         'duplicates',
         'suspended',
         'permanentlyClosed',
@@ -756,6 +782,217 @@ router.get('/export', async (req, res) => {
         overall: !hasRange,
         range: range ? { from: range.fromIso, to: range.toIso } : null,
         monthsCovered: covered.length ? { first: covered[0], last: covered[covered.length - 1] } : null,
+        generatedAt: new Date(),
+        rows,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/* ───────────────────────── optimization report ───────────────────────── */
+
+/**
+ * The nine content checks, in the order the report lists them.
+ *
+ * `done` is the pass/fail; `detail` is what the sheet shows next to it, so a gap can be acted
+ * on without opening Google. Cover photo and logo are one check, as both belong to the same
+ * piece of work, but the sheet still names which of the two is missing.
+ *
+ * Phone, website and the review link come from the listing itself, so they are always current.
+ * WhatsApp, the appointment link, the cover photo and the logo come from the two per-listing
+ * calls in the optimization phase of the sync, which refreshes a listing once a day.
+ */
+const OPTIMIZATION_CHECKS = [
+  {
+    id: 'coverLogo',
+    label: 'Cover Photo & Logo',
+    done: (p) => p.optimization?.coverPhoto === true && p.optimization?.logo === true,
+    detail: (p) => {
+      const logoLabel = p.optimization?.legacyLogo && !p.optimization?.profilePhoto ? 'Logo' : 'Logo (profile photo)';
+      const have = [p.optimization?.coverPhoto && 'Cover photo', p.optimization?.logo && logoLabel].filter(Boolean);
+      const photos = p.optimization?.photoCount || 0;
+      const count = `${photos} photo${photos === 1 ? '' : 's'}`;
+      if (have.length === 2) return `Both set (${count})`;
+      if (have.length === 1) return `${have[0]} only (${count})`;
+      return photos ? `Neither set (${count})` : 'No photos';
+    },
+  },
+  {
+    id: 'description',
+    label: 'Business Description',
+    done: (p) => (p.optimization?.descriptionLength || 0) > 0,
+    detail: (p) => {
+      const length = p.optimization?.descriptionLength || 0;
+      return length ? `${length} characters` : 'Empty';
+    },
+  },
+  {
+    id: 'hours',
+    label: 'Working Hours',
+    done: (p) => (p.optimization?.hourPeriods || 0) > 0,
+    detail: (p) => {
+      const periods = p.optimization?.hourPeriods || 0;
+      return periods ? `${periods} opening period${periods === 1 ? '' : 's'}` : 'Not set';
+    },
+  },
+  {
+    id: 'services',
+    label: 'Services',
+    done: (p) => (p.optimization?.serviceCount || 0) > 0,
+    detail: (p) => {
+      const count = p.optimization?.serviceCount || 0;
+      return count ? `${count} service${count === 1 ? '' : 's'}` : 'None listed';
+    },
+  },
+  {
+    id: 'phone',
+    label: 'Phone Number',
+    done: (p) => (p.phone || '').trim().length > 0,
+    detail: (p) => (p.phone || '').trim() || 'Not set',
+  },
+  {
+    id: 'website',
+    label: 'Website',
+    done: (p) => (p.website || '').trim().length > 0,
+    detail: (p) => (p.website || '').trim() || 'Not set',
+  },
+  {
+    id: 'whatsapp',
+    label: 'Whatsapp Chat',
+    done: (p) => (p.optimization?.whatsapp || '').trim().length > 0,
+    detail: (p) => (p.optimization?.whatsapp || '').trim() || 'Not set',
+  },
+  {
+    id: 'appointment',
+    label: 'Appointment Link',
+    done: (p) => (p.optimization?.appointment || '').trim().length > 0,
+    detail: (p) => (p.optimization?.appointment || '').trim() || 'Not set',
+  },
+  {
+    id: 'review',
+    label: 'Review Links',
+    done: (p) => (p.optimization?.reviewLink || '').trim().length > 0,
+    detail: (p) => (p.optimization?.reviewLink || '').trim() || 'Not set',
+  },
+];
+
+/**
+ * Who may read the report. Mirrors src/lib/optimizationAccess.ts - the sidebar there decides
+ * what is shown, this decides what is served. Override with REALTIME_OPTIMIZATION_EMAILS
+ * (comma separated) to add or move the mailbox without a code change.
+ *
+ * The caller identifies itself with the x-user-email header, which useRealtimeData.ts attaches
+ * to every realtime request. Note what this is and is not: the dashboard keeps its signed-in
+ * user in localStorage and the API has no session of its own, so this check keeps the section
+ * out of every other account's dashboard, but it cannot stop someone who writes the header by
+ * hand. Real enforcement needs a server-side session, which this app does not yet have.
+ */
+const OPTIMIZATION_EMAILS = (process.env.REALTIME_OPTIMIZATION_EMAILS || 'harsh@multipliersolutions.com')
+  .split(',')
+  .map((entry) => entry.trim().toLowerCase())
+  .filter(Boolean);
+
+const optimizationCaller = (req) =>
+  String(req.headers['x-user-email'] || req.query.email || '').trim().toLowerCase();
+
+/**
+ * Completeness of every listing's content against the nine checks, with the per-check totals
+ * the card on screen shows and the rows the downloaded report is built from.
+ */
+router.get('/optimization', async (req, res) => {
+  try {
+    const caller = optimizationCaller(req);
+    if (!caller || !OPTIMIZATION_EMAILS.includes(caller)) {
+      // Logged so a genuine access problem is distinguishable from an empty report.
+      console.warn(`[optimization] refused for ${caller || '(no email sent)'}`);
+      return res.status(403).json({ success: false, error: 'This section is restricted.' });
+    }
+
+    const match = withStatus(profileMatch(req), req.query.status);
+    // Only the fields the nine checks and the report columns need. The description text is
+    // deliberately left out - descriptionLength is all the report shows, and the full text for
+    // 3k listings is most of what this query would otherwise transfer. Halves the query time.
+    const projection = {
+      _id: 0,
+      locationId: 1, title: 1, storeCode: 1, unitName: 1, cluster: 1, department: 1,
+      primaryCategory: 1, folders: 1, mapsUri: 1, phone: 1, website: 1,
+      duplicateOf: 1, hasVoiceOfMerchant: 1, statusType: 1,
+      'optimization.descriptionLength': 1,
+      'optimization.hourPeriods': 1,
+      'optimization.serviceCount': 1,
+      'optimization.reviewLink': 1,
+      'optimization.whatsapp': 1,
+      'optimization.appointment': 1,
+      'optimization.coverPhoto': 1,
+      'optimization.logo': 1,
+      'optimization.profilePhoto': 1,
+      'optimization.legacyLogo': 1,
+      'optimization.photoCount': 1,
+      'optimization.checkedAt': 1,
+      'optimization.error': 1,
+    };
+    const key = `optimization:${JSON.stringify(match)}`;
+    const profiles = await cached(key, () =>
+      RealtimeProfile.find(match, projection).sort({ unitName: 1, title: 1 }).lean()
+    );
+
+    const tally = OPTIMIZATION_CHECKS.map((check) => ({ id: check.id, label: check.label, complete: 0 }));
+    // A listing the optimization phase has never managed to read would otherwise look like
+    // four genuine gaps, so the report says how many listings are actually covered.
+    let awaitingFirstCheck = 0;
+
+    const rows = profiles.map((p) => {
+      const checks = {};
+      const details = {};
+      let score = 0;
+      OPTIMIZATION_CHECKS.forEach((check, i) => {
+        const ok = check.done(p);
+        checks[check.id] = ok;
+        details[check.id] = check.detail(p);
+        if (ok) {
+          score += 1;
+          tally[i].complete += 1;
+        }
+      });
+      if (!p.optimization?.checkedAt) awaitingFirstCheck += 1;
+
+      return {
+        locationId: p.locationId,
+        title: p.title || '',
+        storeCode: p.storeCode || '',
+        unitName: p.unitName || '',
+        cluster: p.cluster || '',
+        department: p.department || '',
+        primaryCategory: p.primaryCategory || '',
+        folders: p.folders || [],
+        mapsUri: p.mapsUri || '',
+        verificationStatus: verificationLabel(p),
+        checks,
+        details,
+        score,
+        total: OPTIMIZATION_CHECKS.length,
+        checkedAt: p.optimization?.checkedAt || null,
+        error: p.optimization?.error || '',
+      };
+    });
+
+    const totalScore = rows.reduce((sum, r) => sum + r.score, 0);
+
+    res.json({
+      success: true,
+      data: {
+        total: profiles.length,
+        checks: tally.map((t) => ({
+          ...t,
+          missing: profiles.length - t.complete,
+          percent: profiles.length ? Math.round((t.complete / profiles.length) * 1000) / 10 : 0,
+        })),
+        averageScore: profiles.length ? Math.round((totalScore / profiles.length) * 100) / 100 : 0,
+        maxScore: OPTIMIZATION_CHECKS.length,
+        fullyOptimized: rows.filter((r) => r.score === OPTIMIZATION_CHECKS.length).length,
+        awaitingFirstCheck,
         generatedAt: new Date(),
         rows,
       },
