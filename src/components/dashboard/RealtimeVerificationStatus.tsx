@@ -25,6 +25,7 @@ import {
   Wand2,
   PauseCircle,
   Calendar as CalendarIcon,
+  Info,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
@@ -380,6 +381,14 @@ export const RealtimeVerificationStatus = ({ data, loading, filters }: Props) =>
           <div>
             <h2 className="text-lg font-semibold text-foreground">Profile Verification Status</h2>
             <p className="text-xs text-muted-foreground mt-0.5">Live from the Google Business Profile API</p>
+            {/* Always on screen rather than on hover, so the download limit cannot be missed. */}
+            <p className="mt-1.5 flex items-start gap-1.5 text-xs text-muted-foreground max-w-[520px]">
+              <Info className="mt-[1px] h-3.5 w-3.5 shrink-0" />
+              <span>
+                Data is available to download only for the last 6 months. For any previous data,
+                please refer to the dashboard.
+              </span>
+            </p>
           </div>
           {totals && (
             <Badge variant="outline" className="border-rose-500/30 bg-rose-500/10 text-rose-600">

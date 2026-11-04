@@ -23,9 +23,7 @@ import {
   Search,
   Calendar as CalendarIcon,
   X,
-  Info,
 } from "lucide-react";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { format } from "date-fns";
 import { DateRange } from "react-day-picker";
 import { cn } from "@/lib/utils";
@@ -244,22 +242,6 @@ const RealtimeDashboard = () => {
                 />
               </PopoverContent>
             </Popover>
-
-            {/* Hover only - no click target, so it never competes with the filters beside it. */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span
-                  className="flex h-9 w-7 shrink-0 cursor-default items-center justify-center text-muted-foreground hover:text-foreground"
-                  aria-label="About the available date range"
-                >
-                  <Info className="h-4 w-4" />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-[280px] text-xs leading-relaxed">
-                Data is available to download only for the last 6 months. For any previous data,
-                please refer to the Historical dashboard/reports.
-              </TooltipContent>
-            </Tooltip>
 
             <span className="ml-auto text-xs text-muted-foreground">
               {data?.range

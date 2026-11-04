@@ -8,7 +8,6 @@ import { PerformanceChart } from "@/components/dashboard/PerformanceChart";
 import { LocationsOverview } from "@/components/dashboard/LocationsOverview";
 import { useMongoData, getAggregatedMetrics, parseDateString } from "@/hooks/useMongoData";
 import { Search, Map, Navigation, Globe, Phone, Star, Smartphone, Monitor, MapPin, Loader2, Download, Filter, FileSpreadsheet, FileText, Info } from "lucide-react";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -92,7 +91,7 @@ const Index = () => {
     const monthData = selectedYear.length > 0
       ? insights.filter(i => selectedYear.includes(i.year))
       : insights;
- 
+
     const monthSet = new Set<string>();
     monthData.forEach(i => {
       if (!i.month) return;
@@ -182,7 +181,7 @@ const Index = () => {
         const timeA = a.date ? parseDateString(a.date).getTime() : 0;
         const timeB = b.date ? parseDateString(b.date).getTime() : 0;
         if (!isNaN(timeA) && !isNaN(timeB) && timeA !== timeB) return timeB - timeA;
-        
+
         const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         return monthOrder.indexOf(b.month) - monthOrder.indexOf(a.month);
       });
@@ -203,7 +202,7 @@ const Index = () => {
       const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(i.branch);
       const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(i.department);
       const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(i.rating) === r);
-      
+
       const monthMatch = i.month === activeMonth;
       const yearMatch = !activeYear || i.year === activeYear;
 
@@ -223,16 +222,16 @@ const Index = () => {
       const itemYear = item.year;
       const itemMonthYear = `${item.month} ${itemYear}`;
       const monthMatch = selectedMonth.length === 0 || selectedMonth.includes(itemMonthYear);
- 
+
       const specialityMatch = selectedSpeciality.length === 0 || selectedSpeciality.includes(item.speciality);
       const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(item.department);
       const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(item.rating) === r);
- 
+
       let yearMatch = true;
       if (selectedYear.length > 0) {
         yearMatch = selectedYear.includes(itemYear);
       }
- 
+
       return clusterMatch && branchMatch && monthMatch && specialityMatch && departmentMatch && ratingMatch && yearMatch;
     });
   }, [insights, selectedCluster, selectedBranch, selectedMonth, selectedSpeciality, selectedDepartments, selectedRatings, selectedYear, mounted, loading]);
@@ -279,19 +278,19 @@ const Index = () => {
     }
 
     const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    
+
     // Sort by Year (from Date field) and then by Month string to ensure logical chronologic order
     const sortedInsights = [...insights].sort((a, b) => {
       const yearA = parseInt(a.year) || 0;
       const yearB = parseInt(b.year) || 0;
-      
+
       if (yearA !== yearB) return yearB - yearA;
       return monthOrder.indexOf(b.month) - monthOrder.indexOf(a.month);
     });
 
     const latest = sortedInsights[0];
     const fallbackYear = latest.year || new Date().getFullYear().toString();
-    
+
     return {
       month: latest.month,
       year: fallbackYear
@@ -303,8 +302,8 @@ const Index = () => {
 
   // Unique performers for the table
   const topUniquePerformers = useMemo(() => {
-    const targetMonthYear = selectedMonth.length > 0 
-      ? selectedMonth 
+    const targetMonthYear = selectedMonth.length > 0
+      ? selectedMonth
       : [`${latestDataMonth} ${latestDataYear}`];
 
     const performersData = filteredData.filter(item => {
@@ -351,14 +350,14 @@ const Index = () => {
       const timeA = a.timestamp || 0;
       const timeB = b.timestamp || 0;
       if (timeA !== timeB) return timeB - timeA;
-      
+
       const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
       return monthOrder.indexOf(b.month) - monthOrder.indexOf(a.month);
     });
 
     const latest = sortedLocations[0];
     const fallbackYear = latest.year || new Date().getFullYear().toString();
-    
+
     return {
       month: latest.month || "Jan",
       year: fallbackYear,
@@ -441,7 +440,7 @@ const Index = () => {
       if (locationsTargetYear.length > 0) {
         yearMatch = locationsTargetYear.includes(locYear);
       }
-      
+
       let exactDateMatch = true;
       if (locationsTargetDate) {
         exactDateMatch = loc.date === locationsTargetDate;
@@ -591,7 +590,7 @@ const Index = () => {
     };
 
     // Main Value: Sum of selected (or latest month if none)
-    const mainM = selectedMonth.length > 0 
+    const mainM = selectedMonth.length > 0
       ? getAggregatedForMonths(selectedMonth, true)
       : getSingleMonthMetrics(latestDataMonth, latestDataYear);
 
@@ -627,65 +626,65 @@ const Index = () => {
     setIsGeneratingPDF(true);
     console.log("Generating Dashboard PDF...");
     try {
-        // Wait for a moment to ensure DOM is ready
-        await new Promise(resolve => setTimeout(resolve, 500));
+      // Wait for a moment to ensure DOM is ready
+      await new Promise(resolve => setTimeout(resolve, 500));
 
-        // Wait for images to load
-        const images = printRef.current.getElementsByTagName('img');
-        const imagePromises = Array.from(images).map(img => {
-            if (img.complete) return Promise.resolve();
-            return new Promise((resolve) => {
-                img.onload = resolve;
-                img.onerror = resolve;
-            });
+      // Wait for images to load
+      const images = printRef.current.getElementsByTagName('img');
+      const imagePromises = Array.from(images).map(img => {
+        if (img.complete) return Promise.resolve();
+        return new Promise((resolve) => {
+          img.onload = resolve;
+          img.onerror = resolve;
         });
+      });
 
-        // 3-second timeout for image loading
-        await Promise.race([
-            Promise.all(imagePromises),
-            new Promise(resolve => setTimeout(resolve, 3000))
-        ]);
+      // 3-second timeout for image loading
+      await Promise.race([
+        Promise.all(imagePromises),
+        new Promise(resolve => setTimeout(resolve, 3000))
+      ]);
 
-        await new Promise(resolve => setTimeout(resolve, 800)); // Allow charts to finish rendering
+      await new Promise(resolve => setTimeout(resolve, 800)); // Allow charts to finish rendering
 
-        const canvas = await html2canvas(printRef.current, {
-            scale: 2,
-            useCORS: true,
-            logging: false,
-            backgroundColor: "#ffffff",
-            allowTaint: true,
-            windowWidth: 1400, // Force a wider window width for desktop-like layout in PDF
-            onclone: (clonedDoc) => {
-                // Ensure all charts have enough space in the clone
-                const charts = clonedDoc.querySelectorAll('.recharts-responsive-container');
-                charts.forEach((chart: any) => {
-                    chart.style.width = '100%';
-                    chart.style.height = '100%';
-                });
-            }
-        });
+      const canvas = await html2canvas(printRef.current, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+        allowTaint: true,
+        windowWidth: 1400, // Force a wider window width for desktop-like layout in PDF
+        onclone: (clonedDoc) => {
+          // Ensure all charts have enough space in the clone
+          const charts = clonedDoc.querySelectorAll('.recharts-responsive-container');
+          charts.forEach((chart: any) => {
+            chart.style.width = '100%';
+            chart.style.height = '100%';
+          });
+        }
+      });
 
-        const imgData = canvas.toDataURL("image/png");
-        
-        // Define margins (in mm)
-        const margin = 10;
-        const pdfWidth = 210; // A4 width
-        const imgWidth = pdfWidth - (margin * 2);
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
-        const pdfHeight = imgHeight + (margin * 2);
+      const imgData = canvas.toDataURL("image/png");
 
-        const pdf = new jsPDF({
-            orientation: pdfHeight > pdfWidth ? "portrait" : "landscape",
-            unit: "mm",
-            format: [pdfWidth, pdfHeight],
-        });
+      // Define margins (in mm)
+      const margin = 10;
+      const pdfWidth = 210; // A4 width
+      const imgWidth = pdfWidth - (margin * 2);
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const pdfHeight = imgHeight + (margin * 2);
 
-        pdf.addImage(imgData, "PNG", margin, margin, imgWidth, imgHeight);
-        pdf.save(`Dashboard_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+      const pdf = new jsPDF({
+        orientation: pdfHeight > pdfWidth ? "portrait" : "landscape",
+        unit: "mm",
+        format: [pdfWidth, pdfHeight],
+      });
+
+      pdf.addImage(imgData, "PNG", margin, margin, imgWidth, imgHeight);
+      pdf.save(`Dashboard_Report_${new Date().toISOString().split('T')[0]}.pdf`);
     } catch (error) {
-        console.error("PDF generation failed:", error);
+      console.error("PDF generation failed:", error);
     } finally {
-        setIsGeneratingPDF(false);
+      setIsGeneratingPDF(false);
     }
   };
 
@@ -875,28 +874,17 @@ const Index = () => {
         )}
         <div className="flex items-center justify-between mb-4">
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold text-foreground">Analytics Overview {user?.branch || user?.cluster ? `(${user?.branch || user?.cluster})` : ''}</h2>
-              {/* Hover only, so it never gets in the way of the heading. */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className="flex h-5 w-5 cursor-default items-center justify-center text-muted-foreground hover:text-foreground"
-                    aria-label="When this data is refreshed"
-                  >
-                    <Info className="h-4 w-4" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="right" className="max-w-[260px] text-xs leading-relaxed">
-                  The data will be updated by 5th of every month.
-                </TooltipContent>
-              </Tooltip>
-            </div>
+            <h2 className="text-xl font-bold text-foreground">Analytics Overview {user?.branch || user?.cluster ? `(${user?.branch || user?.cluster})` : ''}</h2>
             <p className="text-sm text-muted-foreground">Detailed metrics and performance trends</p>
+            {/* Always on screen rather than on hover, so the refresh date cannot be missed. */}
+            <p className="mt-1.5 flex items-start gap-1.5 text-sm text-muted-foreground">
+              <Info className="mt-[3px] h-3.5 w-3.5 shrink-0" />
+              <span>The data will be updated by 8th of every month.</span>
+            </p>
           </div>
           <div className="flex items-center gap-3" data-html2canvas-ignore>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => setShowFilters(!showFilters)}
               className="gap-2"
             >
@@ -908,30 +896,30 @@ const Index = () => {
               <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
               Export Counts
             </Button>
-            
+
             {SHOW_FULL_DASHBOARD && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button disabled={isGeneratingPDF} className="gap-2 bg-primary hover:bg-primary/90">
-                  {isGeneratingPDF ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                  {isGeneratingPDF ? 'Generating...' : 'Export Data'}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handleExport} className="cursor-pointer gap-2">
-                  <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
-                  Download Excel
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleExportCSV} className="cursor-pointer gap-2">
-                  <Download className="h-4 w-4 text-blue-600" />
-                  Download CSV
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleDownloadPDF} className="cursor-pointer gap-2">
-                  <FileText className="h-4 w-4 text-rose-600" />
-                  Download PDF
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button disabled={isGeneratingPDF} className="gap-2 bg-primary hover:bg-primary/90">
+                    {isGeneratingPDF ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                    {isGeneratingPDF ? 'Generating...' : 'Export Data'}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={handleExport} className="cursor-pointer gap-2">
+                    <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                    Download Excel
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleExportCSV} className="cursor-pointer gap-2">
+                    <Download className="h-4 w-4 text-blue-600" />
+                    Download CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleDownloadPDF} className="cursor-pointer gap-2">
+                    <FileText className="h-4 w-4 text-rose-600" />
+                    Download PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
         </div>
@@ -959,58 +947,58 @@ const Index = () => {
         )}
 
         <div className="mb-6">
-          <LocationsOverview 
-            data={overviewLocations} 
-            apiInsights={overviewApiInsights} 
-            selectedMonths={selectedMonth} 
-            selectedYear={selectedYear} 
+          <LocationsOverview
+            data={overviewLocations}
+            apiInsights={overviewApiInsights}
+            selectedMonths={selectedMonth}
+            selectedYear={selectedYear}
             onVerifiedCountChange={setDashboardVerifiedCount}
           />
         </div>
 
         {SHOW_FULL_DASHBOARD && (
-        <>
-        {/* Metrics Grid - 2 rows of 4 cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
-          <MetricCard title="Search Mobile" value={metrics.googleSearchMobile} change={dynamicMetrics.changes.googleSearchMobile} icon={Smartphone} delay={0} />
-          <MetricCard title="Search Desktop" value={metrics.googleSearchDesktop} change={dynamicMetrics.changes.googleSearchDesktop} icon={Monitor} delay={50} />
-          <MetricCard title="Maps Mobile" value={metrics.googleMapsMobile} change={dynamicMetrics.changes.googleMapsMobile} icon={Map} delay={100} />
-          <MetricCard title="Maps Desktop" value={metrics.googleMapsDesktop} change={dynamicMetrics.changes.googleMapsDesktop} icon={MapPin} delay={150} />
+          <>
+            {/* Metrics Grid - 2 rows of 4 cards */}
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
+              <MetricCard title="Search Mobile" value={metrics.googleSearchMobile} change={dynamicMetrics.changes.googleSearchMobile} icon={Smartphone} delay={0} />
+              <MetricCard title="Search Desktop" value={metrics.googleSearchDesktop} change={dynamicMetrics.changes.googleSearchDesktop} icon={Monitor} delay={50} />
+              <MetricCard title="Maps Mobile" value={metrics.googleMapsMobile} change={dynamicMetrics.changes.googleMapsMobile} icon={Map} delay={100} />
+              <MetricCard title="Maps Desktop" value={metrics.googleMapsDesktop} change={dynamicMetrics.changes.googleMapsDesktop} icon={MapPin} delay={150} />
 
-          <MetricCard title="Phone Calls" value={metrics.totalCalls} change={dynamicMetrics.changes.totalCalls} icon={Phone} delay={200} />
-          <MetricCard title="Directions" value={metrics.totalDirections} change={dynamicMetrics.changes.totalDirections} icon={Navigation} delay={250} />
-          <MetricCard title="Website Clicks" value={metrics.totalWebsiteClicks} change={dynamicMetrics.changes.totalWebsiteClicks} icon={Globe} delay={300} />
-          <MetricCard title="Total Searches" value={metrics.totalSearchImpressions} change={dynamicMetrics.changes.totalSearchImpressions} icon={Search} delay={350} />
-        </div>
+              <MetricCard title="Phone Calls" value={metrics.totalCalls} change={dynamicMetrics.changes.totalCalls} icon={Phone} delay={200} />
+              <MetricCard title="Directions" value={metrics.totalDirections} change={dynamicMetrics.changes.totalDirections} icon={Navigation} delay={250} />
+              <MetricCard title="Website Clicks" value={metrics.totalWebsiteClicks} change={dynamicMetrics.changes.totalWebsiteClicks} icon={Globe} delay={300} />
+              <MetricCard title="Total Searches" value={metrics.totalSearchImpressions} change={dynamicMetrics.changes.totalSearchImpressions} icon={Search} delay={350} />
+            </div>
 
-        <div className="mb-6">
-          <PerformanceChart data={filteredData} />
-        </div>
+            <div className="mb-6">
+              <PerformanceChart data={filteredData} />
+            </div>
 
 
 
-        {/* Performance Table - Full Width */}
-        <div className="mb-6">
-          <div className="space-y-6">
-            <PerformanceTable data={topUniquePerformers} />
-            {topUniquePerformers.length > 0 && (
-              <p className="text-sm text-muted-foreground">
-                Showing Top 10 Unique Profiles by total searches across filtered results.
-              </p>
-            )}
-          </div>
-        </div>
+            {/* Performance Table - Full Width */}
+            <div className="mb-6">
+              <div className="space-y-6">
+                <PerformanceTable data={topUniquePerformers} />
+                {topUniquePerformers.length > 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Showing Top 10 Unique Profiles by total searches across filtered results.
+                  </p>
+                )}
+              </div>
+            </div>
 
-        {/* Summary Row - 2 Columns */}
-        <div className="grid gap-6 lg:grid-cols-2 mb-6">
-          <TopPerformers data={topUniquePerformers} />
-          <ReviewSummary
-            totalReviews={reviewStats.totalReviews}
-            averageRating={reviewStats.averageRating}
-            ratingDistribution={reviewStats.ratingDistribution}
-          />
-        </div>
-        </>
+            {/* Summary Row - 2 Columns */}
+            <div className="grid gap-6 lg:grid-cols-2 mb-6">
+              <TopPerformers data={topUniquePerformers} />
+              <ReviewSummary
+                totalReviews={reviewStats.totalReviews}
+                averageRating={reviewStats.averageRating}
+                ratingDistribution={reviewStats.ratingDistribution}
+              />
+            </div>
+          </>
         )}
       </div>
     </DashboardLayout>
