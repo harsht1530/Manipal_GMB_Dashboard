@@ -118,6 +118,15 @@ const RealtimeDashboard = () => {
   );
 
   const meta = useRealtimeMeta();
+
+  // Cluster is the parent filter: only folders holding listings from it are offered
+  const folderOptions = useMemo(() => {
+    const units = meta.data?.units ?? [];
+    if (cluster === "ALL") return units;
+    const map = meta.data?.unitClusters ?? {};
+    return units.filter((unit) => (map[unit] ?? []).includes(cluster));
+  }, [meta.data, cluster]);
+
   const overview = useRealtimeOverview(filters);
   const verification = useRealtimeVerification(filters);
 
@@ -177,8 +186,8 @@ const RealtimeDashboard = () => {
                 <SelectValue placeholder="Folder" />
               </SelectTrigger>
               <SelectContent className="max-h-[320px]">
-                <SelectItem value="ALL">All folders</SelectItem>
-                {(meta.data?.units ?? []).map((unit) => (
+                <SelectItem value="ALL">{cluster === "ALL" ? "All folders" : `All folders in ${cluster}`}</SelectItem>
+                {folderOptions.map((unit) => (
                   <SelectItem key={unit} value={unit}>
                     {unit}
                   </SelectItem>

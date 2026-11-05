@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const express = require('express');
 const google = require('./google');
+const { CLUSTERS, clustersOf, clusterFilter } = require('./cluster-folders');
 const { RealtimeProfile, RealtimeMetric, getSettings, METRIC_KEYS } = require('./models');
 const { runSync, isRunning, PERFORMANCE_MONTHS } = require('./sync');
 
@@ -90,12 +91,25 @@ const rangeOf = (req) => {
   return { from, to, fromIso: isoOf(from), toIso: isoOf(to) };
 };
 
-const metricMatch = (req) => {
-  const match = {};
+/**
+ * Cluster and folder, with cluster as the parent: a folder is narrower than the cluster it
+ * belongs to, so when both are given the folder decides. Which folders a cluster holds comes
+ * from the allocation sheet, not from the `cluster` field on each listing.
+ */
+const folderScope = (req) => {
   const clusters = listParam(req.query.cluster);
   const units = listParam(req.query.unit);
-  if (clusters.length) match.cluster = { $in: clusters };
-  if (units.length) match.unitName = { $in: units };
+  if (units.length) return { folders: { $in: units } };
+  if (clusters.length) return clusterFilter(clusters);
+  return null;
+};
+
+const metricMatch = async (req) => {
+  const match = {};
+  const scope = folderScope(req);
+  // Metrics are stored per listing and month and carry no folder list, so the folder scope is
+  // turned into the listings it covers before the metrics are queried.
+  if (scope) match.locationId = { $in: await RealtimeProfile.distinct('locationId', scope) };
 
   const range = rangeOf(req);
   // Narrow by month first so the unwind only touches the months in range.
@@ -104,14 +118,9 @@ const metricMatch = (req) => {
 };
 
 const profileMatch = (req) => {
-  const match = {};
-  const clusters = listParam(req.query.cluster);
-  const units = listParam(req.query.unit);
-  if (clusters.length) match.cluster = { $in: clusters };
-  // Folder membership, not the single primary folder, so picking a cluster folder returns
-  // every listing Google shows inside it.
-  if (units.length) match.folders = { $in: units };
-  return match;
+  // Folder membership, not the single primary folder, so picking a cluster or one of its
+  // folders returns every listing Google shows inside it.
+  return { ...(folderScope(req) || {}) };
 };
 
 /**
@@ -354,16 +363,20 @@ router.get('/sync/status', async (req, res) => {
 router.get('/meta', async (req, res) => {
   try {
     const data = await cached('meta', async () => {
-      const [clusters, units, settings] = await Promise.all([
-        RealtimeProfile.distinct('cluster'),
+      const [units, settings] = await Promise.all([
         // Every Google folder, not just the primary one per listing, so the picker offers the
         // same folders the status table shows.
         RealtimeProfile.distinct('folders'),
         getSettings(),
       ]);
+      const folders = units.filter(Boolean).sort();
       return {
-        clusters: clusters.filter(Boolean).sort(),
-        units: units.filter(Boolean).sort(),
+        // The allocation sheet's clusters, and its folder assignment: the folder picker
+        // offers only the folders of the chosen cluster, and anything the sheet leaves out
+        // is reachable under Others.
+        clusters: CLUSTERS,
+        units: folders,
+        unitClusters: Object.fromEntries(folders.map((folder) => [folder, clustersOf(folder)])),
         months: windowMonths().map((ym) => ({ ym, label: labelFor(ym) })),
         lastSyncAt: settings.sync?.lastSuccessAt || null,
         connected: !!settings.connected,
@@ -385,7 +398,7 @@ router.get('/meta', async (req, res) => {
  */
 router.get('/overview', async (req, res) => {
   try {
-    const { match, range } = metricMatch(req);
+    const { match, range } = await metricMatch(req);
     const key = `overview:${JSON.stringify({ match, from: range.fromIso, to: range.toIso })}`;
 
     const data = await cached(key, async () => {

@@ -76,6 +76,8 @@ export interface VerificationData {
 export interface RealtimeMeta {
   clusters: string[];
   units: string[];
+  /** Folder -> the clusters it holds listings for; the folder picker follows the cluster. */
+  unitClusters: Record<string, string[]>;
   months: { ym: string; label: string }[];
   lastSyncAt: string | null;
   connected: boolean;
