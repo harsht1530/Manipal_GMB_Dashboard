@@ -289,6 +289,17 @@ const getTemplateColumns = (category: string, ticketType: string, isMultiplier: 
   return ["GMB Listing Link", "Required Action Details", "Contact Person Name", "Contact Email / Phone", "Remarks"];
 };
 
+/**
+ * Template columns that really are files: in single-entry mode they point the user at the
+ * attachment field rather than pretending a text box will carry a photo.
+ */
+const isAttachmentColumn = (column: string): boolean =>
+  /photo|image|logo|screenshot|video|document|certificate|licen[cs]e|proof|evidence|name board|storefront/i.test(column);
+
+/** Columns that usually hold a sentence or a list, so they get a multi-line box. */
+const isLongColumn = (column: string): boolean =>
+  /description|explanation|remark|content|address|details|keyword|list of|services/i.test(column);
+
 export default function RaiseTicket() {
   const { user } = useAuth();
   const { createTicket, team, isMultiplier, currentMultiplierTeamMember } = useTickets();
@@ -321,6 +332,12 @@ export default function RaiseTicket() {
   const [attachedUrl, setAttachedUrl] = useState("");
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [attachments, setAttachments] = useState<File[]>([]);
+
+  // Single entry fills the template's columns straight on the page; bulk keeps the
+  // download-fill-upload flow and asks how many profiles the sheet covers.
+  const [entryMode, setEntryMode] = useState<"single" | "bulk">("single");
+  const [singleValues, setSingleValues] = useState<Record<string, string>>({});
+  const [profileCount, setProfileCount] = useState("");
 
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [assignedUserEmail, setAssignedUserEmail] = useState("");
@@ -381,6 +398,20 @@ export default function RaiseTicket() {
   useEffect(() => {
     setTicketType("");
   }, [category]);
+
+  // The columns the Excel template would have carried, so the form mirrors it exactly.
+  const templateColumns = useMemo(
+    () => (category && ticketType ? getTemplateColumns(category, ticketType, isMultiplier) : []),
+    [category, ticketType, isMultiplier]
+  );
+
+  // "Others" has no defined template, so it keeps the existing flow untouched.
+  const hasTemplate = Boolean(category && ticketType && category !== "Others");
+  const singleEntry = hasTemplate && entryMode === "single";
+
+  useEffect(() => {
+    setSingleValues({});
+  }, [category, ticketType]);
 
   const { branches, clustersMap } = useMemo(() => {
     const map: Record<string, string> = {};
@@ -493,7 +524,7 @@ export default function RaiseTicket() {
       return;
     }
 
-    const columns = getTemplateColumns(category, ticketType, isMultiplier);
+    const columns = templateColumns;
 
     const worksheet = XLSX.utils.json_to_sheet([], { header: columns });
     const workbook = XLSX.utils.book_new();
@@ -553,6 +584,55 @@ export default function RaiseTicket() {
       return;
     }
 
+    const filledColumns = singleEntry
+      ? templateColumns.filter(col => (singleValues[col] || "").trim())
+      : [];
+
+    if (singleEntry && filledColumns.length === 0) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill at least one request detail, or switch to Bulk to upload a sheet.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (hasTemplate && entryMode === "bulk" && !(Number(profileCount) > 0)) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter the No. of profiles to update.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // The details ride along in the description, so request lists, details pages and the
+    // notification emails show them without any change downstream.
+    const detailLines = singleEntry
+      ? ["", "--- Request Details (Single Entry) ---",
+         ...filledColumns.map(col => `${col}: ${(singleValues[col] || "").trim()}`)]
+      : hasTemplate
+      ? ["", `No. of profiles to update: ${Number(profileCount)}`]
+      : [];
+    const fullDescription = [description.trim(), ...detailLines].join("\n");
+
+    // A one-row sheet in the template's own shape, so whoever picks the request up opens the
+    // same attachment they would have got from a bulk upload.
+    let singleSheet: File | null = null;
+    if (singleEntry) {
+      const row: Record<string, string> = {};
+      templateColumns.forEach(col => { row[col] = (singleValues[col] || "").trim(); });
+      const worksheet = XLSX.utils.json_to_sheet([row], { header: templateColumns });
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Template");
+      const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+      singleSheet = new File(
+        [bytes],
+        `${category.replace(/\s+/g, "_")}_Single_Entry.xlsx`,
+        { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }
+      );
+    }
+
     setLoading(true);
 
     const formData = new FormData();
@@ -563,7 +643,7 @@ export default function RaiseTicket() {
     formData.append("raisedByRole", user?.role || "Branch");
     formData.append("cluster", derivedCluster);
     formData.append("branch", branch);
-    formData.append("description", description);
+    formData.append("description", fullDescription);
     formData.append("attachedUrl", attachedUrl);
     
     if (isMultiplier) {
@@ -571,7 +651,9 @@ export default function RaiseTicket() {
       formData.append("assignedToEmail", assignedUserEmail);
     }
     
-    if (excelFile) {
+    if (singleSheet) {
+      formData.append("excelTemplate", singleSheet);
+    } else if (excelFile) {
       formData.append("excelTemplate", excelFile);
     }
     
@@ -720,8 +802,89 @@ export default function RaiseTicket() {
                   </div>
                 )}
 
+                {/* 3.5. Single or bulk: one profile is filled in here, many still go by sheet */}
+                {hasTemplate && (
+                  <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div>
+                        <h4 className="text-sm font-semibold text-foreground">How many profiles?</h4>
+                        <p className="text-xs text-muted-foreground">
+                          {entryMode === "single"
+                            ? "Fill the details below - no Excel needed."
+                            : "Download the template, fill every profile and upload it."}
+                        </p>
+                      </div>
+                      <div className="inline-flex rounded-md border border-border bg-background p-0.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={entryMode === "single" ? "default" : "ghost"}
+                          className="h-7 px-3 text-xs"
+                          onClick={() => setEntryMode("single")}
+                        >
+                          Single
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={entryMode === "bulk" ? "default" : "ghost"}
+                          className="h-7 px-3 text-xs"
+                          onClick={() => setEntryMode("bulk")}
+                        >
+                          Bulk
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3.6. Single entry: the template's own columns, as a form */}
+                {singleEntry && (
+                  <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-3 animate-in fade-in-50 duration-200">
+                    <div className="flex items-center gap-2">
+                      <FileSpreadsheet className="h-4 w-4 text-primary shrink-0" />
+                      <h4 className="text-sm font-semibold text-primary">Request Details</h4>
+                      <span className="text-[11px] text-muted-foreground">({ticketType})</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {templateColumns.map(col => (
+                        <div
+                          key={col}
+                          className={`space-y-1 ${isLongColumn(col) ? "md:col-span-2" : ""}`}
+                        >
+                          <Label htmlFor={`single-${col}`} className="text-xs font-medium">{col}</Label>
+                          {isLongColumn(col) ? (
+                            <Textarea
+                              id={`single-${col}`}
+                              className="min-h-[70px] bg-background"
+                              placeholder={`Enter ${col}`}
+                              value={singleValues[col] || ""}
+                              onChange={(e) => setSingleValues(prev => ({ ...prev, [col]: e.target.value }))}
+                            />
+                          ) : (
+                            <Input
+                              id={`single-${col}`}
+                              className="bg-background"
+                              placeholder={isAttachmentColumn(col) ? "File name or note - attach the file below" : `Enter ${col}`}
+                              value={singleValues[col] || ""}
+                              onChange={(e) => setSingleValues(prev => ({ ...prev, [col]: e.target.value }))}
+                            />
+                          )}
+                          {isAttachmentColumn(col) && (
+                            <p className="text-[10px] text-muted-foreground">Upload the file under Additional Attachments below.</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
+                      <Info className="h-3.5 w-3.5 shrink-0 mt-[1px] text-primary" />
+                      <span>These are the same fields as the Excel template; they are attached to the request as a one-row sheet.</span>
+                    </p>
+                  </div>
+                )}
+
                 {/* 4. Downloader Template */}
-                {category && ticketType && category !== "Others" && (
+                {hasTemplate && entryMode === "bulk" && (
                   <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <FileSpreadsheet className="h-8 w-8 text-primary shrink-0" />
@@ -736,7 +899,28 @@ export default function RaiseTicket() {
                   </div>
                 )}
 
+                {/* 4.5. Bulk: how many profiles the sheet covers */}
+                {hasTemplate && entryMode === "bulk" && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="profileCount" className="font-semibold text-sm">
+                      No. of profiles to update <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="profileCount"
+                      type="number"
+                      min={1}
+                      step={1}
+                      placeholder="e.g. 25"
+                      value={profileCount}
+                      onChange={(e) => setProfileCount(e.target.value)}
+                      className="w-full md:w-48"
+                    />
+                    <p className="text-xs text-muted-foreground">How many profiles are covered by the uploaded sheet.</p>
+                  </div>
+                )}
+
                 {/* 5. Upload Excel */}
+                {!singleEntry && (
                 <div className="space-y-1.5">
                   <Label htmlFor="excelFile" className="font-semibold text-sm">Upload Completed Excel Sheet <span className="text-muted-foreground font-normal text-xs">(Optional)</span></Label>
                   <div className="flex items-center gap-2">
@@ -749,6 +933,7 @@ export default function RaiseTicket() {
                     />
                   </div>
                 </div>
+                )}
 
                 {/* 6. Description */}
                 <div className="space-y-1.5">
