@@ -1,12 +1,16 @@
 const mongoose = require('mongoose');
 const { GoogleClient } = require('./google');
 const { RealtimeProfile, RealtimeMetric, RealtimeSetting, getSettings, METRIC_KEYS } = require('./models');
+const { runPool } = require('./pool');
+const { syncReviews } = require('./reviews');
+const { syncKeywords } = require('./keywords');
 
 /**
- * Pulls Google Business Profile data into the two realtime collections.
+ * Pulls Google Business Profile data into the realtime collections.
  *
  *   profiles     - every location of every account the connected mailbox can see
  *   performance  - daily metrics, rolled into one document per location per month
+ *   reviews      - the rolling review window and the per-listing review statistics
  *
  * A "full" run covers the last 6 months; the twice-daily scheduled run only re-reads the
  * trailing window (Google keeps revising the most recent days), which keeps each run to one
@@ -22,6 +26,14 @@ const FETCH_GOOGLE_UPDATES = process.env.REALTIME_FETCH_GOOGLE_UPDATES !== 'fals
 // The optimization phase costs two extra calls per listing, so each one is re-read at most
 // once a day. Set REALTIME_FETCH_OPTIMIZATION=false to skip it entirely.
 const FETCH_OPTIMIZATION = process.env.REALTIME_FETCH_OPTIMIZATION !== 'false';
+// The review phase costs about 325 batch calls plus one per listing that changed.
+const FETCH_REVIEWS = process.env.REALTIME_FETCH_REVIEWS !== 'false';
+// Search preference (Google's search-keyword report) costs one call per listing per month.
+// A run picks up whichever months are still missing, newest first, but never more than this
+// many at once - so a cold start fills the year over a few days instead of making tens of
+// thousands of calls in one go, and a steady state costs nothing at all.
+const FETCH_KEYWORDS = process.env.REALTIME_FETCH_KEYWORDS !== 'false';
+const KEYWORD_MONTHS_PER_RUN = Number(process.env.REALTIME_KEYWORD_MONTHS_PER_RUN || 2);
 const OPTIMIZATION_TTL_HOURS = Number(process.env.REALTIME_OPTIMIZATION_TTL_HOURS || 24);
 // Keep listings that no folder lists as a member (there is normally about one).
 const ALLOW_REACHABLE_FALLBACK = true;
@@ -37,25 +49,6 @@ const normalise = (s) =>
     .replace(/[^a-z0-9]/g, '');
 
 const ymOf = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-
-const runPool = async (items, worker, concurrency, onProgress) => {
-  let index = 0;
-  let done = 0;
-  const run = async () => {
-    while (index < items.length) {
-      const i = index++;
-      try {
-        await worker(items[i], i);
-      } catch (err) {
-        console.error('[realtime] item failed:', err.message);
-      }
-      done += 1;
-      if (onProgress && done % 25 === 0) await onProgress(done);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length || 1) }, run));
-  if (onProgress) await onProgress(done);
-};
 
 /**
  * Cluster / unit for a Google location, taken from the data the dashboard already has so the
@@ -416,6 +409,29 @@ const syncProfiles = async (client, settings, { fetchUpdates = true } = {}) => {
           }
         }
 
+        try {
+          // Newest first, so the first entry dates the listing's posting activity. Only LIVE
+          // posts count: a rejected or deleted post never appeared on the profile.
+          const posts = (await client.localPosts(accountId, locationId, { pageSize: 5 })).localPosts || [];
+          const live = posts.filter((p) => !p.state || p.state === 'LIVE');
+          const newest = live
+            .map((p) => Date.parse(p.createTime || p.updateTime || ''))
+            .filter((t) => Number.isFinite(t))
+            .sort((a, b) => b - a)[0];
+          set['optimization.lastPostAt'] = newest ? new Date(newest) : null;
+          set['optimization.postCount'] = live.length;
+          set['optimization.postsCheckedAt'] = new Date();
+        } catch (err) {
+          if (err.status === 403 || err.status === 404) {
+            // No posting surface on this listing, which is a real "never posted".
+            set['optimization.lastPostAt'] = null;
+            set['optimization.postCount'] = 0;
+            set['optimization.postsCheckedAt'] = new Date();
+          } else {
+            failures.push(`posts: ${err.message}`);
+          }
+        }
+
         // Whatever did come back is kept, but a listing with a failed call is left without a
         // checkedAt so the next run picks it up again rather than reporting a gap it never read.
         if (failures.length) {
@@ -575,6 +591,51 @@ const runSync = async ({ mode = 'incremental', trigger = 'manual' } = {}) => {
       // Neither 'profiles' nor 'counts' touches the Performance API.
       //   profiles - listing + verification status only, the quick re-check (~5 min)
       //   counts    - the above plus Google's suggested edits, so every status count is current
+      // 'keywords' reads every missing month in one go, for when the whole year is wanted
+      // now rather than over the next few daily runs.
+      if (mode === 'keywords') {
+        await progress({ 'sync.phase': 'keywords', 'sync.processed': 0, 'sync.total': 0 });
+        const kw = await syncKeywords(client, {
+          lookback: 12,
+          concurrency: CONCURRENCY,
+          onProgress: (processed) =>
+            RealtimeSetting.updateOne({ _id: 'primary' }, { $set: { 'sync.processed': processed } }),
+        });
+        await progress({
+          'sync.status': 'idle',
+          'sync.phase': 'done',
+          'sync.finishedAt': new Date(),
+          'sync.lastSuccessAt': new Date(),
+          'sync.error': null,
+        });
+        console.log(`[realtime] search preference backfill finished: ${kw.months.length} month(s), ${kw.keywords} search terms.`);
+        running = false;
+        return;
+      }
+
+      // 'reviews' re-reads the review window alone - no listing or performance calls at all.
+      if (mode === 'reviews') {
+        await progress({ 'sync.phase': 'reviews', 'sync.processed': 0, 'sync.total': 0 });
+        const reviewsOnly = await syncReviews(client, {
+          mode: 'incremental',
+          concurrency: CONCURRENCY,
+          onProgress: (processed) =>
+            RealtimeSetting.updateOne({ _id: 'primary' }, { $set: { 'sync.processed': processed } }),
+        });
+        await progress({
+          'sync.reviewsSynced': reviewsOnly.written,
+          'sync.reviewsFrom': reviewsOnly.from,
+          'sync.status': 'idle',
+          'sync.phase': 'done',
+          'sync.finishedAt': new Date(),
+          'sync.lastSuccessAt': new Date(),
+          'sync.error': null,
+        });
+        console.log(`[realtime] reviews sync finished: ${reviewsOnly.written} reviews across ${reviewsOnly.locations} listings.`);
+        running = false;
+        return;
+      }
+
       const profilesOnly = mode === 'profiles' || mode === 'counts';
       const { count: profilesSynced, failedAccounts } = await syncProfiles(client, settings, { fetchUpdates: mode !== 'profiles' });
       const partial = failedAccounts.length > 0;
@@ -601,6 +662,47 @@ const runSync = async ({ mode = 'incremental', trigger = 'manual' } = {}) => {
         RealtimeSetting.updateOne({ _id: 'primary' }, { $set: { 'sync.processed': processed } })
       );
 
+      // Whatever months are still missing, newest first. Months already stored and settled
+      // are skipped, so on most days this is one small query and no API calls at all.
+      if (FETCH_KEYWORDS) {
+        await progress({ 'sync.phase': 'keywords', 'sync.processed': 0, 'sync.total': 0 });
+        const kw = await syncKeywords(client, {
+          lookback: 12,
+          maxMonths: KEYWORD_MONTHS_PER_RUN,
+          concurrency: CONCURRENCY,
+          onProgress: (processed) =>
+            RealtimeSetting.updateOne({ _id: 'primary' }, { $set: { 'sync.processed': processed } }),
+        });
+        await progress({
+          'sync.keywordMonthsPending': kw.pending,
+          ...(kw.months.length ? { 'sync.keywordsSyncedAt': new Date() } : {}),
+        });
+        if (kw.months.length) {
+          console.log(
+            `[realtime] search preference synced: ${kw.months.map((m) => `${m.ym} (${m.keywords})`).join(', ')}` +
+            (kw.pending ? `; ${kw.pending} month(s) still to go` : '')
+          );
+        }
+      }
+
+      // Reviews last, because they are the cheapest phase to lose: it reads only what has
+      // changed since the previous run, so a failure here costs one run's worth of reviews
+      // rather than the whole window.
+      let reviews = { written: 0, locations: 0, pruned: 0 };
+      if (FETCH_REVIEWS) {
+        await progress({ 'sync.phase': 'reviews', 'sync.processed': 0, 'sync.total': 0 });
+        reviews = await syncReviews(client, {
+          mode: mode === 'full' ? 'full' : 'incremental',
+          concurrency: CONCURRENCY,
+          onProgress: (processed) =>
+            RealtimeSetting.updateOne({ _id: 'primary' }, { $set: { 'sync.processed': processed } }),
+        });
+        await progress({
+          'sync.reviewsSynced': reviews.written,
+          'sync.reviewsFrom': reviews.from,
+        });
+      }
+
       // Terminal state goes through updateOne: a full save() can fail on an unrelated field and
       // would then leave the run looking stuck at "running" forever.
       await progress({
@@ -612,7 +714,10 @@ const runSync = async ({ mode = 'incremental', trigger = 'manual' } = {}) => {
         'sync.error': partialNote,
         ...(mode === 'full' ? { 'sync.lastFullSyncAt': new Date() } : {}),
       });
-      console.log(`[realtime] ${mode} sync finished: ${profilesSynced} profiles, ${metricsSynced} metric documents.`);
+      console.log(
+        `[realtime] ${mode} sync finished: ${profilesSynced} profiles, ${metricsSynced} metric documents, ` +
+        `${reviews.written} reviews across ${reviews.locations} listings.`
+      );
     } catch (err) {
       console.error('[realtime] sync failed:', err);
       await progress({ 'sync.status': 'error', 'sync.error': err.message, 'sync.finishedAt': new Date() });

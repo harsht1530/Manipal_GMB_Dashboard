@@ -34,7 +34,7 @@ import { canSeeOptimization } from "@/lib/optimizationAccess";
 const navItems = [
   { icon: RadioTower, label: "Realtime", path: "/realtime" },
   { icon: ClipboardCheck, label: "Profile Optimization", path: "/profile-optimization" },
-  { icon: LayoutDashboard, label: "Dashboard", path: "/" },
+  { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   // { icon: GitCompare, label: "Comparison", path: "/comparison" },
   { icon: Users, label: "Profiles", path: "/doctors" },
   { icon: Building2, label: "Units", path: "/branches" },

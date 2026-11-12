@@ -33,6 +33,7 @@ import AdminTicketConsole from "./pages/tickets/AdminTicketConsole";
 import MultiplierRaiseRequest from "./pages/tickets/MultiplierRaiseRequest";
 
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { LANDING_ROUTE } from "./lib/landing";
 import { Navigate } from "react-router-dom";
 
 const queryClient = new QueryClient();
@@ -48,7 +49,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated } = useAuth();
   if (isAuthenticated) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={LANDING_ROUTE} replace />;
   }
   return <>{children}</>;
 };
@@ -68,7 +69,10 @@ const App = () => (
             {/* Protected Routes */}
             <Route path="/realtime" element={<ProtectedRoute><RealtimeDashboard /></ProtectedRoute>} />
             <Route path="/profile-optimization" element={<ProtectedRoute><ProfileOptimization /></ProtectedRoute>} />
-            <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+            {/* Realtime is the landing page, so the bare URL goes there rather than
+                rendering the dashboard. The dashboard keeps its own path below. */}
+            <Route path="/" element={<Navigate to={LANDING_ROUTE} replace />} />
+            <Route path="/dashboard" element={<ProtectedRoute><Index /></ProtectedRoute>} />
             <Route path="/comparison" element={<ProtectedRoute><Comparison /></ProtectedRoute>} />
             <Route path="/doctors" element={<ProtectedRoute><Doctors /></ProtectedRoute>} />
             <Route path="/doctor-details/*" element={<ProtectedRoute><DoctorDetails /></ProtectedRoute>} />

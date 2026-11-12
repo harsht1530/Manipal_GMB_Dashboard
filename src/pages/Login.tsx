@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/input-otp";
 
 import { useAuth } from "@/contexts/AuthContext";
+import { LANDING_ROUTE } from "@/lib/landing";
 
 const LOGO = "https://multipliersolutions.in/manipalhospitals/manipallogo2.png";
 
@@ -54,7 +55,7 @@ const Login = () => {
         if (data.user) {
           login(data.user);
           toast.success("Login successful!");
-          navigate("/");
+          navigate(LANDING_ROUTE);
         } else {
           setStep(2);
           setResendTimer(60);
@@ -91,7 +92,7 @@ const Login = () => {
         const user = data.user;
         login(user);
         toast.success("Identity verified! Welcome.");
-        navigate("/");
+        navigate(LANDING_ROUTE);
       } else {
         toast.error(data.error || "Invalid or expired code");
       }

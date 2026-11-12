@@ -212,6 +212,9 @@ export const RealtimeVerificationStatus = ({ data, loading, filters }: Props) =>
     "Google Update Fields": (row.googleUpdateFields || []).join(" | "),
     Phone: row.phone || "",
     Website: row.website || "",
+    // Google keeps this as the url_whatsapp attribute, not a field on the listing, which is
+    // why it arrives under optimization rather than beside phone and website.
+    "Whatsapp Chat": row.optimization?.whatsapp || "",
     Address: row.address || "",
     "Maps URL": row.mapsUri || "",
     Account: row.accountName || "",

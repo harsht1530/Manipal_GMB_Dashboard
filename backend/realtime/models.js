@@ -48,6 +48,16 @@ const OptimizationSchema = new mongoose.Schema(
     whatsapp: { type: String, default: '' },
     appointment: { type: String, default: '' },
 
+    // From the v4 localPosts list - one call per listing. A date rather than a count,
+    // because what matters for "is this listing posting" is when it last posted, not how
+    // many posts it has ever had.
+    lastPostAt: { type: Date, default: null },
+    postCount: { type: Number, default: 0 },
+    // Separate from checkedAt: until the posts call has actually run for a listing, "has it
+    // posted recently" is unknown, which is not the same as "no". Anything reading these
+    // must treat an unset postsCheckedAt as unmeasured rather than as a failed check.
+    postsCheckedAt: { type: Date, default: null },
+
     // From the v4 media list - one call per listing.
     coverPhoto: { type: Boolean, default: false },
     // True when the listing has the image the Business Profile UI calls the logo. Google stores
@@ -209,13 +219,21 @@ const RealtimeSettingSchema = new mongoose.Schema(
       mode: String, // full | incremental
       // Folders Google could not list on the last run; their listings kept the previous data.
       failedAccounts: { type: [String], default: [] },
-      phase: String, // profiles | performance | done
+      phase: String, // profiles | performance | keywords | reviews | done
       startedAt: Date,
       finishedAt: Date,
       processed: { type: Number, default: 0 },
       total: { type: Number, default: 0 },
       profilesSynced: { type: Number, default: 0 },
       metricsSynced: { type: Number, default: 0 },
+      reviewsSynced: { type: Number, default: 0 },
+      // Search-preference months the daily run has not caught up on yet.
+      keywordMonthsPending: { type: Number, default: 0 },
+      keywordsSyncedAt: Date,
+      // Start of the review window the last run kept. The oldest month in it is only
+      // partly covered, so anything counting reviews by month needs this to know where the
+      // data actually begins.
+      reviewsFrom: Date,
       error: String,
       lastSuccessAt: Date,
       lastFullSyncAt: Date,

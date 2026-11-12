@@ -167,6 +167,14 @@ export interface ExportRow extends ProfileRow {
   googleUpdateFields?: string[];
   googleOpenStatus?: string | null;
   lastSyncedAt?: string;
+  /**
+   * The content checks, as stored. Only the link fields are read here - they are listing
+   * details rather than metrics, so they belong in the export alongside phone and website.
+   */
+  optimization?: {
+    whatsapp?: string;
+    appointment?: string;
+  };
   /** Absent on a business-details-only export. */
   performance?: MetricTotals;
   monthsCovered?: number;

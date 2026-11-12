@@ -247,12 +247,21 @@ class GoogleClient {
     return this.refreshing;
   }
 
-  async request(url, params = {}, attempt = 0) {
+  request(url, params = {}, attempt = 0) {
+    return this.send({ method: 'get', url, params }, attempt);
+  }
+
+  /** Same pacing, token handling and retries as request(), for the v4 batch endpoints. */
+  post(url, body = {}, attempt = 0) {
+    return this.send({ method: 'post', url, data: body }, attempt);
+  }
+
+  async send(config, attempt = 0) {
     const token = await this.getToken();
     await pacer();
     try {
-      const { data } = await axios.get(url, {
-        params,
+      const { data } = await axios({
+        ...config,
         headers: { Authorization: `Bearer ${token}` },
         timeout: 60000,
         paramsSerializer: (p) => {
@@ -282,15 +291,15 @@ class GoogleClient {
             ? Math.min(60000, 5000 * 2 ** attempt)
             : Math.min(30000, 2000 * 2 ** attempt);
         await sleep((Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : backoff) + Math.floor(Math.random() * 1000));
-        return this.request(url, params, attempt + 1);
+        return this.send(config, attempt + 1);
       }
       if (status === 401 && attempt < 1) {
         this.accessToken = null; // force a refresh, then retry once
         this.expiresAt = 0;
-        return this.request(url, params, attempt + 1);
+        return this.send(config, attempt + 1);
       }
       const detail = err.response?.data?.error?.message || err.message;
-      const error = new Error(`Google API ${status || 'network'} on ${url}: ${detail}`);
+      const error = new Error(`Google API ${status || 'network'} on ${config.url}: ${detail}`);
       error.status = status;
       throw error;
     }
@@ -357,6 +366,59 @@ class GoogleClient {
    */
   googleUpdated(locationId) {
     return this.request(`${API.business}/${locationId}:getGoogleUpdated`, { readMask: LOCATION_READ_MASK });
+  }
+
+  /**
+   * Reviews for up to ten locations of one account, merged into a single stream ordered by
+   * updateTime, newest first.
+   *
+   * The ordering is global across the batch, which is what makes the review sync cheap: the
+   * moment a page reaches a review older than every listing's watermark, there is nothing
+   * newer left to read and the rest of the history can be skipped.
+   */
+  batchReviews(accountId, locationNames, { pageSize = 50, pageToken } = {}) {
+    return this.post(`${API.media}/${accountId}/locations:batchGetReviews`, {
+      locationNames,
+      pageSize,
+      orderBy: 'updateTime desc',
+      ...(pageToken ? { pageToken } : {}),
+    });
+  }
+
+  /**
+   * One listing's reviews. Used only for the two lifetime figures Google returns alongside
+   * them - averageRating and totalReviewCount - which the batch response does not carry.
+   */
+  locationReviews(accountId, locationId, { pageSize = 1, pageToken } = {}) {
+    return this.request(`${API.media}/${accountId}/${locationId}/reviews`, {
+      pageSize,
+      orderBy: 'updateTime desc',
+      pageToken,
+    });
+  }
+
+  /**
+   * Posts on a listing, newest first. The optimization report only needs the most recent
+   * createTime, so one small page is enough.
+   */
+  localPosts(accountId, locationId, { pageSize = 5, pageToken } = {}) {
+    return this.request(`${API.media}/${accountId}/${locationId}/localPosts`, { pageSize, pageToken });
+  }
+
+  /**
+   * Search terms that brought a listing up in one month. Google publishes this monthly and
+   * reports low-volume terms as a threshold band rather than a number, so the caller has to
+   * keep the two apart.
+   */
+  searchKeywords(locationId, year, month, { pageSize = 100, pageToken } = {}) {
+    return this.request(`${API.performance}/${locationId}/searchkeywords/impressions/monthly`, {
+      'monthlyRange.startMonth.year': year,
+      'monthlyRange.startMonth.month': month,
+      'monthlyRange.endMonth.year': year,
+      'monthlyRange.endMonth.month': month,
+      pageSize,
+      pageToken,
+    });
   }
 
   /** Daily performance metrics for one location, from..to inclusive (Date objects). */

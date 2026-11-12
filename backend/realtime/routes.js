@@ -338,7 +338,9 @@ router.post('/google/disconnect', async (req, res) => {
 router.post('/sync/run', async (req, res) => {
   try {
     const requested = req.body?.mode;
-    const mode = ['full', 'incremental', 'profiles', 'counts'].includes(requested) ? requested : 'incremental';
+    const mode = ['full', 'incremental', 'profiles', 'counts', 'reviews', 'keywords'].includes(requested)
+      ? requested
+      : 'incremental';
     const result = await runSync({ mode, trigger: 'manual' });
     clearCache();
     if (!result.started) return res.status(409).json({ success: false, error: result.reason });
