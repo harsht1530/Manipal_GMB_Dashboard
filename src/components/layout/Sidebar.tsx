@@ -39,7 +39,7 @@ const navItems = [
   { icon: Users, label: "Profiles", path: "/doctors" },
   { icon: Building2, label: "Units", path: "/branches" },
   { icon: Phone, label: "Phone", path: "/phone" },
-  { icon: Target, label: "Keywords", path: "/keywords" },
+  // { icon: Target, label: "Keywords", path: "/keywords" }, // hidden: keyword data is not part of the Google feed yet
   // { icon: Search, label: "Search Perf.", path: "/search-performance" },
   // { icon: Target, label: "Monthly Optimisation", path: "/optimizations" },
   // { icon: FileText, label: "GBP Postings", path: "/postings" },

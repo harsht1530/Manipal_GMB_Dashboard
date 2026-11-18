@@ -20,6 +20,7 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
 import { useAuth } from "@/contexts/AuthContext";
+import { legacyBranchOf } from "@/lib/branches";
 
 // Only Profile Verification Status is shown for now; flip this to true to bring the rest of
 // the analytics dashboard (metrics, charts, tables, export) back.
@@ -52,7 +53,7 @@ const Index = () => {
 
   useEffect(() => {
     if (user?.branch) {
-      setSelectedBranch([user.branch]);
+      setSelectedBranch([legacyBranchOf(user.branch)]);
     } else if (user?.cluster) {
       setSelectedCluster([user.cluster]);
     }

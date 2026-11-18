@@ -17,7 +17,8 @@ import {
 } from "@/components/ui/table";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
-import { InsightData, DoctorData, LabelData, useMongoData, transformDoctor, parseDateString } from "@/hooks/useMongoData";
+import { InsightData, DoctorData, LabelData, parseDateString } from "@/hooks/useMongoData";
+import { useRealtimeFeed, fetchProfileReviews, FeedDoctor } from "@/hooks/useRealtimeFeed";
 import {
     Star,
     TrendingUp,
@@ -84,178 +85,73 @@ const DoctorDetails = () => {
     const params = useParams();
     const businessName = params['*'] || params.businessName;
     const navigate = useNavigate();
-    const { doctors, insights, loading: globalLoading, fetchDoctorDetails } = useMongoData();
-    const [profile, setProfile] = useState<DoctorData | null>(null);
+    const { doctors, insights, loading: globalLoading } = useRealtimeFeed();
+    const [profile, setProfile] = useState<FeedDoctor | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [mounted, setMounted] = useState(false);
     const [monthlyInsights, setMonthlyInsights] = useState<InsightData[]>([]);
-    // Rows straight from /api/doctor-details, where the last 6 months are live Google data.
-    // They win over the ones derived from the global monthly collection below.
-    const [serverInsights, setServerInsights] = useState<InsightData[] | null>(null);
-    const [keywords, setKeywords] = useState<LabelData[]>([]);
-    const [competitors, setCompetitors] = useState<string[]>([]);
+    // Keyword rankings and competitors are not part of the Google data; both stay empty for now.
+    const [keywords] = useState<LabelData[]>([]);
+    const [competitors] = useState<string[]>([]);
     const [reviewData, setReviewData] = useState<ReviewData | null>(null);
     const [reviewsLoading, setReviewsLoading] = useState(false);
     const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
     const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
     const [availableYears, setAvailableYears] = useState<string[]>([]);
- 
+
     useEffect(() => {
         const timer = setTimeout(() => {
             setMounted(true);
         }, 10);
         return () => clearTimeout(timer);
     }, []);
- 
+
+    // The listing and its months, from the realtime Google data. The route carries the Google
+    // location id; a name still works for old links.
     useEffect(() => {
-        // Wait for global loading to finish
-        if (globalLoading) return;
- 
-        if (businessName) {
-            setIsLoading(true);
-            // Find the doctor profile locally using businessName (case-insensitive and trimmed)
-            const targetName = decodeURIComponent(businessName).trim().toLowerCase();
- 
-            let foundDoctor = doctors.find(d =>
-                (d.businessName || "").trim().toLowerCase() === targetName
-            );
-            if (!foundDoctor) {
-                foundDoctor = doctors.find(d =>
-                    (d.name || "").trim().toLowerCase() === targetName
-                );
-            }
- 
-            // Find all insights for this doctor
-            const foundInsights = insights.filter(i =>
-                (i.businessName || "").trim().toLowerCase() === targetName
-            );
+        if (globalLoading || !businessName) return;
+        setIsLoading(true);
+        const target = decodeURIComponent(businessName).trim();
+        const lower = target.toLowerCase();
 
-            if (foundDoctor) {
-                // RBAC Check
-                if (user?.role !== "Admin") {
-                    if (user?.branch && foundDoctor.branch !== user.branch) {
-                        navigate("/doctors");
-                        return;
-                    }
-                    if (user?.cluster && foundDoctor.cluster !== user.cluster) {
-                        navigate("/doctors");
-                        return;
-                    }
-                }
-            }
+        const foundDoctor =
+            doctors.find(d => d.locationId === target) ||
+            doctors.find(d => (d.businessName || "").trim().toLowerCase() === lower) ||
+            null;
 
-            // Fetch full profile (with competitors and screenshots) from single doctor endpoint
-            fetch(`${import.meta.env.VITE_API_BASE_URL || "https://smldatamanagement.multiplierai.co"}/api/doctors/details?businessName=${encodeURIComponent(decodeURIComponent(businessName))}`)
-                .then(res => res.json())
-                .then(resData => {
-                    let activeDoc = foundDoctor;
-                    if (resData.success && resData.data) {
-                        const docData = transformDoctor(resData.data);
-                        setProfile(docData);
-                        setKeywords(docData.labels || []);
-                        setCompetitors([...new Set(docData.labels?.flatMap(l => l.competitors || []))] as string[]);
-                        activeDoc = docData;
-                    } else if (foundDoctor) {
-                        setProfile(foundDoctor);
-                        setKeywords(foundDoctor.labels || []);
-                        setCompetitors([...new Set(foundDoctor.labels?.flatMap(l => l.competitors || []))] as string[]);
-                    }
+        // Access is enforced by the backend: a listing outside the user's cluster / branch is
+        // simply not in their data, so it is not found here.
 
-                    // Fetch reviews if creds are available
-                    if (activeDoc?.mailId && activeDoc?.account) {
-                        setReviewsLoading(true);
-                        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://smldatamanagement.multiplierai.co";
-                        fetch(`${API_BASE_URL}/api/reviews`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email: activeDoc.mailId, location: activeDoc.account })
-                        })
-                            .then(res => res.json())
-                            .then(data => {
-                                if (data.success && data.data) {
-                                    setReviewData(data.data);
-                                }
-                            })
-                            .catch(err => console.error("Failed to fetch reviews", err))
-                            .finally(() => setReviewsLoading(false));
-                    }
-                    setIsLoading(false);
-                })
-                .catch(err => {
-                    console.error("Error loading doctor details:", err);
-                    if (foundDoctor) {
-                        setProfile(foundDoctor);
-                        setKeywords(foundDoctor.labels || []);
-                        setCompetitors([...new Set(foundDoctor.labels?.flatMap(l => l.competitors || []))] as string[]);
+        setProfile(foundDoctor);
+        const rows = foundDoctor
+            ? insights.filter(i => i.locationId === foundDoctor.locationId).sort((a, b) => a.timestamp - b.timestamp)
+            : [];
+        setMonthlyInsights(rows);
 
-                        if (foundDoctor.mailId && foundDoctor.account) {
-                            setReviewsLoading(true);
-                            const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://smldatamanagement.multiplierai.co";
-                            fetch(`${API_BASE_URL}/api/reviews`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ email: foundDoctor.mailId, location: foundDoctor.account })
-                            })
-                                .then(res => res.json())
-                                .then(data => {
-                                    if (data.success && data.data) {
-                                        setReviewData(data.data);
-                                    }
-                                })
-                                .catch(err => console.error("Failed to fetch reviews", err))
-                                .finally(() => setReviewsLoading(false));
-                        }
-                    }
-                    setIsLoading(false);
-                });
+        const years = [...new Set(rows.map(r => r.year).filter(Boolean))].sort((a, b) => parseInt(b) - parseInt(a));
+        setAvailableYears(years);
+        if (years.length) setSelectedYear(current => (years.includes(current) ? current : years[0]));
+        setIsLoading(false);
+    }, [businessName, doctors, insights, globalLoading, user, navigate]);
 
-            // Extract available years
-            const years = [...new Set(foundInsights.map((i) => {
-                if (i.date) return new Date(i.date).getFullYear().toString();
-                // Fallback if no date string provided
-                return "2024";
-            }))].sort((a, b) => parseInt(b) - parseInt(a)); // Descending order
-
-            if (years.length > 0) {
-                setAvailableYears(years);
-                if (!years.includes(selectedYear)) {
-                    // If the selected year (e.g. current year) has no data, fallback to the latest year available
-                    setSelectedYear(years[0]);
-                }
-            }
-
-            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            const sortedInsights = [...foundInsights].sort((a, b) => months.indexOf(a.month) - months.indexOf(b.month));
-            setMonthlyInsights(sortedInsights);
-            setIsLoading(false);
-        }
-    }, [businessName, doctors, insights, globalLoading, user, navigate, selectedYear]);
-
-    // Monthly insights for this one profile, fetched from the server so the last 6 months
-    // come from the live Google data rather than the monthly upload.
+    // Reviews from the collection the daily review sync keeps current, with the reviews API as
+    // the fallback when the collection does not hold the comments (see fetchProfileReviews).
+    const profileLocationId = profile?.locationId;
+    const profileAccount = profile?.account;
+    const profileMailbox = profile?.mailId;
     useEffect(() => {
-        if (!businessName) return;
+        if (!profileLocationId) return;
         let cancelled = false;
-        setServerInsights(null);
-        fetchDoctorDetails(decodeURIComponent(businessName).trim())
-            .then((res) => {
-                if (cancelled || !res?.monthlyInsights?.length) return;
-                const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                const rows = [...res.monthlyInsights].sort((a, b) => months.indexOf(a.month) - months.indexOf(b.month));
-                setServerInsights(rows);
-
-                const years = [...new Set(rows.map((r) => r.year).filter(Boolean))].sort((a, b) => parseInt(b) - parseInt(a));
-                if (years.length) {
-                    setAvailableYears(years);
-                    setSelectedYear((current) => (years.includes(current) ? current : years[0]));
-                }
-            })
-            .catch((err) => console.error("Error loading monthly insights:", err));
+        setReviewData(null);
+        setReviewsLoading(true);
+        fetchProfileReviews(profileLocationId, profileAccount || "", profileMailbox)
+            .then(data => { if (!cancelled && data) setReviewData(data); })
+            .catch(err => console.error("Failed to fetch reviews", err))
+            .finally(() => { if (!cancelled) setReviewsLoading(false); });
         return () => { cancelled = true; };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [businessName]);
+    }, [profileLocationId, profileAccount, profileMailbox]);
 
-    const displayedInsights = serverInsights ?? monthlyInsights;
+    const displayedInsights = monthlyInsights;
 
     // Prepare chart data (filtered by year)
     const filteredInsights = displayedInsights.filter((item) => {
@@ -535,11 +431,10 @@ const DoctorDetails = () => {
                     </Card>
                 </div>
 
-                <TabsList className="grid w-full grid-cols-5 h-12">
+                <TabsList className="grid w-full grid-cols-4 h-12">
                     <TabsTrigger value="insights" className="text-base">Monthly Insights</TabsTrigger>
                     <TabsTrigger value="keywords" className="text-base">Keyword Rankings</TabsTrigger>
                     <TabsTrigger value="competitors" className="text-base">Competitors</TabsTrigger>
-                    <TabsTrigger value="visuals" className="text-base">Visuals</TabsTrigger>
                     <TabsTrigger value="reviews" className="text-base">Reviews</TabsTrigger>
                 </TabsList>
 
@@ -734,85 +629,6 @@ const DoctorDetails = () => {
                             )}
                         </CardContent>
                     </Card>
-                </TabsContent>
-
-                {/* Visuals Tab */}
-                <TabsContent value="visuals">
-                    <div className="grid gap-6">
-                        {/* GMB Profile Preview */}
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <MapPin className="h-5 w-5 text-primary" />
-                                    GMB Profile Appearance
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="flex justify-center bg-muted/20 py-8">
-                                {profile.profileScreenshot ? (
-                                    <div className="relative rounded-lg overflow-hidden shadow-md border max-w-2xl w-full">
-                                        <img
-                                            src={`https://multipliersolutions.in/gmbprofiles/Manipal/${profile.profileScreenshot}`}
-                                            alt="GMB Profile Screenshot"
-                                            className="w-full h-auto object-cover"
-                                            onError={(e) => {
-                                                (e.target as HTMLImageElement).src = "https://placehold.co/600x400?text=Profile+Preview+Not+Available";
-                                            }}
-                                        />
-                                    </div>
-                                ) : (
-                                    <div className="text-center py-12 text-muted-foreground">
-                                        <MapPin className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                                        <p>No GMB profile screenshot available.</p>
-                                    </div>
-                                )}
-                            </CardContent>
-                        </Card>
-
-                        {/* Keyword Search Results */}
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <Target className="h-5 w-5 text-primary" />
-                                    Top Keyword Search Result
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="grid md:grid-cols-1 gap-6">
-                                    {keywords.filter(k => k.screenShot).slice(0, 1).map((keyword, idx) => (
-                                        <div key={idx} className="space-y-3 max-w-2xl mx-auto w-full">
-                                            <div className="flex items-center justify-between">
-                                                <Badge variant="outline" className="text-sm font-medium px-3 py-1">
-                                                    {keyword.label}
-                                                </Badge>
-                                                <Badge className={`
-                          ${keyword.rank === 1 ? "bg-emerald-500" : keyword.rank <= 3 ? "bg-blue-500" : "bg-primary"}
-                        `}>
-                                                    #{keyword.rank}
-                                                </Badge>
-                                            </div>
-                                            <div className="rounded-lg overflow-hidden border shadow-sm aspect-video bg-muted/20 flex items-center justify-center">
-                                                <img
-                                                    src={`https://multipliersolutions.in/gmbprofiles/Manipal/${keyword.screenShot}.webp`}
-                                                    alt={`Search result for ${keyword.label}`}
-                                                    className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
-                                                    onError={(e) => {
-                                                        (e.target as HTMLImageElement).style.display = 'none';
-                                                        (e.target as HTMLImageElement).parentElement!.innerText = 'Screenshot Load Failed';
-                                                    }}
-                                                />
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {keywords.filter(k => k.screenShot).length === 0 && (
-                                        <div className="col-span-full text-center py-12 text-muted-foreground bg-muted/10 rounded-lg border border-dashed">
-                                            <Target className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                                            <p>No search result screenshots available for ranked keywords.</p>
-                                        </div>
-                                    )}
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </div>
                 </TabsContent>
 
                 {/* Reviews Analysis Tab */}
@@ -1096,23 +912,6 @@ const DoctorDetails = () => {
                             </Table>
                         </div>
                     </div>
-
-                    {/* Visuals */}
-                    {keywords.filter(k => k.screenShot).length > 0 && (
-                        <div>
-                            <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
-                                <Target className="h-6 w-6 text-primary" style={{ transform: 'translateY(2px)' }} />
-                                Top Search Result Visualization
-                            </h2>
-                            <div className="border rounded-lg p-2 bg-muted/20 w-[600px] mx-auto">
-                                <img
-                                    src={`https://multipliersolutions.in/gmbprofiles/Manipal/${keywords.filter(k => k.screenShot)[0].screenShot}.webp`}
-                                    alt="Search Verification"
-                                    className="w-full h-auto object-cover rounded"
-                                />
-                            </div>
-                        </div>
-                    )}
 
                     {/* Reviews */}
                     {reviewData && (

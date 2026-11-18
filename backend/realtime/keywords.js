@@ -120,7 +120,7 @@ const recentMonths = (count) => {
  */
 const syncKeywords = async (
   client,
-  { months, lookback = 12, force = false, maxMonths = 0, concurrency = 8, onProgress, locationIds } = {}
+  { months, lookback = 12, force = false, maxMonths = 0, concurrency = 8, onProgress, onPhase, locationIds } = {}
 ) => {
   const wanted = months || recentMonths(lookback);
   const done = force ? [] : await RealtimeKeywordMonth.find({ complete: true }, { _id: 1 }).lean();
@@ -145,7 +145,11 @@ const syncKeywords = async (
 
   const written = [];
 
-  for (const month of todo) {
+  // One listing per month is one unit of work; counted across every month so a two-month run
+  // fills the caller's bar once rather than twice.
+  onPhase?.('keywords', todo.length * profiles.length);
+
+  for (const [monthIndex, month] of todo.entries()) {
     /** keyword -> running totals, accumulated in memory and written once per month. */
     const totals = new Map();
     let locationsWithData = 0;
@@ -201,7 +205,7 @@ const syncKeywords = async (
         if (any) locationsWithData += 1;
       },
       concurrency,
-      onProgress
+      onProgress ? (done) => onProgress(monthIndex * profiles.length + done) : undefined
     );
 
     const ops = [...totals.entries()].map(([keyword, row]) => ({

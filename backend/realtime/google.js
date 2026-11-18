@@ -185,8 +185,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Google enforces a per-minute request quota per API per Cloud project, and a sync is far
- * more parallel than that allows. Every call takes a slot from this shared pacer, which hands
- * them out at a fixed interval, so concurrency controls latency and this controls the rate.
+ * more parallel than that allows. Every call takes a slot from a pacer, which hands them out
+ * at a fixed interval, so concurrency controls latency and this controls the rate.
+ *
+ * One pacer per API host, because that is how the quota itself is counted. A single shared
+ * pacer spent one budget across every API, so reading a listing's attributes (business
+ * information) held up reading its photos (v4) even though the two never compete for the
+ * same quota. Each host now gets its own budget, which is what Google already allows.
  */
 const createPacer = (perMinute) => {
   const interval = 60000 / Math.max(1, perMinute);
@@ -199,7 +204,24 @@ const createPacer = (perMinute) => {
   };
 };
 
-const pacer = createPacer(Number(process.env.REALTIME_RATE_PER_MIN || 240));
+const RATE_PER_MIN = Number(process.env.REALTIME_RATE_PER_MIN || 240);
+const pacers = new Map();
+
+/** The pacer for a URL's host; same host means same quota, so same budget. */
+const pacerFor = (url) => {
+  let host;
+  try {
+    host = new URL(String(url)).host;
+  } catch {
+    host = 'default';
+  }
+  let hit = pacers.get(host);
+  if (!hit) {
+    hit = createPacer(RATE_PER_MIN);
+    pacers.set(host, hit);
+  }
+  return hit;
+};
 
 /**
  * One access token per sync run. `getToken` refreshes it (and persists the new one) a minute
@@ -258,7 +280,7 @@ class GoogleClient {
 
   async send(config, attempt = 0) {
     const token = await this.getToken();
-    await pacer();
+    await pacerFor(config.url)();
     try {
       const { data } = await axios({
         ...config,

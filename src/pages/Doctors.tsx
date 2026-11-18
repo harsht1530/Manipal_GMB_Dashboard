@@ -6,9 +6,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useMongoData, DoctorData, InsightData, parseDateString } from "@/hooks/useMongoData";
+import { useRealtimeFeed, matchesScope, FeedDoctor, FeedInsight } from "@/hooks/useRealtimeFeed";
+import { useRealtimeMeta } from "@/hooks/useRealtimeData";
 import { DoctorAggregatedStats } from "@/components/dashboard/DoctorAggregatedStats";
-import { FilterBar } from "@/components/dashboard/FilterBar";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Command,
   CommandEmpty,
@@ -46,17 +53,18 @@ const Doctors = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCluster, setSelectedCluster] = useState<string[]>([]);
-  const [selectedBranch, setSelectedBranch] = useState<string[]>([]);
-  const [selectedMonth, setSelectedMonth] = useState<string[]>([]);
-  const [selectedSpeciality, setSelectedSpeciality] = useState<string[]>([]);
+  // Same filters as the Realtime page: cluster (from the allocation sheet) is the parent of folder.
+  const [cluster, setCluster] = useState("ALL");
+  const [folder, setFolder] = useState("ALL");
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
   const [selectedRatings, setSelectedRatings] = useState<number[]>([]);
   const [comboOpen, setComboOpen] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [visibleCount, setVisibleCount] = useState(20);
 
-  const { doctors, insights, loading } = useMongoData();
+  const { doctors, insights, loading } = useRealtimeFeed();
+  const meta = useRealtimeMeta();
+  const unitClusters = meta.data?.unitClusters ?? {};
   const [mounted, setMounted] = useState(false);
   const [isPending, startTransition] = useTransition();
   const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -69,215 +77,91 @@ const Doctors = () => {
     return () => clearTimeout(timer);
   }, []);
 
-  useEffect(() => {
-    if (user?.branch) {
-      setSelectedBranch([user.branch]);
-    } else if (user?.cluster) {
-      setSelectedCluster([user.cluster]);
-    }
-  }, [user]);
+  // No preselection from the login: the realtime data arrives already limited to the user's
+  // cluster or branch folders (plus Others), and the login's Branch is a unit name ("Broadway")
+  // while the data's unit is a folder ("MH - Broadway"), so preselecting it filtered everything away.
 
   useEffect(() => {
     setVisibleCount(20);
-  }, [searchQuery, selectedCluster, selectedBranch, selectedSpeciality, selectedDepartments, selectedRatings]);
+  }, [searchQuery, cluster, folder, selectedDepartments, selectedRatings]);
 
-  const isBranchRestricted = !!user?.branch;
-  const isClusterRestricted = !!user?.cluster && !user?.branch;
 
   const dashboardTitle = user?.role === "Admin" ? "Profiles" : (user?.branch || user?.cluster || "Profiles");
   const dashboardSubtitle = user?.role === "Admin" ? "Manage profiles and rankings" : `${user?.branch ? 'Branch' : 'Cluster'} Level Access - Profiles`;
 
-  // Derive unique filter options from the insights data with dependencies
-  const filterOptions = useMemo(() => {
-    if (!mounted || loading) {
-      return { clusters: [], branches: [], months: [], specialities: [] };
-    }
-    const clusterData = selectedDepartments.length > 0
-      ? insights.filter(i => selectedDepartments.includes(i.department))
-      : insights;
-    const clusters = [...new Set(clusterData.map(i => i.cluster))].filter(Boolean).sort();
+  // Cluster is the parent filter: only the folders the allocation sheet puts in it are offered.
+  const folderOptions = useMemo(() => {
+    const units = meta.data?.units ?? [];
+    if (cluster === "ALL") return units;
+    return units.filter((unit) => (unitClusters[unit] ?? []).includes(cluster));
+  }, [meta.data, cluster, unitClusters]);
 
-    const branchData = insights.filter(i => {
-      const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(i.cluster);
-      const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(i.department);
-      return clusterMatch && departmentMatch;
-    });
-    const branches = [...new Set(branchData.map(i => i.branch))].filter(Boolean).sort();
-
-    const months = [...new Set(insights.map(i => i.month))].filter(Boolean);
-    const specialities = [...new Set(insights.map(i => i.speciality))].filter(Boolean).sort();
-
-    const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    months.sort((a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b));
-
-    return { clusters, branches, months, specialities };
-  }, [insights, selectedDepartments, selectedCluster, mounted, loading]);
-
-  // Get the chronologically latest month and year from the data
-  const latestDataInfo = useMemo(() => {
-    if (insights.length === 0) {
-      const now = new Date();
-      const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      return {
-        month: monthOrder[now.getMonth() - 1] || "Dec",
-        year: (now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()).toString()
-      };
-    }
-
-    const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-    // Sort by Year (from Date field) and then by Month string to ensure logical chronologic order
-    const sortedInsights = [...insights].sort((a, b) => {
-      const yearA = parseInt(a.year) || 0;
-      const yearB = parseInt(b.year) || 0;
-      
-      if (yearA !== yearB) return yearB - yearA;
-      return monthOrder.indexOf(b.month) - monthOrder.indexOf(a.month);
-    });
-
-    const latest = sortedInsights[0];
-    const fallbackYear = latest.year || new Date().getFullYear().toString();
-    
-    return {
-      month: latest.month,
-      year: fallbackYear
-    };
+  // The most recent month in the Google data (the current month, to date).
+  const latestYm = useMemo(() => {
+    let latest = "";
+    for (const i of insights) if (i.ym > latest) latest = i.ym;
+    return latest;
   }, [insights]);
 
-  const latestDataMonth = latestDataInfo.month;
-  const latestDataYear = latestDataInfo.year;
-
-  // Pre-calculate latest month data for all doctors for $O(1)$ lookup in filters
+  // Each listing's latest month, keyed by Google location id (titles are not unique).
   const latestMonthDataMap = useMemo(() => {
-    if (!mounted || loading) return {};
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const map: Record<string, InsightData> = {};
-
-    // Sort all insights once by date (month order)
-    const sortedInsights = [...insights].sort((a, b) => {
-      return months.indexOf(b.month) - months.indexOf(a.month);
-    });
-
-    // Take the first occurrence (latest month) for each business name (normalized)
-    for (const insight of sortedInsights) {
-      const key = (insight.businessName || "").trim().toLowerCase();
-      if (key && !map[key]) {
-        map[key] = insight;
-      }
+    if (!mounted || loading) return {} as Record<string, FeedInsight>;
+    const map: Record<string, FeedInsight> = {};
+    for (const insight of insights) {
+      if (insight.ym === latestYm) map[insight.locationId] = insight;
     }
     return map;
-  }, [insights, mounted, loading]);
+  }, [insights, latestYm, mounted, loading]);
 
-  // Derive limited profiles data specifically for the SEARCH DROPDOWN (latest month only)
-  const validSearchProfiles = useMemo(() => {
-    if (!mounted || loading || insights.length === 0) return [];
-
-    // 1. Get unique business names from insights for the latest month AND year ONLY
-    const latestInsights = insights.filter(i => {
-      const itemYear = parseDateString(i.date).getFullYear().toString();
-      return i.month === latestDataMonth && itemYear === latestDataYear;
+  // Listings inside the chosen cluster / folder, profile type and rating, before the name search.
+  const scopedDoctors = useMemo(() => {
+    if (!mounted || loading) return [] as FeedDoctor[];
+    return doctors.filter((doctor) => {
+      if (!matchesScope(doctor, cluster, folder, unitClusters)) return false;
+      const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(doctor.department);
+      const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(doctor.averageRating) === r);
+      return departmentMatch && ratingMatch;
     });
-    const uniqueBusinessNames = [...new Set(latestInsights.map(i => (i.businessName || "").trim().toLowerCase()))].filter(Boolean);
+  }, [doctors, cluster, folder, unitClusters, selectedDepartments, selectedRatings, mounted, loading]);
 
-    // 2. Map these to doctor names by checking the doctors table, or fallback to insight name
-    return uniqueBusinessNames
-      .map(bName => {
-        const doctor = doctors.find(d => (d.businessName || "").trim().toLowerCase() === bName);
-
-        // Apply Cluster & Branch Filter if restricted or active
-        if (doctor) {
-          const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(doctor.cluster);
-          const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(doctor.branch);
-          if (!clusterMatch || !branchMatch) return null;
-        } else {
-          // Fallback check for cluster/branch in insights if doctor not found
-          const insightSample = latestInsights.find(i => (i.businessName || "").trim().toLowerCase() === bName);
-          if (insightSample) {
-            const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(insightSample.cluster);
-            const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(insightSample.branch);
-            if (!clusterMatch || !branchMatch) return null;
-          }
-        }
-
-        // Apply Profile Type (Department) Filter
-        const latestInfo = latestMonthDataMap[bName];
-        if (latestInfo) {
-          const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(latestInfo.department);
-          const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(latestInfo.rating) === r);
-          const specialityMatch = selectedSpeciality.length === 0 || latestInfo.speciality && selectedSpeciality.includes(latestInfo.speciality);
-
-          if (!departmentMatch || !ratingMatch || !specialityMatch) return null;
-        }
-
-        return {
-          id: doctor?.id || bName,
-          name: doctor?.businessName || bName,
-          businessName: doctor?.name || bName
-        };
+  // Names for the search dropdown, from the listings in scope.
+  const validSearchProfiles = useMemo(() => {
+    const seen = new Set<string>();
+    return scopedDoctors
+      .filter((d) => {
+        if (!d.businessName || seen.has(d.businessName)) return false;
+        seen.add(d.businessName);
+        return true;
       })
-      .filter(Boolean)
-      .sort((a, b) => a.name.localeCompare(b.name)) as { id: string, name: string, businessName: string }[];
-  }, [doctors, insights, latestDataMonth, latestMonthDataMap, selectedCluster, selectedBranch, selectedDepartments, selectedRatings, selectedSpeciality, mounted, loading]);
+      .map((d) => ({ id: d.locationId, name: d.businessName, businessName: d.unitName }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [scopedDoctors]);
 
-  const getRankingScore = (doctor: DoctorData) => {
+  const getRankingScore = (doctor: FeedDoctor) => {
     // Score based on number of keywords in Top 10
     return doctor.labels.filter(l => l.rank > 0 && l.rank <= 10).length;
   };
 
   const filteredDoctors = useMemo(() => {
-    if (!mounted || loading || insights.length === 0) return [];
-    // 1. Get unique business names from insights for strict vlookup (vlookup is now case-insensitive and trimmed)
-    const validBusinessNames = new Set(insights.map(i => (i.businessName || "").trim().toLowerCase()).filter(Boolean));
-
-    return doctors
-      .filter((doctor) => {
-        const docBusinessName = (doctor.businessName || "").trim().toLowerCase();
-        // vlookup: Only show profiles whose business_name matches "Business name" in insights
-        if (!docBusinessName || !validBusinessNames.has(docBusinessName)) return false;
-
-        // Search Filter (Using deferred search query for performance)
-        const lowerSearch = deferredSearchQuery.toLowerCase();
-        const matchesSearch = deferredSearchQuery === "" ||
-          doctor.businessName.toLowerCase().includes(lowerSearch) ||
-          doctor.name.toLowerCase().includes(lowerSearch) ||
-          doctor.primaryCategory.toLowerCase().includes(lowerSearch) ||
-          doctor.branch.toLowerCase().includes(lowerSearch);
-
-        // Cluster & Branch Filters
-        const clusterMatch = selectedCluster.length === 0 || selectedCluster.includes(doctor.cluster);
-        const branchMatch = selectedBranch.length === 0 || selectedBranch.includes(doctor.branch);
-
-        // Latest Insight Data for Department & Rating filtering
-        const latestData = latestMonthDataMap[docBusinessName];
-        if (!latestData) return false;
-
-        // Profile Type (Department) Filter
-        const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(latestData.department);
-
-        // Speciality Filter
-        const specialityMatch = selectedSpeciality.length === 0 || specialityVariableMatch(latestData.speciality, selectedSpeciality);
-
-        // Rating Filter (Using latest insight data rating, not doctor.averageRating)
-        const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(latestData.rating) === r);
-
-        return matchesSearch && clusterMatch && branchMatch && departmentMatch && ratingMatch && specialityMatch;
-      })
+    const lowerSearch = deferredSearchQuery.toLowerCase();
+    return scopedDoctors
+      .filter((doctor) =>
+        deferredSearchQuery === "" ||
+        doctor.businessName.toLowerCase().includes(lowerSearch) ||
+        doctor.primaryCategory.toLowerCase().includes(lowerSearch) ||
+        doctor.branch.toLowerCase().includes(lowerSearch)
+      )
       .sort((a, b) => {
         const scoreA = getRankingScore(a);
         const scoreB = getRankingScore(b);
         if (scoreA !== scoreB) return scoreB - scoreA;
         return b.averageRating - a.averageRating;
       });
-  }, [doctors, insights, deferredSearchQuery, selectedCluster, selectedBranch, selectedDepartments, selectedRatings, selectedSpeciality, latestMonthDataMap, mounted, loading]);
+  }, [scopedDoctors, deferredSearchQuery]);
 
   const displayedDoctors = useMemo(() => {
     return filteredDoctors.slice(0, visibleCount);
   }, [filteredDoctors, visibleCount]);
-
-  function specialityVariableMatch(docSpeciality: string, selected: string[]) {
-    if (selected.length === 0) return true;
-    return selected.includes(docSpeciality);
-  }
 
   if (!mounted || loading) {
     return (
@@ -408,24 +292,47 @@ const Doctors = () => {
 
       {showFilters && (
         <div className="bg-card p-4 rounded-xl border border-border shadow-sm mb-6 animate-in fade-in slide-in-from-top-2 duration-300">
-          <FilterBar
-            selectedCluster={selectedCluster}
-            selectedBranch={selectedBranch}
-            selectedMonth={[]}
-            selectedSpeciality={selectedSpeciality}
-            clusterOptions={filterOptions.clusters}
-            branchOptions={filterOptions.branches}
-            monthOptions={[]}
-            specialityOptions={filterOptions.specialities}
-            onClusterChange={(val) => startTransition(() => setSelectedCluster(val))}
-            onBranchChange={(val) => startTransition(() => setSelectedBranch(val))}
-            onMonthChange={() => { }}
-            onSpecialityChange={(val) => startTransition(() => setSelectedSpeciality(val))}
-            hideCluster={isBranchRestricted || isClusterRestricted}
-            hideBranch={isBranchRestricted}
-            hideMonth={true}
-            hideYear={true}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            {(meta.data?.clusters ?? []).length > 1 && (
+              <Select
+                value={cluster}
+                onValueChange={(value) =>
+                  startTransition(() => {
+                    setCluster(value);
+                    // A folder chosen under the previous cluster would filter everything away.
+                    setFolder("ALL");
+                  })
+                }
+              >
+                <SelectTrigger className="h-9 w-[200px] shrink-0 bg-muted/20 border-primary/5 text-xs font-medium">
+                  <SelectValue placeholder="Cluster" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[320px]">
+                  <SelectItem value="ALL">All clusters</SelectItem>
+                  {(meta.data?.clusters ?? []).map((name) => (
+                    <SelectItem key={name} value={name}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {(
+              <Select value={folder} onValueChange={(value) => startTransition(() => setFolder(value))}>
+                <SelectTrigger className="h-9 w-[220px] shrink-0 bg-muted/20 border-primary/5 text-xs font-medium">
+                  <SelectValue placeholder="Folder" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[320px]">
+                  <SelectItem value="ALL">{cluster === "ALL" ? "All folders" : `All folders in ${cluster}`}</SelectItem>
+                  {folderOptions.map((unit) => (
+                    <SelectItem key={unit} value={unit}>
+                      {unit}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
         </div>
       )}
 
@@ -441,7 +348,7 @@ const Doctors = () => {
         )}
         <div className="grid gap-6 md:grid-cols-2">
           {displayedDoctors.map((doctor, index) => {
-            const latestData = latestMonthDataMap[doctor.businessName];
+            const latestData = latestMonthDataMap[doctor.locationId] ?? null;
             return (
               <DoctorCard
                 key={doctor.id}
@@ -449,7 +356,7 @@ const Doctors = () => {
                 index={index}
                 insights={insights}
                 latestData={latestData}
-                onViewDetails={() => navigate(`/doctor-details/${encodeURIComponent(doctor.businessName)}`)}
+                onViewDetails={() => navigate(`/doctor-details/${encodeURIComponent(doctor.locationId)}`)}
                 rankingScore={getRankingScore(doctor)}
               />
             );
@@ -475,8 +382,8 @@ const Doctors = () => {
               variant="link"
               onClick={() => {
                 setSearchQuery("");
-                setSelectedCluster([]);
-                setSelectedBranch([]);
+                setCluster("ALL");
+                setFolder("ALL");
               }}
             >
               Clear all filters
@@ -491,16 +398,21 @@ const Doctors = () => {
 };
 
 interface DoctorCardProps {
-  doctor: DoctorData;
+  doctor: FeedDoctor;
   index: number;
-  insights: InsightData[];
-  latestData: InsightData | null;
+  insights: FeedInsight[];
+  latestData: FeedInsight | null;
   onViewDetails: () => void;
   rankingScore: number;
 }
 
 const DoctorCard = React.memo(({ doctor, index, insights, latestData, onViewDetails, rankingScore }: DoctorCardProps) => {
   const [showStats, setShowStats] = useState(false);
+  // This listing's months only, by location id, so listings that share a title stay apart.
+  const ownInsights = useMemo(
+    () => (showStats ? insights.filter((i) => i.locationId === doctor.locationId) : []),
+    [showStats, insights, doctor.locationId]
+  );
   const rankedLabels = doctor.labels.filter((l) => l.rank > 0 && l.rank <= 10);
   const topRank = rankedLabels.length > 0 ? Math.min(...rankedLabels.map((l) => l.rank)) : null;
   const totalSearch = latestData
@@ -602,7 +514,7 @@ const DoctorCard = React.memo(({ doctor, index, insights, latestData, onViewDeta
                 Aggregated Lifetime Performance
               </h4>
             </div>
-            <DoctorAggregatedStats data={insights} doctorName={doctor.businessName} />
+            <DoctorAggregatedStats data={ownInsights} doctorName={doctor.businessName} />
           </div>
         )}
 

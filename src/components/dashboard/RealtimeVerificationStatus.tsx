@@ -217,6 +217,10 @@ export const RealtimeVerificationStatus = ({ data, loading, filters }: Props) =>
     "Whatsapp Chat": row.optimization?.whatsapp || "",
     Address: row.address || "",
     "Maps URL": row.mapsUri || "",
+    "Place ID": row.placeId || "",
+    // Blank, not 0, when no review stats exist: "no reviews" and "not read" differ.
+    "Review Count": row.reviewCount ?? "",
+    "Average Rating": row.averageRating ?? "",
     Account: row.accountName || "",
     "Location ID": row.locationId,
     "Last Synced": row.lastSyncedAt ? new Date(row.lastSyncedAt).toLocaleString("en-IN") : "",

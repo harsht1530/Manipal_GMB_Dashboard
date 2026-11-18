@@ -158,7 +158,7 @@ const refreshStats = async (profile, locationName, lifetime, from, watermark) =>
  * @param locationIds  restricts the run to these listings - for resyncing one listing, or
  *                     for trying a change out before letting it near the whole estate.
  */
-const syncReviews = async (client, { mode = 'incremental', concurrency = 8, onProgress, locationIds } = {}) => {
+const syncReviews = async (client, { mode = 'incremental', concurrency = 8, onProgress, onPhase, locationIds } = {}) => {
   const from = windowStart();
   const fromMs = from.getTime();
 
@@ -192,6 +192,8 @@ const syncReviews = async (client, { mode = 'incremental', concurrency = 8, onPr
   let written = 0;
   const changed = new Map(); // location name -> profile
 
+  // Two passes, each announced with its size so the caller's progress bar can fill evenly.
+  onPhase?.('reviews', batches.length);
   await runPool(
     batches,
     async ({ accountId, profiles: group }) => {
@@ -280,6 +282,7 @@ const syncReviews = async (client, { mode = 'incremental', concurrency = 8, onPr
 
   const toRefresh = mode === 'full' ? [...byLocation.keys()] : [...new Set([...changed.keys(), ...stale])];
 
+  onPhase?.('reviewStats', toRefresh.length);
   await runPool(
     toRefresh,
     async (locationName) => {

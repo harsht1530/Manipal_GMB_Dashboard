@@ -171,15 +171,28 @@ export const RealtimeOptimization = ({ filters }: Props) => {
             Value: data.awaitingFirstCheck,
           },
           {
+            Field: "Cluster filter",
+            Value: filters?.clusters?.length ? filters.clusters.join(", ") : "All clusters",
+          },
+          {
             Field: "Folder filter",
             Value: filters?.units?.length ? filters.units.join(", ") : "All folders",
+          },
+          {
+            Field: "Verification filter",
+            Value:
+              filters?.status === "verified"
+                ? "Verified only"
+                : filters?.status === "unverified"
+                  ? "Unverified only"
+                  : "Verified & unverified",
           },
           { Field: "Generated", Value: new Date(data.generatedAt).toLocaleString("en-IN") },
           { Field: "Source", Value: "Google Business Profile API (realtime collections)" },
           {
             Field: "Note",
             Value:
-              "Cover photo, logo, WhatsApp and appointment link are read from Google once a day; the other five checks come from every sync.",
+              "Cover photo, logo, WhatsApp and appointment link are re-read for every listing by Sync, and at least once a day by the scheduled runs; the other five checks come from every sync.",
           },
         ]),
         "About"

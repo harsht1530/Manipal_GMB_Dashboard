@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useTransition } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { FilterBar } from "@/components/dashboard/FilterBar";
 import { PhoneDetailsTable } from "@/components/dashboard/PhoneDetailsTable";
-import { useMongoData, parseDateString } from "@/hooks/useMongoData";
+import { useRealtimeFeed } from "@/hooks/useRealtimeFeed";
 import { Loader2, Filter } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,8 @@ const PhonePage = () => {
     const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
     const [selectedRatings, setSelectedRatings] = useState<number[]>([]);
 
-    const { insights, loading } = useMongoData();
+    // Contact details and calls as Google reports them, one row per listing per month.
+    const { insights, loading } = useRealtimeFeed();
     const [mounted, setMounted] = useState(false);
     const [isPending, startTransition] = useTransition();
     const [showFilters, setShowFilters] = useState(false);
@@ -33,13 +34,9 @@ const PhonePage = () => {
         return () => clearTimeout(timer);
     }, []);
 
-    useEffect(() => {
-        if (user?.branch) {
-            setSelectedBranch([user.branch]);
-        } else if (user?.cluster) {
-            setSelectedCluster([user.cluster]);
-        }
-    }, [user]);
+    // No preselection from the login: the realtime data arrives already limited to the user's
+    // cluster or branch folders (plus Others), and the login's Branch is a unit name ("Broadway")
+    // while the data's unit is a folder ("MH - Broadway"), so preselecting it filtered everything away.
 
     const isBranchRestricted = !!user?.branch;
     const isClusterRestricted = !!user?.cluster && !user?.branch;
@@ -193,8 +190,8 @@ const PhonePage = () => {
                         selectedYear={selectedYear}
                         onYearChange={(val) => startTransition(() => setSelectedYear(val))}
                         onSpecialityChange={(val) => startTransition(() => setSelectedSpeciality(val))}
-                        hideCluster={isBranchRestricted || isClusterRestricted}
-                        hideBranch={isBranchRestricted}
+                        hideCluster={false}
+                        hideBranch={false}
                         yearOptions={filterOptions.years}
                     />
                 )}

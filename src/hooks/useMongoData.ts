@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { legacyBranchOf } from "@/lib/branches";
 
 export interface InsightData {
   id: string;
@@ -285,7 +286,7 @@ export function useMongoData() {
   const insights = useMemo(() => {
     if (!user || user.role === "Admin") return rawInsights;
     return rawInsights.filter(i => {
-      if (user.branch) return i.branch === user.branch;
+      if (user.branch) return i.branch === legacyBranchOf(user.branch);
       if (user.cluster) return i.cluster === user.cluster;
       return true;
     });
@@ -294,7 +295,7 @@ export function useMongoData() {
   const doctors = useMemo(() => {
     if (!user || user.role === "Admin") return rawDoctors;
     return rawDoctors.filter(d => {
-      if (user.branch) return d.branch === user.branch;
+      if (user.branch) return d.branch === legacyBranchOf(user.branch);
       if (user.cluster) return d.cluster === user.cluster;
       return true;
     });
@@ -303,7 +304,7 @@ export function useMongoData() {
   const locations = useMemo(() => {
     if (!user || user.role === "Admin") return rawLocations;
     return rawLocations.filter(l => {
-      if (user.branch) return l.unitName === user.branch;
+      if (user.branch) return l.unitName === legacyBranchOf(user.branch);
       if (user.cluster) return l.cluster === user.cluster;
       return true;
     });
@@ -312,7 +313,7 @@ export function useMongoData() {
   const postings = useMemo(() => {
     if (!user || user.role === "Admin") return rawPostings;
     return rawPostings.filter(p => {
-      if (user.branch) return p.branch === user.branch;
+      if (user.branch) return p.branch === legacyBranchOf(user.branch);
       if (user.cluster) return p.cluster === user.cluster;
       return true;
     });
@@ -324,7 +325,7 @@ export function useMongoData() {
     return {
       latestMonth: rawTop10.latestMonth,
       topDoctors: rawTop10.topDoctors.filter(d => {
-        if (user.branch) return d.branch === user.branch;
+        if (user.branch) return d.branch === legacyBranchOf(user.branch);
         if (user.cluster) return d.cluster === user.cluster;
         return true;
       })

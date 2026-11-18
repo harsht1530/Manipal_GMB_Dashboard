@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/components/ui/use-toast";
-import { useMongoData } from "@/hooks/useMongoData";
+import { useRealtimeFeed } from "@/hooks/useRealtimeFeed";
 import { useAuth } from "@/contexts/AuthContext";
 import confetti from "canvas-confetti";
 import {
@@ -35,7 +35,9 @@ const API_BASE_URL = `${import.meta.env.VITE_API_BASE_URL || "https://smldataman
 export default function RaisingCase() {
   const { toast } = useToast();
   const { user } = useAuth();
-  const { insights, doctors, loading: dataLoading } = useMongoData();
+  // Clusters, units and listings from the Google data. Each listing carries its location
+  // (accounts/X/locations/Y) and its folder's mailbox, which is what posting needs.
+  const { insights, doctors, loading: dataLoading } = useRealtimeFeed();
   const timeInputRef = useRef<HTMLInputElement>(null);
 
   const [loading, setLoading] = useState(false);

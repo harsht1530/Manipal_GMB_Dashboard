@@ -91,6 +91,9 @@ const RealtimeProfileSchema = new mongoose.Schema(
     primaryCategory: String,
     labels: [String],
     mapsUri: String,
+    // Google's Place ID - the key the Places API, Maps embeds and review links all use. Comes
+    // back in the listing's metadata, so storing it costs no extra call.
+    placeId: { type: String, default: '' },
 
     // Mapped onto the dashboard's own hierarchy so both views group the same way.
     cluster: { type: String, default: 'Unassigned' },
@@ -223,6 +226,8 @@ const RealtimeSettingSchema = new mongoose.Schema(
       startedAt: Date,
       finishedAt: Date,
       processed: { type: Number, default: 0 },
+      // 0-100 across the whole run - see PHASE_WEIGHTS in sync.js. Only ever goes up.
+      overall: { type: Number, default: 0 },
       total: { type: Number, default: 0 },
       profilesSynced: { type: Number, default: 0 },
       metricsSynced: { type: Number, default: 0 },

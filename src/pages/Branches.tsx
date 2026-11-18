@@ -2,7 +2,8 @@ import { useState, useMemo, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useMongoData, InsightData, DoctorData, parseDateString } from "@/hooks/useMongoData";
+import { InsightData, DoctorData, parseDateString } from "@/hooks/useMongoData";
+import { useRealtimeFeed } from "@/hooks/useRealtimeFeed";
 import { FilterBar } from "@/components/dashboard/FilterBar";
 import {
   Building2,
@@ -36,7 +37,8 @@ interface BranchStats {
 
 const Branches = () => {
   const { user } = useAuth();
-  const { insights, doctors, loading } = useMongoData();
+  // Google's own data: one row per listing per month, unit = the listing's primary folder.
+  const { insights, doctors, loading } = useRealtimeFeed();
 
   const [selectedCluster, setSelectedCluster] = useState<string[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string[]>([]);
@@ -45,13 +47,9 @@ const Branches = () => {
   const [selectedSpeciality, setSelectedSpeciality] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
 
-  useEffect(() => {
-    if (user?.branch) {
-      setSelectedBranch([user.branch]);
-    } else if (user?.cluster) {
-      setSelectedCluster([user.cluster]);
-    }
-  }, [user]);
+  // No preselection from the login: the realtime data arrives already limited to the user's
+  // cluster or branch folders (plus Others), and the login's Branch is a unit name ("Broadway")
+  // while the data's unit is a folder ("MH - Broadway"), so preselecting it filtered everything away.
 
   const isBranchRestricted = !!user?.branch;
   const isClusterRestricted = !!user?.cluster && !user?.branch;
@@ -219,9 +217,8 @@ const Branches = () => {
         };
         branchMap.set(insight.branch, existing);
       }
-      if (insight.businessName) {
-        existing.uniqueProfiles.add(insight.businessName);
-      }
+      // By Google location id: several listings share a title.
+      existing.uniqueProfiles.add(insight.locationId);
     });
 
     // Aggregate metrics from filteredInsights (cumulative)
@@ -352,8 +349,8 @@ const Branches = () => {
           onSpecialityChange={setSelectedSpeciality}
           hideMonth={false}
           yearOptions={filterOptions.years}
-          hideCluster={isBranchRestricted || isClusterRestricted}
-          hideBranch={isBranchRestricted}
+          hideCluster={false}
+          hideBranch={false}
         />
       )}
 

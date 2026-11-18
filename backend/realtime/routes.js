@@ -1,11 +1,18 @@
 const crypto = require('crypto');
 const express = require('express');
 const google = require('./google');
-const { CLUSTERS, clustersOf, clusterFilter } = require('./cluster-folders');
+const { CLUSTERS, clustersOf, clusterOfFolder, clusterFilter } = require('./cluster-folders');
 const { RealtimeProfile, RealtimeMetric, getSettings, METRIC_KEYS } = require('./models');
+const mongoose = require('mongoose');
+const { Review, ReviewStat, windowStart } = require('./reviews');
 const { runSync, isRunning, PERFORMANCE_MONTHS } = require('./sync');
+const { attachAccess, OTHERS_SHARED } = require('./access');
 
 const router = express.Router();
+
+// Every realtime route knows who is asking: Admin sees everything, a cluster or branch login
+// only its own folders (plus Others). See access.js.
+router.use(attachAccess);
 
 /* ───────────────────────────── cache ───────────────────────────── */
 
@@ -96,12 +103,24 @@ const rangeOf = (req) => {
  * belongs to, so when both are given the folder decides. Which folders a cluster holds comes
  * from the allocation sheet, not from the `cluster` field on each listing.
  */
-const folderScope = (req) => {
+const requestedScope = (req) => {
   const clusters = listParam(req.query.cluster);
   const units = listParam(req.query.unit);
   if (units.length) return { folders: { $in: units } };
   if (clusters.length) return clusterFilter(clusters);
   return null;
+};
+
+/**
+ * What the page asked for, narrowed to what the caller may see. Every realtime query is built
+ * from this, so a cluster or branch login can never widen its view through the filters.
+ */
+const folderScope = (req) => {
+  const requested = requestedScope(req);
+  const access = req.access?.filter;
+  if (!access) return requested;
+  if (!requested) return access;
+  return { $and: [access, requested] };
 };
 
 const metricMatch = async (req) => {
@@ -197,6 +216,7 @@ const publicSettings = (doc) => ({
     finishedAt: doc.sync?.finishedAt || null,
     processed: doc.sync?.processed || 0,
     total: doc.sync?.total || 0,
+    overall: doc.sync?.overall || 0,
     profilesSynced: doc.sync?.profilesSynced || 0,
     lastSuccessAt: doc.sync?.lastSuccessAt || null,
     lastFullSyncAt: doc.sync?.lastFullSyncAt || null,
@@ -337,10 +357,18 @@ router.post('/google/disconnect', async (req, res) => {
 
 router.post('/sync/run', async (req, res) => {
   try {
+    const MODES = ['full', 'incremental', 'profiles', 'counts', 'optimization', 'reviews', 'keywords'];
     const requested = req.body?.mode;
-    const mode = ['full', 'incremental', 'profiles', 'counts', 'reviews', 'keywords'].includes(requested)
-      ? requested
-      : 'incremental';
+    // An unrecognised mode is rejected rather than quietly treated as 'incremental': a typo
+    // in a mode name used to start a full run against live data, which is not what anyone
+    // asking for mode "x" wanted. Omitting the field still means 'incremental'.
+    if (requested !== undefined && !MODES.includes(requested)) {
+      return res.status(400).json({
+        success: false,
+        error: `Unknown sync mode "${requested}". Expected one of: ${MODES.join(', ')}.`,
+      });
+    }
+    const mode = requested || 'incremental';
     const result = await runSync({ mode, trigger: 'manual' });
     clearCache();
     if (!result.started) return res.status(409).json({ success: false, error: result.reason });
@@ -364,19 +392,26 @@ router.get('/sync/status', async (req, res) => {
 /** Filter options plus connection freshness - one small call the page makes first. */
 router.get('/meta', async (req, res) => {
   try {
-    const data = await cached('meta', async () => {
+    const access = req.access || {};
+    const data = await cached(`meta:${access.key || 'all'}`, async () => {
       const [units, settings] = await Promise.all([
         // Every Google folder, not just the primary one per listing, so the picker offers the
         // same folders the status table shows.
-        RealtimeProfile.distinct('folders'),
+        RealtimeProfile.distinct('folders', access.filter || {}),
         getSettings(),
       ]);
-      const folders = units.filter(Boolean).sort();
+      // A listing can sit in a second folder outside the caller's scope; only their own
+      // folders (and, when shared, the Others ones) are offered in the picker.
+      const visible = (folder) =>
+        !access.filter ||
+        (access.folders || []).includes(folder) ||
+        (OTHERS_SHARED && clustersOf(folder).includes('Others'));
+      const folders = units.filter(Boolean).filter(visible).sort();
       return {
         // The allocation sheet's clusters, and its folder assignment: the folder picker
         // offers only the folders of the chosen cluster, and anything the sheet leaves out
         // is reachable under Others.
-        clusters: CLUSTERS,
+        clusters: access.clusters || CLUSTERS,
         units: folders,
         unitClusters: Object.fromEntries(folders.map((folder) => [folder, clustersOf(folder)])),
         months: windowMonths().map((ym) => ({ ym, label: labelFor(ym) })),
@@ -436,8 +471,10 @@ router.get('/overview', async (req, res) => {
             ],
             units: [
               {
+                // By folder alone: the cluster is the folder's, from the allocation sheet.
+                // Grouping on the stored cluster too split a folder into one row per value.
                 $group: {
-                  _id: { unitName: '$unitName', cluster: '$cluster' },
+                  _id: { unitName: '$unitName' },
                   ...sumDays(),
                   profiles: { $addToSet: '$locationId' },
                 },
@@ -481,7 +518,7 @@ router.get('/overview', async (req, res) => {
       const units = rows.units
         .map((row) => ({
           unitName: row._id.unitName,
-          cluster: row._id.cluster,
+          cluster: clusterOfFolder(row._id.unitName),
           profiles: row.profiles,
           ...withDerived(pick(row)),
         }))
@@ -569,7 +606,6 @@ router.get('/verification', async (req, res) => {
             $group: {
               _id: { $ifNull: ['$folders', '$unitName'] },
               ...counters,
-              clusters: { $addToSet: '$cluster' },
             },
           },
           { $sort: { total: -1 } },
@@ -580,7 +616,7 @@ router.get('/verification', async (req, res) => {
 
       const units = rows.map((row) => ({
         unitName: row._id,
-        cluster: (row.clusters || []).filter((c) => c && c !== 'Unassigned').sort()[0] || 'Unassigned',
+        cluster: clusterOfFolder(row._id),
         total: row.total,
         verified: row.verified,
         unverified: row.total - row.verified,
@@ -678,6 +714,38 @@ router.get('/profiles', async (req, res) => {
  * history. Day-level filtering is the same the charts use, so an export can always be
  * reconciled against what is on screen.
  */
+/**
+ * Lifetime review count and average rating for each exported listing, from the stats the
+ * review sync keeps. Those are Google's own totals (refreshed from every reviews response),
+ * not counts of the reviews stored here, which only cover the recent window.
+ *
+ * The stats are keyed by "accounts/X/locations/Y" - the folder the review sync read the
+ * listing through. A listing whose primary folder has changed since then is still found by
+ * its location id alone. One with no stats at all gets blanks, never a zero: "no reviews"
+ * and "not read" are different answers.
+ */
+const reviewStatsFor = async (profiles) => {
+  // One stats document per listing, three small fields each: reading them all is cheaper and
+  // simpler than building a query that matches by either key.
+  if (!profiles.length) return () => ({ reviewCount: null, averageRating: null });
+  const stats = await ReviewStat.find({}, { _id: 1, lifetimeReviewCount: 1, lifetimeAverageRating: 1 }).lean();
+  const byName = new Map(stats.map((s) => [s._id, s]));
+  const byId = new Map(stats.map((s) => [String(s._id).split('/locations/')[1], s]));
+  return (profile) => {
+    const stat =
+      byName.get(`${profile.accountId}/${profile.locationId}`) ||
+      byId.get(String(profile.locationId || '').replace('locations/', ''));
+    if (!stat) return { reviewCount: null, averageRating: null };
+    const count = Number(stat.lifetimeReviewCount);
+    const rating = Number(stat.lifetimeAverageRating);
+    return {
+      reviewCount: Number.isFinite(count) ? count : null,
+      // Google sends no rating for a listing with no reviews; that stays blank rather than 0.
+      averageRating: Number.isFinite(rating) && stat.lifetimeAverageRating !== null ? rating : null,
+    };
+  };
+};
+
 router.get('/export', async (req, res) => {
   try {
     const match = withStatus(profileMatch(req), req.query.status);
@@ -686,6 +754,7 @@ router.get('/export', async (req, res) => {
     const range = wantsInsights && hasRange ? rangeOf(req) : null;
 
     const profiles = await RealtimeProfile.find(match).sort({ unitName: 1, title: 1 }).lean();
+    const reviewsOf = await reviewStatsFor(profiles);
     const emptyPayload = {
       insights: wantsInsights,
       overall: wantsInsights && !hasRange,
@@ -704,6 +773,8 @@ router.get('/export', async (req, res) => {
           ...emptyPayload,
           rows: profiles.map((profile) => ({
             ...profile,
+            cluster: clusterOfFolder(profile.unitName),
+            ...reviewsOf(profile),
             verificationStatus: verificationLabel(profile),
             tiles: tileFlags(profile),
           })),
@@ -767,6 +838,8 @@ router.get('/export', async (req, res) => {
       }, {});
       return {
         ...profile,
+        cluster: clusterOfFolder(profile.unitName),
+        ...reviewsOf(profile),
         verificationStatus: verificationLabel(profile),
         tiles: tileFlags(profile),
         performance: withDerived(summed),
@@ -978,7 +1051,7 @@ router.get('/optimization', async (req, res) => {
         title: p.title || '',
         storeCode: p.storeCode || '',
         unitName: p.unitName || '',
-        cluster: p.cluster || '',
+        cluster: clusterOfFolder(p.unitName),
         department: p.department || '',
         primaryCategory: p.primaryCategory || '',
         folders: p.folders || [],
@@ -1010,6 +1083,169 @@ router.get('/optimization', async (req, res) => {
         awaitingFirstCheck,
         generatedAt: new Date(),
         rows,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/* ─────────────────────── feed for the other pages ─────────────────────── */
+
+/**
+ * The legacy collections' mailbox for each Google folder. Posting still goes through the
+ * multipliersolutions API, which needs the mailbox that owns the listing's folder; the
+ * realtime collections only know the folder, so the mailbox is looked up from the legacy
+ * profile records by account id (one mailbox per folder in practice). Read-only.
+ */
+const folderMailboxes = async () => {
+  const rows = await mongoose.connection.db
+    .collection('manipalfinaldatas')
+    .find({ account: { $type: 'string' }, mail_id: { $nin: [null, ''] } }, { projection: { account: 1, mail_id: 1 } })
+    .toArray();
+  const votes = new Map(); // accountId -> Map(mail -> count)
+  for (const row of rows) {
+    const accountId = String(row.account).split('/locations/')[0];
+    if (!votes.has(accountId)) votes.set(accountId, new Map());
+    const tally = votes.get(accountId);
+    tally.set(row.mail_id, (tally.get(row.mail_id) || 0) + 1);
+  }
+  const byAccount = new Map();
+  for (const [accountId, tally] of votes) {
+    byAccount.set(accountId, [...tally.entries()].sort((a, b) => b[1] - a[1])[0][0]);
+  }
+  return byAccount;
+};
+
+/**
+ * Every listing and its monthly performance, for the Profiles, Units, Phone and Postings
+ * pages. Profiles are sent once; metrics as compact rows [profile index, month index,
+ * desktopSearch, mobileSearch, desktopMaps, mobileMaps, calls, website, directions] so ~20k
+ * listing-months stay a small payload. Months with no stored metrics are simply absent and
+ * read as zero on the page.
+ */
+router.get('/feed', async (req, res) => {
+  try {
+    const access = req.access || {};
+    const data = await cached(`feed:${access.key || 'all'}`, async () => {
+      const months = windowMonths(PERFORMANCE_MONTHS + 1);
+      const [profiles, metrics, mailboxes] = await Promise.all([
+        RealtimeProfile.find(
+          access.filter || {},
+          {
+            locationId: 1, accountId: 1, title: 1, phone: 1, website: 1, address: 1, primaryCategory: 1,
+            mapsUri: 1, placeId: 1, unitName: 1, department: 1, folders: 1, statusType: 1,
+          }
+        )
+          .sort({ title: 1 })
+          .lean(),
+        RealtimeMetric.find({ ym: { $in: months } }, { locationId: 1, ym: 1, totals: 1 }).lean(),
+        folderMailboxes(),
+      ]);
+      const reviewsOf = await reviewStatsFor(profiles);
+
+      const index = new Map(profiles.map((p, i) => [p.locationId, i]));
+      const monthIndex = new Map(months.map((ym, i) => [ym, i]));
+      const rows = [];
+      for (const m of metrics) {
+        const pi = index.get(m.locationId);
+        const mi = monthIndex.get(m.ym);
+        if (pi === undefined || mi === undefined) continue;
+        const t = m.totals || {};
+        rows.push([
+          pi, mi,
+          t.desktopSearch || 0, t.mobileSearch || 0, t.desktopMaps || 0, t.mobileMaps || 0,
+          t.callClicks || 0, t.websiteClicks || 0, t.directionRequests || 0,
+        ]);
+      }
+
+      return {
+        months: months.map((ym) => {
+          const [year, month] = ym.split('-').map(Number);
+          return { ym, year, month, label: labelFor(ym) };
+        }),
+        profiles: profiles.map((p) => {
+          const reviews = reviewsOf(p);
+          return {
+            locationId: p.locationId,
+            account: `${p.accountId}/${p.locationId}`,
+            email: mailboxes.get(p.accountId) || '',
+            title: p.title || '',
+            phone: p.phone || '',
+            website: p.website || '',
+            address: p.address || '',
+            primaryCategory: p.primaryCategory || '',
+            mapsUri: p.mapsUri || '',
+            placeId: p.placeId || '',
+            unitName: p.unitName || 'Unassigned',
+            cluster: clusterOfFolder(p.unitName),
+            folders: p.folders || [],
+            department: p.department || 'GMB',
+            statusType: p.statusType || '',
+            reviewCount: reviews.reviewCount,
+            averageRating: reviews.averageRating,
+          };
+        }),
+        metrics: rows,
+        lastSyncAt: (await getSettings()).sync?.lastSuccessAt || null,
+      };
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * One listing's reviews, from the collection the review sync keeps current every day:
+ * star breakdown and the latest positive / critical comments over the stored window, and
+ * Google's lifetime rating and count from the stats document.
+ */
+router.get('/feed/reviews', async (req, res) => {
+  try {
+    const bareId = String(req.query.location || '').split('/').pop();
+    if (!bareId) return res.status(400).json({ success: false, error: 'location is required' });
+    if (req.access?.filter) {
+      const allowed = await RealtimeProfile.exists({ $and: [req.access.filter, { locationId: `locations/${bareId}` }] });
+      if (!allowed) return res.status(403).json({ success: false, error: 'This listing is outside your access' });
+    }
+
+    const [reviews, stat] = await Promise.all([
+      Review.find(
+        { locationId: bareId },
+        { starRatingNum: 1, comment: 1, reviewer: 1, createTime: 1 }
+      )
+        .sort({ createTime: -1 })
+        .lean(),
+      ReviewStat.findOne({ locationId: bareId }).lean(),
+    ]);
+
+    const ratings = [0, 0, 0, 0, 0];
+    const goodReviews = [];
+    const badReviews = [];
+    for (const r of reviews) {
+      const stars = Number(r.starRatingNum) || 0;
+      if (stars < 1 || stars > 5) continue;
+      ratings[stars - 1] += 1;
+      const comment = String(r.comment || '').trim();
+      if (!comment) continue;
+      const entry = { comment, author: r.reviewer?.displayName || 'Anonymous', date: r.createTime };
+      if (stars >= 4 && goodReviews.length < 5) goodReviews.push(entry);
+      if (stars <= 3 && badReviews.length < 5) badReviews.push(entry);
+    }
+
+    const count = Number(stat?.lifetimeReviewCount);
+    const rating = Number(stat?.lifetimeAverageRating);
+    res.json({
+      success: true,
+      data: {
+        ratings,
+        goodReviews,
+        badReviews,
+        averageRating: stat?.lifetimeAverageRating != null && Number.isFinite(rating) ? rating : undefined,
+        totalReviewCount: Number.isFinite(count) ? count : undefined,
+        duration: `Since ${labelFor(isoOf(windowStart()).slice(0, 7))}`,
+        totalFetched: reviews.length,
       },
     });
   } catch (error) {

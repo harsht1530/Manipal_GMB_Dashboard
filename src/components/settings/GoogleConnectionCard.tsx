@@ -22,6 +22,7 @@ import {
   useDisconnectGoogle,
   useRunSync,
   startGoogleConnect,
+  type SyncMode,
 } from "@/hooks/useRealtimeData";
 import { GoogleLogo } from "@/components/GoogleLogo";
 
@@ -56,15 +57,34 @@ export const GoogleConnectionCard = ({ userEmail }: { userEmail?: string }) => {
 
   const data = connection.data;
   const syncing = data?.sync?.status === "running";
-  const syncProgress = data?.sync?.total ? Math.round((data.sync.processed / data.sync.total) * 100) : 0;
+  // One figure for the whole run, computed by the backend across every phase. It only ever
+  // goes up, so the bar fills once from start to finish instead of restarting per phase.
+  const syncProgress = Math.max(0, Math.min(100, data?.sync?.overall ?? 0));
 
+  /** What the run is doing right now; the bar above it carries the overall position. */
   const syncLabel = (() => {
     const sync = data?.sync;
-    if (sync?.phase === "profiles") return `Reading profiles from Google… ${(sync.profilesSynced ?? 0).toLocaleString("en-IN")} so far`;
-    if (sync?.phase === "verification") return `Checking verification status… ${sync.processed ?? 0} of ${sync.total ?? 0}`;
-    if (sync?.phase === "updates") return `Checking Google updates… ${sync.processed ?? 0} of ${sync.total ?? 0}`;
-    if (sync?.phase === "performance") return `Reading performance data… ${sync.processed ?? 0} of ${sync.total ?? 0} profiles`;
-    return "Starting…";
+    const of = sync?.total ? ` ${(sync.processed ?? 0).toLocaleString("en-IN")} of ${sync.total.toLocaleString("en-IN")}` : "";
+    switch (sync?.phase) {
+      case "profiles":
+        return `Reading profiles from Google… ${(sync.profilesSynced ?? 0).toLocaleString("en-IN")} so far`;
+      case "verification":
+        return `Checking verification status…${of}`;
+      case "updates":
+        return `Checking Google updates…${of}`;
+      case "optimization":
+        return `Reading photos, logo, WhatsApp and appointment links…${of}`;
+      case "performance":
+        return `Reading performance data…${of}`;
+      case "keywords":
+        return `Reading search preference…${of}`;
+      case "reviews":
+        return `Reading new reviews…${of}`;
+      case "reviewStats":
+        return `Updating review counts and ratings…${of}`;
+      default:
+        return "Starting…";
+    }
   })();
 
   const onDisconnect = async () => {
@@ -78,10 +98,23 @@ export const GoogleConnectionCard = ({ userEmail }: { userEmail?: string }) => {
     }
   };
 
-  const onSync = async (mode: "profiles" | "incremental" | "full" = "profiles") => {
+  const SYNC_STARTED: Record<SyncMode, string> = {
+    profiles: "Refreshing profile counts…",
+    counts: "Refreshing profile counts…",
+    incremental: "Sync started.",
+    // A full run re-reads the content checks for every listing on top of the usual work, so
+    // say so - it is minutes of work, not seconds, and the button no longer quietly ran an
+    // incremental sync instead.
+    full: "Sync started - profiles, optimization, performance, search preference and reviews.",
+    optimization: "Re-reading the content checks for every listing…",
+    reviews: "Review sync started.",
+    keywords: "Search preference sync started.",
+  };
+
+  const onSync = async (mode: SyncMode = "profiles") => {
     try {
       await runSync.mutateAsync(mode);
-      toast.success(mode === "profiles" ? "Refreshing profile counts…" : "Sync started.");
+      toast.success(SYNC_STARTED[mode] || "Sync started.");
     } catch (error) {
       toast.error((error as Error).message);
     }
@@ -169,12 +202,18 @@ export const GoogleConnectionCard = ({ userEmail }: { userEmail?: string }) => {
               </div>
 
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => onSync("profiles")} disabled={syncing || runSync.isPending}>
+                {/* One sync that reads everything: listings and their status, Google's
+                    suggested edits, every optimization check for every listing, the full
+                    performance history, search preference and reviews. */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onSync("full")}
+                  disabled={syncing || runSync.isPending}
+                  title="Read everything from Google: profiles, optimization, performance, search preference and reviews"
+                >
                   <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-                  {syncing ? "Syncing…" : "Refresh counts"}
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => onSync("incremental")} disabled={syncing || runSync.isPending}>
-                  Full sync
+                  {syncing ? `Syncing… ${syncProgress}%` : "Sync"}
                 </Button>
                 <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setConfirmOpen(true)} disabled={disconnect.isPending}>
                   <Unlink className="mr-2 h-4 w-4" />
@@ -185,17 +224,11 @@ export const GoogleConnectionCard = ({ userEmail }: { userEmail?: string }) => {
 
             {syncing && (
               <div>
-                <div className="mb-1 flex justify-between text-xs text-muted-foreground">
-                  <span>{syncLabel}</span>
-                  <span>{data.sync.total ? `${syncProgress}%` : ""}</span>
+                <div className="mb-1 flex justify-between gap-3 text-xs text-muted-foreground">
+                  <span className="truncate">{syncLabel}</span>
+                  <span className="shrink-0 tabular-nums">{syncProgress}%</span>
                 </div>
-                {data.sync.total ? (
-                  <Progress value={syncProgress} className="h-1.5" />
-                ) : (
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                    <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />
-                  </div>
-                )}
+                <Progress value={syncProgress} className="h-1.5" />
               </div>
             )}
 

@@ -93,6 +93,8 @@ export interface SyncState {
   finishedAt: string | null;
   processed: number;
   total: number;
+  /** 0-100 across the whole run; only ever goes up. What the progress bar shows. */
+  overall: number;
   profilesSynced: number;
   lastSuccessAt: string | null;
   lastFullSyncAt: string | null;
@@ -167,6 +169,11 @@ export interface ExportRow extends ProfileRow {
   googleUpdateFields?: string[];
   googleOpenStatus?: string | null;
   lastSyncedAt?: string;
+  /** Google's Place ID; empty until the listing has been through a sync that stores it. */
+  placeId?: string;
+  /** Google's lifetime totals. Null means no stats were read for the listing, not zero. */
+  reviewCount?: number | null;
+  averageRating?: number | null;
   /**
    * The content checks, as stored. Only the link fields are read here - they are listing
    * details rather than metrics, so they belong in the export alongside phone and website.
@@ -241,9 +248,38 @@ export interface OptimizationData {
 
 /**
  * The signed-in mailbox, read from the same localStorage entry AuthContext owns. Sent with every
- * realtime request so the backend can gate the restricted optimization report on it.
+ * realtime request so the backend can gate the restricted optimization report on it, and scope
+ * every answer to the user's cluster or branch. It is part of every query key, so one user's
+ * cached answers are never shown to the next user who signs in on the same browser.
  */
-const signedInEmail = (): string => {
+/**
+ * Headers that identify the signed-in login to the realtime API: the email, plus the role,
+ * cluster and branch of the login in use, since one email can hold several logins. The server
+ * only uses them to choose between that email's own records.
+ */
+export const realtimeHeaders = (): Record<string, string> | undefined => {
+  try {
+    const raw = localStorage.getItem("user");
+    const user = raw ? JSON.parse(raw) : null;
+    if (!user?.email) return undefined;
+    return {
+      "x-user-email": user.email,
+      "x-user-role": user.role || "",
+      "x-user-cluster": user.cluster || "",
+      "x-user-branch": user.branch || "",
+    };
+  } catch {
+    return undefined;
+  }
+};
+
+/** Cache identity for the signed-in login (email + scope), used in query keys. */
+export const signedInKey = (): string => {
+  const h = realtimeHeaders();
+  return h ? [h["x-user-email"], h["x-user-role"], h["x-user-cluster"], h["x-user-branch"]].join("|") : "";
+};
+
+export const signedInEmail = (): string => {
   try {
     const raw = localStorage.getItem("user");
     return raw ? JSON.parse(raw).email || "" : "";
@@ -253,9 +289,8 @@ const signedInEmail = (): string => {
 };
 
 const get = async <T>(path: string): Promise<T> => {
-  const email = signedInEmail();
   const res = await fetch(`${REALTIME_API}${path}`, {
-    headers: email ? { "x-user-email": email } : undefined,
+    headers: realtimeHeaders(),
   });
   const body = await res.json();
   if (!res.ok || !body.success) throw new Error(body.error || `Request failed (${res.status})`);
@@ -269,6 +304,8 @@ export interface RealtimeFilters {
   /** YYYY-MM-DD; both must be set for the range to apply. */
   from?: string;
   to?: string;
+  /** "verified" | "unverified"; the API's own verification split. Omitted means both. */
+  status?: string;
 }
 
 const toQuery = (filters: RealtimeFilters = {}) => {
@@ -280,6 +317,7 @@ const toQuery = (filters: RealtimeFilters = {}) => {
     params.set("from", filters.from);
     params.set("to", filters.to);
   }
+  if (filters.status) params.set("status", filters.status);
   const qs = params.toString();
   return qs ? `?${qs}` : "";
 };
@@ -289,18 +327,18 @@ const toQuery = (filters: RealtimeFilters = {}) => {
 const SLOW = { staleTime: 30 * 1000, gcTime: 30 * 60 * 1000, refetchOnWindowFocus: true };
 
 export const useRealtimeMeta = () =>
-  useQuery({ queryKey: ["realtime", "meta"], queryFn: () => get<RealtimeMeta>("/meta"), ...SLOW });
+  useQuery({ queryKey: ["realtime", "meta", signedInKey()], queryFn: () => get<RealtimeMeta>("/meta"), ...SLOW });
 
 export const useRealtimeOverview = (filters: RealtimeFilters) =>
   useQuery({
-    queryKey: ["realtime", "overview", filters],
+    queryKey: ["realtime", "overview", filters, signedInKey()],
     queryFn: () => get<OverviewData>(`/overview${toQuery(filters)}`),
     ...SLOW,
   });
 
 export const useRealtimeVerification = (filters: RealtimeFilters) =>
   useQuery({
-    queryKey: ["realtime", "verification", filters],
+    queryKey: ["realtime", "verification", filters, signedInKey()],
     queryFn: () => get<VerificationData>(`/verification${toQuery(filters)}`),
     ...SLOW,
   });
@@ -311,7 +349,7 @@ export const useRealtimeVerification = (filters: RealtimeFilters) =>
  */
 export const useRealtimeOptimization = (filters: RealtimeFilters) =>
   useQuery({
-    queryKey: ["realtime", "optimization", filters],
+    queryKey: ["realtime", "optimization", filters, signedInKey()],
     queryFn: () => get<OptimizationData>(`/optimization${toQuery(filters)}`),
     ...SLOW,
   });
@@ -325,10 +363,13 @@ export const useGoogleConnection = (pollWhileSyncing = false) =>
       pollWhileSyncing && query.state.data?.sync?.status === "running" ? 5000 : false,
   });
 
+/** The sync modes the UI can start. The backend rejects anything else. */
+export type SyncMode = "full" | "incremental" | "profiles" | "counts" | "optimization" | "reviews" | "keywords";
+
 export const useRunSync = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (mode: "full" | "incremental" | "profiles") => {
+    mutationFn: async (mode: SyncMode) => {
       const res = await fetch(`${REALTIME_API}/sync/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

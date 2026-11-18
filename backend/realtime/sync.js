@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const { GoogleClient } = require('./google');
 const { RealtimeProfile, RealtimeMetric, RealtimeSetting, getSettings, METRIC_KEYS } = require('./models');
 const { runPool } = require('./pool');
+const { clusterOfFolder } = require('./cluster-folders');
 const { syncReviews } = require('./reviews');
 const { syncKeywords } = require('./keywords');
 
@@ -56,7 +57,6 @@ const ymOf = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padS
  */
 const buildUnitMap = async () => {
   const byName = new Map();
-  const byBranch = new Map();
   try {
     const rows = await mongoose.connection
       .collection('manipalinsightsdatas')
@@ -70,22 +70,12 @@ const buildUnitMap = async () => {
       };
       const key = normalise(row['Business name']);
       if (key && !byName.has(key)) byName.set(key, entry);
-      const branchKey = normalise(row.Branch);
-      if (branchKey && !byBranch.has(branchKey)) byBranch.set(branchKey, entry);
     }
   } catch (err) {
     console.error('[realtime] could not build unit map:', err.message);
   }
-  byName.byBranch = byBranch;
   return byName;
 };
-
-/** "MH - Old Airport" / "MHBBS - MH- Bhubaneswar" -> "Old Airport" (for the cluster lookup). */
-const stripAccountPrefix = (accountName) =>
-  String(accountName || '')
-    .replace(/^\s*MH[A-Z]*\s*-\s*/i, '')
-    .replace(/^\s*MH\s*-\s*/i, '')
-    .trim();
 
 /**
  * Title patterns used by the Manipal listings, e.g.
@@ -98,14 +88,13 @@ const stripAccountPrefix = (accountName) =>
  */
 const resolveUnit = (unitMap, location, accountName) => {
   const byTitle = matchUnit(unitMap, location);
-  const byBranch = unitMap.byBranch?.get(normalise(stripAccountPrefix(accountName)));
-  const cluster =
-    (byBranch && byBranch.cluster !== 'Unassigned' && byBranch.cluster) ||
-    (byTitle.cluster !== 'Unassigned' && byTitle.cluster) ||
-    'Unassigned';
+  const unitName = accountName || byTitle.unitName || 'Unassigned';
   return {
-    unitName: accountName || byTitle.unitName || 'Unassigned',
-    cluster,
+    unitName,
+    // The allocation sheet decides a folder's cluster (cluster-folders.js). The insight data
+    // is still used for the department, but its cluster disagreed with the sheet for hundreds
+    // of listings and left others "Unassigned", so it no longer sets this.
+    cluster: clusterOfFolder(unitName),
     department: byTitle.department || 'GMB',
   };
 };
@@ -153,12 +142,201 @@ const deriveStatus = (profile, vom) => {
 
 /* ────────────────────────── profile sync ────────────────────────── */
 
-const progress = (fields) => RealtimeSetting.updateOne({ _id: 'primary' }, { $set: fields }).catch(() => {});
+/**
+ * One progress figure for the whole run.
+ *
+ * Each phase counts its own work - listings read, photos checked, months of performance - so
+ * `processed / total` restarts at zero every time the phase changes, and a bar drawn from it
+ * fills up and empties several times in one sync. `sync.overall` is what the page shows
+ * instead: each phase owns a slice of 0-100 in the order it runs, its own fraction fills that
+ * slice, and the figure only ever goes up. A phase with nothing to do (no search-preference
+ * month due, say) is simply skipped over.
+ *
+ * The weights are rough shares of a full run's wall-clock, not exact: what matters is that
+ * the bar moves steadily and never goes backwards. It stops at 99 until the run has written
+ * its final state, so 100% always means finished.
+ */
+const PHASE_WEIGHTS = [
+  ['profiles', 10],
+  ['verification', 2],
+  ['updates', 16],
+  ['optimization', 34],
+  ['performance', 20],
+  ['keywords', 6],
+  ['reviews', 8],
+  ['reviewStats', 4],
+];
+const TOTAL_WEIGHT = PHASE_WEIGHTS.reduce((sum, [, w]) => sum + w, 0);
+
+/** The current run's position. Syncs never overlap (see `running`), so one is enough. */
+const run = { phase: null, processed: 0, total: 0, overall: 0, profileEstimate: 0 };
+
+const overallNow = () => {
+  if (run.phase === 'done') return 100;
+  const index = PHASE_WEIGHTS.findIndex(([phase]) => phase === run.phase);
+  if (index < 0) return null;
+  const before = PHASE_WEIGHTS.slice(0, index).reduce((sum, [, w]) => sum + w, 0);
+  const weight = PHASE_WEIGHTS[index][1];
+  // The listing pass cannot know its total until it has finished, so it is measured against
+  // the number of listings the last run stored - close enough to move the bar honestly.
+  const total = run.phase === 'profiles' ? run.profileEstimate : run.total;
+  const fraction = total > 0 ? Math.min(1, run.processed / total) : 0;
+  return Math.floor(((before + weight * fraction) / TOTAL_WEIGHT) * 100);
+};
+
+const progress = (fields) => {
+  if (fields['sync.status'] === 'running') {
+    run.overall = 0;
+    run.phase = null;
+  }
+  if ('sync.phase' in fields && fields['sync.phase'] !== run.phase) {
+    run.phase = fields['sync.phase'];
+    run.processed = 0;
+    run.total = 0;
+  }
+  if ('sync.total' in fields) run.total = Number(fields['sync.total']) || 0;
+  if ('sync.processed' in fields) run.processed = Number(fields['sync.processed']) || 0;
+  if ('sync.profilesSynced' in fields && run.phase === 'profiles') {
+    run.processed = Number(fields['sync.profilesSynced']) || 0;
+  }
+  const overall = overallNow();
+  if (overall !== null) {
+    run.overall = Math.max(run.overall, run.phase === 'done' ? 100 : Math.min(99, overall));
+  }
+  return RealtimeSetting.updateOne(
+    { _id: 'primary' },
+    { $set: { ...fields, 'sync.overall': run.overall } }
+  ).catch(() => {});
+};
+
+/** Per-item progress from a worker pool, routed through the overall figure. */
+const reportProcessed = (processed) => progress({ 'sync.processed': processed });
+
+/** A sub-step that knows its own size - the review and search-preference passes. */
+const reportPhase = (phase, total) => progress({ 'sync.phase': phase, 'sync.total': total, 'sync.processed': 0 });
 
 /** Unit folders (0) are read before the cluster and organisation-level ones (1). */
 const rank = (accountName) => (/cluster|hospitals$|^MHHS|^Dashboard/i.test(String(accountName || '')) ? 1 : 0);
 
-const syncProfiles = async (client, settings, { fetchUpdates = true } = {}) => {
+/**
+ * Refresh the checks that need per-listing calls: cover photo, logo, WhatsApp, the
+ * appointment link and the date of the last post.
+ *
+ * Three calls per listing, which is why this is guarded rather than run for everything on
+ * every sync. The listing-level checks are already current on every run - they come back in
+ * the bulk listing - and content like a logo rarely changes within a day, so by default a
+ * listing is only re-read once its checks are OPTIMIZATION_TTL_HOURS old.
+ *
+ * `force` drops that guard, for a full sync or an explicit optimization run, where the point
+ * is to read everything now. At ~3.2k listings a forced pass is ~9.6k calls, and the shared
+ * pacer (REALTIME_RATE_PER_MIN) decides how long that takes, not `concurrency`.
+ *
+ * Pass `locationIds` to scope it to a listing pass's results; omit it to cover every stored
+ * listing, which is what a standalone optimization run wants.
+ */
+const refreshOptimization = async (client, { locationIds, force = false, concurrency = CONCURRENCY } = {}) => {
+  if (!FETCH_OPTIMIZATION) return 0;
+  // `force` ignores the age guard: a full sync means every listing, not only the stale ones.
+  const cutoff = new Date(Date.now() - OPTIMIZATION_TTL_HOURS * 3600 * 1000);
+  const due = await RealtimeProfile.find(
+    {
+      ...(locationIds ? { locationId: { $in: locationIds } } : {}),
+      ...(force
+        ? {}
+        : { $or: [{ 'optimization.checkedAt': { $lt: cutoff } }, { 'optimization.checkedAt': null }] }),
+    },
+    { locationId: 1, accountId: 1, _id: 0 }
+  ).lean();
+
+  await progress({ 'sync.phase': 'optimization', 'sync.total': due.length, 'sync.processed': 0 });
+  await runPool(
+    due,
+    async ({ locationId, accountId }) => {
+      const set = { 'optimization.checkedAt': new Date(), 'optimization.error': '' };
+      const failures = [];
+
+      try {
+        const attrs = (await client.locationAttributes(locationId)).attributes || [];
+        const uriOf = (name) => {
+          const hit = attrs.find((a) => a.name === name);
+          return hit?.uriValues?.[0]?.uri || '';
+        };
+        set['optimization.whatsapp'] = uriOf('attributes/url_whatsapp');
+        set['optimization.appointment'] = uriOf('attributes/url_appointment');
+      } catch (err) {
+        // 403/404 means no access or nothing set, which is a legitimate "not configured".
+        if (err.status === 403 || err.status === 404) {
+          set['optimization.whatsapp'] = '';
+          set['optimization.appointment'] = '';
+        } else {
+          failures.push(`attributes: ${err.message}`);
+        }
+      }
+
+      try {
+        const items = (await client.locationMedia(accountId, locationId)).mediaItems || [];
+        const categoryOf = (m) => m.locationAssociation?.category || '';
+        const has = (cat) => items.some((m) => categoryOf(m) === cat);
+        // What the Business Profile UI calls the logo is stored as PROFILE. LOGO is the legacy
+        // category and is set on barely any listing, so reading only LOGO reports a missing
+        // logo for almost every profile that in fact has one.
+        const profilePhoto = has('PROFILE');
+        const legacyLogo = has('LOGO');
+        set['optimization.coverPhoto'] = has('COVER');
+        set['optimization.profilePhoto'] = profilePhoto;
+        set['optimization.legacyLogo'] = legacyLogo;
+        set['optimization.logo'] = profilePhoto || legacyLogo;
+        set['optimization.photoCount'] = items.length;
+      } catch (err) {
+        if (err.status === 403 || err.status === 404) {
+          set['optimization.coverPhoto'] = false;
+          set['optimization.logo'] = false;
+          set['optimization.profilePhoto'] = false;
+          set['optimization.legacyLogo'] = false;
+          set['optimization.photoCount'] = 0;
+        } else {
+          failures.push(`media: ${err.message}`);
+        }
+      }
+
+      try {
+        // Newest first, so the first entry dates the listing's posting activity. Only LIVE
+        // posts count: a rejected or deleted post never appeared on the profile.
+        const posts = (await client.localPosts(accountId, locationId, { pageSize: 5 })).localPosts || [];
+        const live = posts.filter((p) => !p.state || p.state === 'LIVE');
+        const newest = live
+          .map((p) => Date.parse(p.createTime || p.updateTime || ''))
+          .filter((t) => Number.isFinite(t))
+          .sort((a, b) => b - a)[0];
+        set['optimization.lastPostAt'] = newest ? new Date(newest) : null;
+        set['optimization.postCount'] = live.length;
+        set['optimization.postsCheckedAt'] = new Date();
+      } catch (err) {
+        if (err.status === 403 || err.status === 404) {
+          // No posting surface on this listing, which is a real "never posted".
+          set['optimization.lastPostAt'] = null;
+          set['optimization.postCount'] = 0;
+          set['optimization.postsCheckedAt'] = new Date();
+        } else {
+          failures.push(`posts: ${err.message}`);
+        }
+      }
+
+      // Whatever did come back is kept, but a listing with a failed call is left without a
+      // checkedAt so the next run picks it up again rather than reporting a gap it never read.
+      if (failures.length) {
+        delete set['optimization.checkedAt'];
+        set['optimization.error'] = failures.join('; ');
+      }
+      await RealtimeProfile.updateOne({ locationId }, { $set: set });
+    },
+    concurrency,
+    (done) => progress({ 'sync.processed': done })
+  );
+  return due.length;
+};
+
+const syncProfiles = async (client, settings, { fetchUpdates = true, forceOptimization = false } = {}) => {
   const unitMap = await buildUnitMap();
   const accounts = await client.listAccounts();
   await progress({ accounts: accounts.map((a) => ({ name: a.name, accountName: a.accountName, type: a.type })) });
@@ -194,6 +372,7 @@ const syncProfiles = async (client, settings, { fetchUpdates = true } = {}) => {
       primaryCategory: loc.categories?.primaryCategory?.displayName || '',
       labels: loc.labels || [],
       mapsUri: meta.mapsUri || '',
+      placeId: meta.placeId || '',
       cluster: unit.cluster,
       unitName: unit.unitName,
       department: unit.department,
@@ -344,106 +523,8 @@ const syncProfiles = async (client, settings, { fetchUpdates = true } = {}) => {
     );
   }
 
-  // Cover photo, logo, WhatsApp and appointment link: two calls per listing, so each listing
-  // is refreshed at most once a day. The listing-level checks above are already current on
-  // every run; only these four can go stale, and content like a logo rarely changes within a
-  // day. Without the guard a six-hourly sync would make ~13k extra calls a day.
-  if (FETCH_OPTIMIZATION) {
-    const cutoff = new Date(Date.now() - OPTIMIZATION_TTL_HOURS * 3600 * 1000);
-    const stale = await RealtimeProfile.find(
-      {
-        locationId: { $in: seen },
-        $or: [{ 'optimization.checkedAt': { $lt: cutoff } }, { 'optimization.checkedAt': null }],
-      },
-      { locationId: 1, accountId: 1, _id: 0 }
-    ).lean();
-
-    await progress({ 'sync.phase': 'optimization', 'sync.total': stale.length, 'sync.processed': 0 });
-    await runPool(
-      stale,
-      async ({ locationId, accountId }) => {
-        const set = { 'optimization.checkedAt': new Date(), 'optimization.error': '' };
-        const failures = [];
-
-        try {
-          const attrs = (await client.locationAttributes(locationId)).attributes || [];
-          const uriOf = (name) => {
-            const hit = attrs.find((a) => a.name === name);
-            return hit?.uriValues?.[0]?.uri || '';
-          };
-          set['optimization.whatsapp'] = uriOf('attributes/url_whatsapp');
-          set['optimization.appointment'] = uriOf('attributes/url_appointment');
-        } catch (err) {
-          // 403/404 means no access or nothing set, which is a legitimate "not configured".
-          if (err.status === 403 || err.status === 404) {
-            set['optimization.whatsapp'] = '';
-            set['optimization.appointment'] = '';
-          } else {
-            failures.push(`attributes: ${err.message}`);
-          }
-        }
-
-        try {
-          const items = (await client.locationMedia(accountId, locationId)).mediaItems || [];
-          const categoryOf = (m) => m.locationAssociation?.category || '';
-          const has = (cat) => items.some((m) => categoryOf(m) === cat);
-          // What the Business Profile UI calls the logo is stored as PROFILE. LOGO is the legacy
-          // category and is set on barely any listing, so reading only LOGO reports a missing
-          // logo for almost every profile that in fact has one.
-          const profilePhoto = has('PROFILE');
-          const legacyLogo = has('LOGO');
-          set['optimization.coverPhoto'] = has('COVER');
-          set['optimization.profilePhoto'] = profilePhoto;
-          set['optimization.legacyLogo'] = legacyLogo;
-          set['optimization.logo'] = profilePhoto || legacyLogo;
-          set['optimization.photoCount'] = items.length;
-        } catch (err) {
-          if (err.status === 403 || err.status === 404) {
-            set['optimization.coverPhoto'] = false;
-            set['optimization.logo'] = false;
-            set['optimization.profilePhoto'] = false;
-            set['optimization.legacyLogo'] = false;
-            set['optimization.photoCount'] = 0;
-          } else {
-            failures.push(`media: ${err.message}`);
-          }
-        }
-
-        try {
-          // Newest first, so the first entry dates the listing's posting activity. Only LIVE
-          // posts count: a rejected or deleted post never appeared on the profile.
-          const posts = (await client.localPosts(accountId, locationId, { pageSize: 5 })).localPosts || [];
-          const live = posts.filter((p) => !p.state || p.state === 'LIVE');
-          const newest = live
-            .map((p) => Date.parse(p.createTime || p.updateTime || ''))
-            .filter((t) => Number.isFinite(t))
-            .sort((a, b) => b - a)[0];
-          set['optimization.lastPostAt'] = newest ? new Date(newest) : null;
-          set['optimization.postCount'] = live.length;
-          set['optimization.postsCheckedAt'] = new Date();
-        } catch (err) {
-          if (err.status === 403 || err.status === 404) {
-            // No posting surface on this listing, which is a real "never posted".
-            set['optimization.lastPostAt'] = null;
-            set['optimization.postCount'] = 0;
-            set['optimization.postsCheckedAt'] = new Date();
-          } else {
-            failures.push(`posts: ${err.message}`);
-          }
-        }
-
-        // Whatever did come back is kept, but a listing with a failed call is left without a
-        // checkedAt so the next run picks it up again rather than reporting a gap it never read.
-        if (failures.length) {
-          delete set['optimization.checkedAt'];
-          set['optimization.error'] = failures.join('; ');
-        }
-        await RealtimeProfile.updateOne({ locationId }, { $set: set });
-      },
-      CONCURRENCY,
-      (done) => progress({ 'sync.processed': done })
-    );
-  }
+  // Per-listing calls, guarded by age unless this is a full run - see refreshOptimization.
+  await refreshOptimization(client, { locationIds: seen, force: forceOptimization });
 
   // Listings that disappeared from Google (removed or access lost). Skipped when a folder
   // failed to list: its listings are missing from `seen` only because Google was unavailable,
@@ -569,6 +650,7 @@ const runSync = async ({ mode = 'incremental', trigger = 'manual' } = {}) => {
   }
 
   running = true;
+  run.profileEstimate = await RealtimeProfile.countDocuments({}).catch(() => 0);
   await progress({
     'sync.status': 'running',
     'sync.mode': mode,
@@ -598,8 +680,8 @@ const runSync = async ({ mode = 'incremental', trigger = 'manual' } = {}) => {
         const kw = await syncKeywords(client, {
           lookback: 12,
           concurrency: CONCURRENCY,
-          onProgress: (processed) =>
-            RealtimeSetting.updateOne({ _id: 'primary' }, { $set: { 'sync.processed': processed } }),
+          onProgress: reportProcessed,
+          onPhase: reportPhase,
         });
         await progress({
           'sync.status': 'idle',
@@ -613,14 +695,32 @@ const runSync = async ({ mode = 'incremental', trigger = 'manual' } = {}) => {
         return;
       }
 
+      // 'optimization' re-reads the per-listing content checks for every stored listing and
+      // nothing else: no listing pass, no performance, no reviews. It ignores the age guard,
+      // so it is the way to refresh the cover photo, logo, WhatsApp and appointment link on
+      // demand rather than waiting for them to go stale.
+      if (mode === 'optimization') {
+        const refreshed = await refreshOptimization(client, { force: true });
+        await progress({
+          'sync.status': 'idle',
+          'sync.phase': 'done',
+          'sync.finishedAt': new Date(),
+          'sync.lastSuccessAt': new Date(),
+          'sync.error': null,
+        });
+        console.log(`[realtime] optimization sync finished: ${refreshed} listings re-read.`);
+        running = false;
+        return;
+      }
+
       // 'reviews' re-reads the review window alone - no listing or performance calls at all.
       if (mode === 'reviews') {
         await progress({ 'sync.phase': 'reviews', 'sync.processed': 0, 'sync.total': 0 });
         const reviewsOnly = await syncReviews(client, {
           mode: 'incremental',
           concurrency: CONCURRENCY,
-          onProgress: (processed) =>
-            RealtimeSetting.updateOne({ _id: 'primary' }, { $set: { 'sync.processed': processed } }),
+          onProgress: reportProcessed,
+          onPhase: reportPhase,
         });
         await progress({
           'sync.reviewsSynced': reviewsOnly.written,
@@ -637,7 +737,13 @@ const runSync = async ({ mode = 'incremental', trigger = 'manual' } = {}) => {
       }
 
       const profilesOnly = mode === 'profiles' || mode === 'counts';
-      const { count: profilesSynced, failedAccounts } = await syncProfiles(client, settings, { fetchUpdates: mode !== 'profiles' });
+      const { count: profilesSynced, failedAccounts } = await syncProfiles(client, settings, {
+        fetchUpdates: mode !== 'profiles',
+        // A full sync re-reads the content checks for every listing rather than only the ones
+        // whose checks have aged out. Any other mode keeps the guard, so a six-hourly
+        // incremental run still costs no extra calls once a listing has been read today.
+        forceOptimization: mode === 'full',
+      });
       const partial = failedAccounts.length > 0;
       const partialNote = partial
         ? `Google was unavailable for ${failedAccounts.length} folder(s): ${failedAccounts.map((f) => f.accountName).join(', ')}. Their previous data was kept - run the sync again to refresh them.`
@@ -658,8 +764,7 @@ const runSync = async ({ mode = 'incremental', trigger = 'manual' } = {}) => {
       }
 
       // Progress comes from parallel workers, so it is written with updateOne rather than save().
-      const metricsSynced = await syncPerformance(client, settings, mode, (processed) =>
-        RealtimeSetting.updateOne({ _id: 'primary' }, { $set: { 'sync.processed': processed } })
+      const metricsSynced = await syncPerformance(client, settings, mode, reportProcessed
       );
 
       // Whatever months are still missing, newest first. Months already stored and settled
@@ -670,8 +775,8 @@ const runSync = async ({ mode = 'incremental', trigger = 'manual' } = {}) => {
           lookback: 12,
           maxMonths: KEYWORD_MONTHS_PER_RUN,
           concurrency: CONCURRENCY,
-          onProgress: (processed) =>
-            RealtimeSetting.updateOne({ _id: 'primary' }, { $set: { 'sync.processed': processed } }),
+          onProgress: reportProcessed,
+          onPhase: reportPhase,
         });
         await progress({
           'sync.keywordMonthsPending': kw.pending,
@@ -694,8 +799,8 @@ const runSync = async ({ mode = 'incremental', trigger = 'manual' } = {}) => {
         reviews = await syncReviews(client, {
           mode: mode === 'full' ? 'full' : 'incremental',
           concurrency: CONCURRENCY,
-          onProgress: (processed) =>
-            RealtimeSetting.updateOne({ _id: 'primary' }, { $set: { 'sync.processed': processed } }),
+          onProgress: reportProcessed,
+          onPhase: reportPhase,
         });
         await progress({
           'sync.reviewsSynced': reviews.written,
