@@ -1223,16 +1223,28 @@ router.get('/feed/reviews', async (req, res) => {
     const ratings = [0, 0, 0, 0, 0];
     const goodReviews = [];
     const badReviews = [];
+    // A star rating left without text still counts as a review; it fills whatever slots the
+    // written comments leave empty, so a listing whose only reviews are ratings is not blank.
+    const ratingOnly = { good: [], bad: [] };
     for (const r of reviews) {
       const stars = Number(r.starRatingNum) || 0;
       if (stars < 1 || stars > 5) continue;
       ratings[stars - 1] += 1;
       const comment = String(r.comment || '').trim();
-      if (!comment) continue;
-      const entry = { comment, author: r.reviewer?.displayName || 'Anonymous', date: r.createTime };
+      const author = r.reviewer?.displayName || 'Anonymous';
+      if (!comment) {
+        const bucket = stars >= 4 ? ratingOnly.good : ratingOnly.bad;
+        if (bucket.length < 5) {
+          bucket.push({ comment: `Rated ${stars} star${stars === 1 ? '' : 's'} (no written comment)`, author, date: r.createTime, ratingOnly: true });
+        }
+        continue;
+      }
+      const entry = { comment, author, date: r.createTime };
       if (stars >= 4 && goodReviews.length < 5) goodReviews.push(entry);
       if (stars <= 3 && badReviews.length < 5) badReviews.push(entry);
     }
+    goodReviews.push(...ratingOnly.good.slice(0, 5 - goodReviews.length));
+    badReviews.push(...ratingOnly.bad.slice(0, 5 - badReviews.length));
 
     const count = Number(stat?.lifetimeReviewCount);
     const rating = Number(stat?.lifetimeAverageRating);

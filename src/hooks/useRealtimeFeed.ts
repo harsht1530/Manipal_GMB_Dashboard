@@ -252,7 +252,7 @@ export async function fetchProfileReviews(
     const res = await fetch(`${API_BASE}/reviews`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, location: account }),
+      body: JSON.stringify({ email, location: account, includeRatingOnly: true }),
     });
     const json = await res.json();
     const data = json?.success ? (json.data as ReviewSummaryData) : null;

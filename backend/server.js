@@ -1273,6 +1273,19 @@ async function fetchAllReviews(email, location, pageToken = "", aggregatedData =
                                 if (index !== undefined) aggregatedData.ratings[index]++;
                                 
                                 const cleanComment = review.comment ? review.comment.trim() : "";
+                                if (!cleanComment && aggregatedData.ratingOnly) {
+                                    // Opt-in (includeRatingOnly): a star rating left without text, kept aside and
+                                    // used only to fill slots the written comments leave empty.
+                                    const stars = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 }[review.starRating];
+                                    const entry = {
+                                        comment: `Rated ${stars} star${stars === 1 ? '' : 's'} (no written comment)`,
+                                        author: review.reviewer && review.reviewer.displayName ? review.reviewer.displayName : "Anonymous",
+                                        date: review.createTime,
+                                        ratingOnly: true
+                                    };
+                                    const bucket = stars >= 4 ? aggregatedData.ratingOnly.good : aggregatedData.ratingOnly.bad;
+                                    if (stars && bucket.length < 5) bucket.push(entry);
+                                }
                                 if (cleanComment) {
                                     const authorName = review.reviewer && review.reviewer.displayName ? review.reviewer.displayName : "Anonymous";
                                     // Accept 5 and 4 star ratings as positive comments
@@ -1308,10 +1321,22 @@ async function fetchAllReviews(email, location, pageToken = "", aggregatedData =
 
 // 10. Reviews Route
 app.post('/api/reviews', async (req, res) => {
-    const { email, location } = req.body;
+    const { email, location, includeRatingOnly } = req.body;
     if (!email || !location) return res.status(400).json({ success: false, error: "Email and Location required" });
     try {
-        const result = await fetchAllReviews(email, location);
+        // Without includeRatingOnly this is exactly the original behaviour.
+        const seed = includeRatingOnly ? {
+            ratings: [0, 0, 0, 0, 0], goodReviews: [], badReviews: [], totalFetched: 0,
+            averageRating: null, totalReviewCount: null, duration: null,
+            ratingOnly: { good: [], bad: [] }
+        } : null;
+        const result = await fetchAllReviews(email, location, "", seed);
+        if (result.ratingOnly) {
+            // Written comments first; rating-only reviews fill what is left of the five slots.
+            result.goodReviews = [...result.goodReviews, ...result.ratingOnly.good].slice(0, 5);
+            result.badReviews = [...result.badReviews, ...result.ratingOnly.bad].slice(0, 5);
+            delete result.ratingOnly;
+        }
         res.json({ success: true, data: result });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
