@@ -56,6 +56,8 @@ const Doctors = () => {
   // Same filters as the Realtime page: cluster (from the allocation sheet) is the parent of folder.
   const [cluster, setCluster] = useState("ALL");
   const [folder, setFolder] = useState("ALL");
+  // Google verification status (Verified, Unverified, Duplicate, ...); "ALL" = every status.
+  const [status, setStatus] = useState("ALL");
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
   const [selectedRatings, setSelectedRatings] = useState<number[]>([]);
   const [comboOpen, setComboOpen] = useState(false);
@@ -83,7 +85,7 @@ const Doctors = () => {
 
   useEffect(() => {
     setVisibleCount(20);
-  }, [searchQuery, cluster, folder, selectedDepartments, selectedRatings]);
+  }, [searchQuery, cluster, folder, status, selectedDepartments, selectedRatings]);
 
 
   const dashboardTitle = user?.role === "Admin" ? "Profiles" : (user?.branch || user?.cluster || "Profiles");
@@ -118,11 +120,19 @@ const Doctors = () => {
     if (!mounted || loading) return [] as FeedDoctor[];
     return doctors.filter((doctor) => {
       if (!matchesScope(doctor, cluster, folder, unitClusters)) return false;
+      if (status !== "ALL" && doctor.statusType !== status) return false;
       const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(doctor.department);
       const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(doctor.averageRating) === r);
       return departmentMatch && ratingMatch;
     });
-  }, [doctors, cluster, folder, unitClusters, selectedDepartments, selectedRatings, mounted, loading]);
+  }, [doctors, cluster, folder, status, unitClusters, selectedDepartments, selectedRatings, mounted, loading]);
+
+  // The statuses present in the listings this user can see, most common first.
+  const statusOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const d of doctors) if (d.statusType) counts.set(d.statusType, (counts.get(d.statusType) || 0) + 1);
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name);
+  }, [doctors]);
 
   // Names for the search dropdown, from the listings in scope.
   const validSearchProfiles = useMemo(() => {
@@ -332,6 +342,19 @@ const Doctors = () => {
                 </SelectContent>
               </Select>
             )}
+            <Select value={status} onValueChange={(value) => startTransition(() => setStatus(value))}>
+              <SelectTrigger className="h-9 w-[200px] shrink-0 bg-muted/20 border-primary/5 text-xs font-medium">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent className="max-h-[320px]">
+                <SelectItem value="ALL">All statuses</SelectItem>
+                {statusOptions.map((name) => (
+                  <SelectItem key={name} value={name}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
       )}
@@ -384,6 +407,7 @@ const Doctors = () => {
                 setSearchQuery("");
                 setCluster("ALL");
                 setFolder("ALL");
+                setStatus("ALL");
               }}
             >
               Clear all filters
@@ -395,6 +419,26 @@ const Doctors = () => {
       </div>
     </DashboardLayout>
   );
+};
+
+/** Google's verification status, coloured the way the Realtime tiles colour it. */
+const statusBadgeClass = (status: string) => {
+  switch (status) {
+    case "Verified":
+      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    case "Unverified":
+      return "bg-amber-50 text-amber-700 border-amber-200";
+    case "Duplicate":
+      return "bg-violet-50 text-violet-700 border-violet-200";
+    case "Suspended":
+      return "bg-red-50 text-red-700 border-red-200";
+    case "Pending Verification":
+      return "bg-sky-50 text-sky-700 border-sky-200";
+    case "Ownership Conflict":
+      return "bg-orange-50 text-orange-700 border-orange-200";
+    default:
+      return "bg-muted text-muted-foreground";
+  }
 };
 
 interface DoctorCardProps {
@@ -435,6 +479,16 @@ const DoctorCard = React.memo(({ doctor, index, insights, latestData, onViewDeta
               <Badge variant="outline" className="text-muted-foreground font-normal">
                 {doctor.branch}
               </Badge>
+              {doctor.statusType && (
+                <Badge variant="outline" className={cn("font-medium", statusBadgeClass(doctor.statusType))}>
+                  {doctor.statusType}
+                </Badge>
+              )}
+              {doctor.outOfOrganization && (
+                <Badge variant="outline" className="font-medium bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-100">
+                  Out of Organization
+                </Badge>
+              )}
               {rankingScore > 0 && (
                 <Badge className="bg-amber-100 text-amber-900 border-amber-200 hover:bg-amber-100">
                   <Trophy className="h-3 w-3 mr-1 text-amber-600" />

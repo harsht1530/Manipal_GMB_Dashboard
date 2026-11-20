@@ -967,9 +967,10 @@ const OPTIMIZATION_CHECKS = [
 ];
 
 /**
- * Who may read the report. Mirrors src/lib/optimizationAccess.ts - the sidebar there decides
- * what is shown, this decides what is served. Override with REALTIME_OPTIMIZATION_EMAILS
- * (comma separated) to add or move the mailbox without a code change.
+ * Who may read the report: harsh@multipliersolutions.com (or the REALTIME_OPTIMIZATION_EMAILS
+ * list, comma separated) plus every email in the multiplierteam collection - nobody else, Admin
+ * logins included. The sidebar and the page ask GET /optimization/access, so this is the one
+ * list; adding someone to the Multiplier team grants it within a minute, removing them revokes it.
  *
  * The caller identifies itself with the x-user-email header, which useRealtimeData.ts attaches
  * to every realtime request. Note what this is and is not: the dashboard keeps its signed-in
@@ -985,6 +986,30 @@ const OPTIMIZATION_EMAILS = (process.env.REALTIME_OPTIMIZATION_EMAILS || 'harsh@
 const optimizationCaller = (req) =>
   String(req.headers['x-user-email'] || req.query.email || '').trim().toLowerCase();
 
+const TEAM_TTL_MS = 60 * 1000;
+let teamCache = { at: 0, emails: new Set() };
+
+/** The Multiplier team's emails, lower-cased, re-read at most once a minute. */
+const multiplierTeamEmails = async () => {
+  if (Date.now() - teamCache.at < TEAM_TTL_MS) return teamCache.emails;
+  const rows = await mongoose.connection.db.collection('multiplierteam').find({}, { projection: { email: 1 } }).toArray();
+  const emails = new Set(rows.map((r) => String(r.email || '').trim().toLowerCase()).filter(Boolean));
+  teamCache = { at: Date.now(), emails };
+  return emails;
+};
+
+const canReadOptimization = async (email) =>
+  !!email && (OPTIMIZATION_EMAILS.includes(email) || (await multiplierTeamEmails()).has(email));
+
+/** Whether the signed-in user may open Profile Optimization (drives the sidebar and the page). */
+router.get('/optimization/access', async (req, res) => {
+  try {
+    res.json({ success: true, data: { allowed: await canReadOptimization(optimizationCaller(req)) } });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 /**
  * Completeness of every listing's content against the nine checks, with the per-check totals
  * the card on screen shows and the rows the downloaded report is built from.
@@ -992,7 +1017,7 @@ const optimizationCaller = (req) =>
 router.get('/optimization', async (req, res) => {
   try {
     const caller = optimizationCaller(req);
-    if (!caller || !OPTIMIZATION_EMAILS.includes(caller)) {
+    if (!(await canReadOptimization(caller))) {
       // Logged so a genuine access problem is distinguishable from an empty report.
       console.warn(`[optimization] refused for ${caller || '(no email sent)'}`);
       return res.status(403).json({ success: false, error: 'This section is restricted.' });

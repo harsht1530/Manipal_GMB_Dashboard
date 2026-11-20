@@ -46,7 +46,13 @@ export interface FeedDoctor extends DoctorData {
   folders: string[];
   department: string;
   statusType: string;
+  /** In one of the "OOO" folders (MH - OOO East, MH - OOO Clinic, ...): Out of Organization. */
+  outOfOrganization: boolean;
 }
+
+/** Any folder named with "OOO" - including ones added in Google later - marks the listing. */
+export const isOutOfOrganization = (folders: string[] = [], unitName = "") =>
+  [...folders, unitName].some((f) => /\bOOO\b/i.test(f || ""));
 
 export interface FeedInsight extends InsightData {
   locationId: string;
@@ -88,6 +94,7 @@ const toDoctor = (p: FeedProfile): FeedDoctor => ({
   account: p.account,
   unitName: p.unitName,
   folders: p.folders,
+  outOfOrganization: isOutOfOrganization(p.folders, p.unitName),
   department: p.department,
   statusType: p.statusType,
 });

@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Building, Star } from "lucide-react";
+import { ChevronDown, ChevronRight, Star } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
+// Profile Type (department) was removed from the sidebar; the props stay so every page that
+// passes them keeps compiling, and with nothing selected no page filters by it.
 interface SidebarFiltersProps {
   collapsed: boolean;
   selectedDepartments: string[];
@@ -12,7 +14,6 @@ interface SidebarFiltersProps {
   onRatingsChange: (ratings: number[]) => void;
 }
 
-const departments = ["Clinic", "Department", "Doctors", "Hospitals", "MARS"];
 const ratings = [5, 4, 3, 2, 1, 0];
 
 export const SidebarFilters = ({
@@ -22,16 +23,7 @@ export const SidebarFilters = ({
   selectedRatings,
   onRatingsChange,
 }: SidebarFiltersProps) => {
-  const [departmentOpen, setDepartmentOpen] = useState(false);
   const [ratingOpen, setRatingOpen] = useState(false);
-
-  const handleDepartmentChange = (dept: string, checked: boolean) => {
-    if (checked) {
-      onDepartmentsChange([...selectedDepartments, dept]);
-    } else {
-      onDepartmentsChange(selectedDepartments.filter((d) => d !== dept));
-    }
-  };
 
   const handleRatingChange = (rating: number, checked: boolean) => {
     if (checked) {
@@ -48,46 +40,6 @@ export const SidebarFilters = ({
       <div className="text-xs font-semibold text-sidebar-foreground/60 uppercase tracking-wider mb-3">
         Filters
       </div>
-
-      {/* Department Filter */}
-      <Collapsible open={departmentOpen} onOpenChange={setDepartmentOpen}>
-        <CollapsibleTrigger className="flex items-center justify-between w-full px-2 py-2 rounded-lg text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent transition-colors">
-          <div className="flex items-center gap-2">
-            <Building className="h-4 w-4" />
-            <span>Profile Type</span>
-          </div>
-          {departmentOpen ? (
-            <ChevronDown className="h-4 w-4" />
-          ) : (
-            <ChevronRight className="h-4 w-4" />
-          )}
-        </CollapsibleTrigger>
-        <CollapsibleContent className="space-y-1 pl-4 pt-2">
-          {departments.map((dept) => (
-            <label
-              key={dept}
-              className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-sidebar-accent cursor-pointer transition-colors"
-            >
-              <Checkbox
-                checked={selectedDepartments.includes(dept)}
-                onCheckedChange={(checked) =>
-                  handleDepartmentChange(dept, checked as boolean)
-                }
-                className="border-sidebar-border"
-              />
-              <span className="text-sm text-sidebar-foreground">{dept}</span>
-            </label>
-          ))}
-          {selectedDepartments.length > 0 && (
-            <button
-              onClick={() => onDepartmentsChange([])}
-              className="text-xs text-primary hover:underline px-2 py-1"
-            >
-              Clear all
-            </button>
-          )}
-        </CollapsibleContent>
-      </Collapsible>
 
       {/* Rating Filter */}
       <Collapsible open={ratingOpen} onOpenChange={setRatingOpen}>

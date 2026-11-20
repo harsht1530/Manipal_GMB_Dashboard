@@ -29,7 +29,7 @@ import { Button } from "@/components/ui/button";
 import { SidebarFilters } from "@/components/dashboard/SidebarFilters";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/contexts/AuthContext";
-import { canSeeOptimization } from "@/lib/optimizationAccess";
+import { useOptimizationAccess } from "@/lib/optimizationAccess";
 
 const navItems = [
   { icon: RadioTower, label: "Realtime", path: "/realtime" },
@@ -96,6 +96,8 @@ export const Sidebar = ({
   }, [user]);
 
   const isAdmin = user?.role === "Admin";
+  // Profile Optimization: Multiplier team and harsh@multipliersolutions.com only (decided by the server).
+  const { allowed: canSeeOptimization } = useOptimizationAccess(user?.email);
 
   // Build Request Management children dynamically based on access
   const ticketingChildren = [
@@ -128,8 +130,8 @@ export const Sidebar = ({
     if (item.label === "Settings" && !["Admin", "Cluster", "Branch"].includes(user?.role || "")) {
       return false;
     }
-    // The optimization report is limited to one mailbox; everyone else never sees the entry.
-    if (item.path === "/profile-optimization" && !canSeeOptimization(user?.email)) {
+    // The optimization report is limited to the Multiplier team; everyone else never sees the entry.
+    if (item.path === "/profile-optimization" && !canSeeOptimization) {
       return false;
     }
     return true;

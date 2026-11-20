@@ -6,18 +6,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ShieldAlert } from "lucide-react";
 import { useRealtimeMeta } from "@/hooks/useRealtimeData";
 import { useAuth } from "@/contexts/AuthContext";
-import { canSeeOptimization } from "@/lib/optimizationAccess";
+import { useOptimizationAccess } from "@/lib/optimizationAccess";
 
 /**
  * The Profile Optimization report, on its own page rather than inside the Realtime Dashboard.
  *
- * Restricted to the mailboxes in optimizationAccess.ts. The sidebar already hides the entry for
+ * Restricted to the Multiplier team and harsh@multipliersolutions.com (see optimizationAccess.ts). The sidebar already hides the entry for
  * everyone else; this guard is what answers a pasted URL, and the API refuses the request
  * independently - so a user who gets this far still sees no data.
  */
 const ProfileOptimization = () => {
   const { user } = useAuth();
-  const allowed = canSeeOptimization(user?.email);
+  const { allowed, checking } = useOptimizationAccess(user?.email);
 
   const [cluster, setCluster] = useState("ALL");
   const [folder, setFolder] = useState("ALL");
@@ -49,6 +49,16 @@ const ProfileOptimization = () => {
     if (value !== "ALL" && folder !== "ALL" && !(map[folder] ?? []).includes(value)) setFolder("ALL");
   };
 
+  if (checking) {
+    return (
+      <DashboardLayout title="Profile Optimization" subtitle="Checking access">
+        <Card>
+          <CardContent className="py-16 text-center text-sm text-muted-foreground">Checking access…</CardContent>
+        </Card>
+      </DashboardLayout>
+    );
+  }
+
   if (!allowed) {
     return (
       <DashboardLayout title="Profile Optimization" subtitle="Restricted section">
@@ -59,8 +69,8 @@ const ProfileOptimization = () => {
             </div>
             <p className="text-sm font-medium">This section is not available for your account.</p>
             <p className="max-w-md text-xs text-muted-foreground">
-              The optimization report is limited to a single administrator mailbox. Nothing else on
-              the dashboard is affected.
+              The optimization report is limited to the Multiplier team. Nothing else on the
+              dashboard is affected.
             </p>
           </CardContent>
         </Card>

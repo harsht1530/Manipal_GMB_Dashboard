@@ -1,13 +1,22 @@
-/**
- * Who may see the Profile Optimization report.
- *
- * One list, used by the sidebar (to hide the entry), the page itself (to refuse a direct URL)
- * and - mirrored in backend/realtime/routes.js - by the API. Keep the two in step: the sidebar
- * only decides what is shown, the backend decides what is served.
- *
- * Addresses are compared lower-cased and trimmed, since the login form does not normalise them.
- */
-export const OPTIMIZATION_EMAILS = ["harsh@multipliersolutions.com"];
+import { useQuery } from "@tanstack/react-query";
+import { REALTIME_API, realtimeHeaders } from "@/hooks/useRealtimeData";
 
-export const canSeeOptimization = (email?: string | null): boolean =>
-  !!email && OPTIMIZATION_EMAILS.includes(email.trim().toLowerCase());
+/**
+ * Who may see the Profile Optimization report: harsh@multipliersolutions.com and every email in
+ * the multiplierteam collection. The list lives on the server (GET /api/realtime/optimization/access),
+ * which also refuses the report itself to anyone else, so the sidebar, the page and the API
+ * always agree and a Multiplier team change needs no deploy.
+ */
+export const useOptimizationAccess = (email?: string | null) => {
+  const query = useQuery({
+    queryKey: ["realtime", "optimization-access", (email || "").trim().toLowerCase()],
+    enabled: !!email,
+    staleTime: 60 * 1000,
+    queryFn: async () => {
+      const res = await fetch(`${REALTIME_API}/optimization/access`, { headers: realtimeHeaders() });
+      const body = await res.json();
+      return !!body?.data?.allowed;
+    },
+  });
+  return { allowed: !!email && query.data === true, checking: !!email && query.isLoading };
+};
