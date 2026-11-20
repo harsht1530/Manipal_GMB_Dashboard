@@ -120,7 +120,9 @@ const Doctors = () => {
     if (!mounted || loading) return [] as FeedDoctor[];
     return doctors.filter((doctor) => {
       if (!matchesScope(doctor, cluster, folder, unitClusters)) return false;
-      if (status !== "ALL" && doctor.statusType !== status) return false;
+      if (status === OUT_OF_ORGANIZATION) {
+        if (!doctor.outOfOrganization) return false;
+      } else if (status !== "ALL" && statusLabel(doctor.statusType) !== status) return false;
       const departmentMatch = selectedDepartments.length === 0 || selectedDepartments.includes(doctor.department);
       const ratingMatch = selectedRatings.length === 0 || selectedRatings.some(r => Math.floor(doctor.averageRating) === r);
       return departmentMatch && ratingMatch;
@@ -130,8 +132,13 @@ const Doctors = () => {
   // The statuses present in the listings this user can see, most common first.
   const statusOptions = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const d of doctors) if (d.statusType) counts.set(d.statusType, (counts.get(d.statusType) || 0) + 1);
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name);
+    for (const d of doctors) {
+      const label = statusLabel(d.statusType);
+      if (label) counts.set(label, (counts.get(label) || 0) + 1);
+    }
+    const ordered = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name);
+    // Out of Organization (the OOO folders) sits beside Google's own statuses.
+    return doctors.some((d) => d.outOfOrganization) ? [...ordered, OUT_OF_ORGANIZATION] : ordered;
   }, [doctors]);
 
   // Names for the search dropdown, from the listings in scope.
@@ -421,6 +428,11 @@ const Doctors = () => {
   );
 };
 
+const OUT_OF_ORGANIZATION = "Out of Organization";
+
+/** How a Google status is named on this page: Google's "Pending Verification" reads as Pending Edits. */
+const statusLabel = (status: string) => (status === "Pending Verification" ? "Pending Edits" : status);
+
 /** Google's verification status, coloured the way the Realtime tiles colour it. */
 const statusBadgeClass = (status: string) => {
   switch (status) {
@@ -432,7 +444,7 @@ const statusBadgeClass = (status: string) => {
       return "bg-violet-50 text-violet-700 border-violet-200";
     case "Suspended":
       return "bg-red-50 text-red-700 border-red-200";
-    case "Pending Verification":
+    case "Pending Edits":
       return "bg-sky-50 text-sky-700 border-sky-200";
     case "Ownership Conflict":
       return "bg-orange-50 text-orange-700 border-orange-200";
@@ -480,8 +492,8 @@ const DoctorCard = React.memo(({ doctor, index, insights, latestData, onViewDeta
                 {doctor.branch}
               </Badge>
               {doctor.statusType && (
-                <Badge variant="outline" className={cn("font-medium", statusBadgeClass(doctor.statusType))}>
-                  {doctor.statusType}
+                <Badge variant="outline" className={cn("font-medium", statusBadgeClass(statusLabel(doctor.statusType)))}>
+                  {statusLabel(doctor.statusType)}
                 </Badge>
               )}
               {doctor.outOfOrganization && (
